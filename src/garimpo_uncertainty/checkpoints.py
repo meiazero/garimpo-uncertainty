@@ -1,5 +1,6 @@
 """Checkpoint metadata: enough to rebuild the exact model and to refuse mismatched data."""
 
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -31,6 +32,11 @@ def code_versions() -> dict[str, str | bool]:
     }
 
 
+def file_sha256(path: Path) -> str:
+    with path.open("rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
+
+
 def warn_on_code_change(metadata: dict) -> None:
     """Warn, not fail: adjusting code between stages is expected while debugging on the cluster."""
     current = code_versions()
@@ -56,7 +62,6 @@ def load_model(
         metadata["arch"],
         in_channels=metadata["in_channels"],
         channels=metadata["channels"],
-        encoder=metadata["encoder"],
     )
     model.load_state_dict(content["model"])
     return model.eval().requires_grad_(False).to(device), metadata

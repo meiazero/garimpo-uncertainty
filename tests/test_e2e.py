@@ -3,7 +3,9 @@
 Covered: select_tiles, the download on local rasters (tile_origin, process_tile, _read_band,
 _boa_offset, download_scenes), validation with check_split_counts, and every later stage.
 Not covered: real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real Sentinel-2
-scenes, the shell scripts in slurm/ including FORCE_FROM and the EXIT trap, the download CLI, GPU.
+scenes, the shell scripts in slurm/ including FORCE_FROM and the EXIT trap, the download CLI, GPU,
+loading ImageNet weights (only the failure on an empty offline cache runs) and the real Sentinel-2
+MoCo file (a synthetic one stands in).
 Artifacts stay in tests/artifacts/.
 """
 
@@ -40,10 +42,14 @@ import garimpo_uncertainty.validation
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "tests" / "artifacts" / "e2e"
 DOWNLOAD_ARTIFACTS = ROOT / "tests" / "artifacts" / "download"
+WEIGHTS_ARTIFACTS = ROOT / "tests" / "artifacts" / "weights"
+# Literal positions of B2, B3, B4, B8, B11, B12 among the 13 bands, kept apart from the pipeline.
+SENTINEL2_MOCO_COLUMNS = (1, 2, 3, 7, 11, 12)
 SCENE_ORIGIN = (600_000.0, 9_100_000.0)
 SCENE_PX = 2_200
-TILE_PX = 128
-CELL_PX = 64
+# The smallest cell a depth-5 encoder accepts, to offset the cost of ResNet-50 on CPU.
+TILE_PX = 64
+CELL_PX = 32
 EPSG = 32721
 ALPHA = 0.1
 # Literal copy of tab:combinacoes plus the SVM direction, kept apart from the pipeline's constant.
@@ -69,8 +75,13 @@ EXPECTED_ROWS = {
 CELLS_PER_TILE = (TILE_PX // CELL_PX) ** 2
 RUN_ORDER = {
     "convnet": (["--channels", "8", "16", "32"], "up.1", "up.0"),
-    "unet": (["--encoder", "resnet18"], "decoder.blocks.4", "decoder.blocks.3"),
+    "unet": (
+        ["--encoder-weights", "none"],
+        "decoder.blocks.4",
+        "decoder.blocks.3",
+    ),
 }
+MODEL_NAMES = {"convnet": "convnet", "unet": "unet_scratch"}
 TORCH_FREE = (
     "import runpy, sys; sys.argv = sys.argv[1:]; "
     "runpy.run_path(sys.argv[0], run_name='__main__'); "
@@ -113,7 +124,7 @@ def write_synthetic_tile(root: Path, tile_id: int, rng: np.random.Generator) -> 
     transform = rasterio.transform.from_origin(x0, y0 + TILE_PX * 10, 10, 10)
     blobs = [
         shapely.Point(x0 + rng.uniform(0, TILE_PX * 10), y0 + rng.uniform(0, TILE_PX * 10)).buffer(
-            rng.uniform(80, 250)
+            rng.uniform(40, 125)
         )
         for _ in range(rng.integers(1, 4))
     ]
@@ -165,9 +176,9 @@ def build_dataset(root: Path, split_path: Path) -> pd.DataFrame:
 
 
 def run(
-    script: str, *args: str, data_root: Path, check: bool = True
+    script: str, *args: str, data_root: Path, check: bool = True, extra_env: dict | None = None
 ) -> subprocess.CompletedProcess:
-    env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
+    env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root), **(extra_env or {})}
     command = [sys.executable, f"scripts/{script}", *args]
     return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)
 
@@ -315,7 +326,7 @@ def check_decomposition() -> None:
     x = torch.randn(2, 6, CELL_PX, CELL_PX)
     for arch, options in (
         ("convnet", {"channels": [8, 16, 32]}),
-        ("unet", {"encoder": "resnet18"}),
+        ("unet", {}),
     ):
         model = garimpo_uncertainty.models.build(arch, in_channels=6, **options).eval()
         layers = garimpo_uncertainty.models.feature_layers(model)
@@ -373,6 +384,7 @@ def check_training_artifacts(run_dir: Path, arch: str) -> None:
     for key in ("arch", "seed", "normalization", "split_hash", "root_commit", "compass_commit"):
         assert key in metadata, key
     assert metadata["arch"] == arch
+    assert metadata["variant"] == MODEL_NAMES[arch]
     assert len(metadata["normalization"]["mean"]) == 6
     assert len(metadata["normalization"]["std"]) == 6
 
@@ -383,7 +395,7 @@ def check_results(run_dir: Path, arch: str, split: pd.DataFrame) -> None:
     keys = set(zip(results.method, results.calibration, strict=True))
     assert keys == EXPECTED_ROWS
     assert len(results) == len(EXPECTED_ROWS)
-    assert (results.model == arch).all()
+    assert (results.model == MODEL_NAMES[arch]).all()
 
     intervals = pd.read_csv(run_dir / "intervals" / "intervals.csv")
     assert (intervals.lower >= 0).all()
@@ -474,7 +486,7 @@ def check_results(run_dir: Path, arch: str, split: pd.DataFrame) -> None:
     # Q1 recomputed apart from the pipeline, on test cells with mining.
     spearman = pd.read_csv(run_dir / "metrics" / "q1_spearman.csv")
     assert len(spearman) == 4
-    assert (spearman.model == arch).all()
+    assert (spearman.model == MODEL_NAMES[arch]).all()
     segmentation = pd.read_csv(run_dir / "metrics" / "cell_metrics.csv")
     per_cell = intervals.drop_duplicates("cell_id").merge(segmentation, on="cell_id")
     per_cell = per_cell[per_cell.v > 0]
@@ -627,6 +639,183 @@ def check_all_nan_dice_fails(data_root: Path, runs: Path) -> None:
     assert not (run_dir / "best_model.pt").exists()
 
 
+def write_synthetic_sentinel2_weights(path: Path, seed: int = 0) -> dict[str, torch.Tensor]:
+    """Write a file shaped as the MoCo checkpoint: 13-band ResNet-50 keys plus fc."""
+    torch.manual_seed(seed)
+    encoder = garimpo_uncertainty.models.build("unet", 13).encoder
+    state = {key: value.clone() for key, value in encoder.state_dict().items()}
+    for column in range(13):
+        state["conv1.weight"][:, column] += column / 100
+    state["fc.weight"] = torch.zeros(1000, 2048)
+    state["fc.bias"] = torch.zeros(1000)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(state, path)
+    return state
+
+
+def test_sentinel2_weights_keep_our_bands_in_order() -> None:
+    shutil.rmtree(WEIGHTS_ARTIFACTS, ignore_errors=True)
+    path = WEIGHTS_ARTIFACTS / "synthetic.pth"
+    state = write_synthetic_sentinel2_weights(path)
+
+    def build() -> torch.nn.Module:
+        return garimpo_uncertainty.models.build(
+            "unet", 6, encoder_weights="sentinel2_moco", weights_file=path
+        )
+
+    model = build()
+    loaded = model.encoder.state_dict()
+    for position, column in enumerate(SENTINEL2_MOCO_COLUMNS):
+        assert torch.equal(loaded["conv1.weight"][:, position], state["conv1.weight"][:, column])
+    copied = set(state) - {"conv1.weight", "fc.weight", "fc.bias"}
+    assert copied == set(loaded) - {"conv1.weight"}
+    for key in copied:
+        assert torch.equal(loaded[key], state[key]), key
+
+    # The layer names stay valid across starting weights, and RUN_ORDER relies on these two.
+    scratch = garimpo_uncertainty.models.build("unet", 6)
+    assert garimpo_uncertainty.models.feature_layers(
+        model
+    ) == garimpo_uncertainty.models.feature_layers(scratch)
+    assert {"decoder.blocks.3", "decoder.blocks.4"} <= set(
+        garimpo_uncertainty.models.feature_layers(scratch)
+    )
+
+    # Bottleneck keys, which only a ResNet-50 layout has at this depth.
+    assert "layer4.2.conv3.weight" in copied
+
+    missing = {key: value for key, value in state.items() if key != "layer4.2.bn3.weight"}
+    unexpected = state | {"layer5.0.conv1.weight": torch.zeros(1)}
+    wrong_bands = state | {"conv1.weight": state["conv1.weight"][:, :6]}
+    for broken, message in (
+        (missing, "Missing key"),
+        (unexpected, "Unexpected key"),
+        (wrong_bands, "13 bands"),
+    ):
+        torch.save(broken, path)
+        with pytest.raises((RuntimeError, ValueError), match=message):
+            build()
+
+
+def check_encoder_weights_refusals(runs: Path, data_root: Path) -> None:
+    run_dir = runs / "refused"
+    no_weights = train_args("unet", run_dir)
+    cut = no_weights.index("--encoder-weights")
+    del no_weights[cut : cut + 2]
+    for args, message in (
+        ([*train_args("convnet", run_dir), "--encoder-weights", "none"], "invalid for convnet"),
+        (no_weights, "required for unet"),
+        # The encoder is fixed, so no run can choose another one.
+        ([*train_args("unet", run_dir), "--encoder", "resnet50"], "unrecognized arguments"),
+    ):
+        result = run("train.py", *args, data_root=data_root, check=False)
+        assert result.returncode == 2, message
+        assert message in result.stderr
+
+
+def check_sentinel2_training(runs: Path, data_root: Path) -> None:
+    weights = garimpo_uncertainty.data.sentinel2_moco_path(data_root)
+    write_synthetic_sentinel2_weights(weights)
+    run_dir = runs / "unet_sentinel2"
+    args = [*train_args("unet", run_dir, epochs="1"), "--encoder-weights", "sentinel2_moco"]
+    run("train.py", *args, data_root=data_root)
+
+    best = torch.load(run_dir / "best_model.pt", map_location="cpu", weights_only=True)
+    metadata = best["meta"]
+    assert metadata["normalization"] == {"mean": [0.0] * 6, "std": [1.0] * 6}
+    assert metadata["encoder"] == "resnet50"
+    assert metadata["encoder_weights"] == "sentinel2_moco"
+    assert metadata["variant"] == "unet_sentinel2"
+    sha256 = hashlib.sha256(weights.read_bytes()).hexdigest()
+    assert metadata["encoder_weights_sha256"] == sha256
+
+    # A later stage rebuilds the model from the checkpoint alone, without the weights file.
+    weights.rename(weights.with_suffix(".away"))
+    run(
+        "infer.py",
+        "--checkpoint",
+        str(run_dir / "best_model.pt"),
+        "--run-dir",
+        str(run_dir),
+        "--batch-size",
+        "8",
+        "--device",
+        "cpu",
+        "--num-workers",
+        "0",
+        data_root=data_root,
+    )
+
+    # Without the file, as on a machine with runs/ but no weights/: finished training still skips.
+    status = run_dir / "status" / "train.json"
+    skipped = run("train.py", *args, data_root=data_root)
+    assert "skipping" in skipped.stdout
+    assert json.loads(status.read_text())["status"] == "ok"
+
+    # Another variant in the same run directory refuses, with the file absent and present.
+    other = [*train_args("unet", run_dir, epochs="1"), "--encoder-weights", "none"]
+    for _ in ("absent", "present"):
+        changed = run("train.py", *other, data_root=data_root, check=False)
+        assert changed.returncode != 0
+        assert json.loads(status.read_text())["status"] == "refused"
+        run("train.py", *args, data_root=data_root)
+        assert json.loads(status.read_text())["status"] == "ok"
+        if not weights.exists():
+            weights.with_suffix(".away").rename(weights)
+    weights.rename(weights.with_suffix(".away"))
+
+    # With the file and run_meta.json both gone the identity is unknown: name what restores it.
+    run_meta = run_dir / "run_meta.json"
+    run_meta.rename(run_meta.with_suffix(".away"))
+    unknown = run("train.py", *args, data_root=data_root, check=False)
+    assert unknown.returncode != 0
+    record = json.loads(status.read_text())
+    assert record["status"] == "failed"
+    for name in ("run_meta.json", "download_data.py weights"):
+        assert name in record["error"], name
+    # Restoring it must skip again rather than retrain, since the completed fingerprint stayed.
+    run_meta.with_suffix(".away").rename(run_meta)
+    assert "skipping" in run("train.py", *args, data_root=data_root).stdout
+    assert json.loads(status.read_text())["status"] == "ok"
+
+    # A training that really has to run needs the file, and names the command that fetches it.
+    fresh_dir = runs / "unet_sentinel2_no_file"
+    fresh = [*train_args("unet", fresh_dir, epochs="1"), "--encoder-weights", "sentinel2_moco"]
+    assert run("train.py", *fresh, data_root=data_root, check=False).returncode != 0
+    record = json.loads((fresh_dir / "status" / "train.json").read_text())
+    assert record["status"] == "failed"
+    assert "download_data.py weights" in record["error"]
+    weights.with_suffix(".away").rename(weights)
+
+    # An interrupted run has no finished status, so last.pt itself must refuse other weights.
+    healthy = status.read_text()
+    status.unlink()
+    resumed = run("train.py", *other, data_root=data_root, check=False)
+    assert resumed.returncode != 0
+    record = json.loads(status.read_text())
+    assert record["status"] == "failed"
+    assert "encoder_weights" in record["error"]
+    status.write_text(healthy)
+
+    # A different file under the same name changes the identity of the run.
+    write_synthetic_sentinel2_weights(weights, seed=1)
+    refused = run("train.py", *args, data_root=data_root, check=False)
+    assert refused.returncode != 0
+    assert json.loads(status.read_text())["status"] == "refused"
+
+
+def check_imagenet_cache_failure_names_the_command(runs: Path, data_root: Path) -> None:
+    """Offline with an empty cache, the hub is never reached and the status must say what to run."""
+    run_dir = runs / "unet_imagenet_no_cache"
+    args = [*train_args("unet", run_dir, epochs="1"), "--encoder-weights", "imagenet"]
+    offline = {"HF_HUB_OFFLINE": "1", "HF_HOME": str(ARTIFACTS / "empty_huggingface_home")}
+    result = run("train.py", *args, data_root=data_root, check=False, extra_env=offline)
+    assert result.returncode != 0
+    record = json.loads((run_dir / "status" / "train.json").read_text())
+    assert record["status"] == "failed"
+    assert "download_data.py weights" in record["error"]
+
+
 def test_boundary_f1_without_a_boundary() -> None:
     whole = np.ones((8, 8), dtype=bool)
     empty = np.zeros((8, 8), dtype=bool)
@@ -665,6 +854,9 @@ def test_pipeline_end_to_end() -> None:
 
     check_training_refusals(runs / "convnet", "convnet", data_root)
     check_all_nan_dice_fails(data_root, runs)
+    check_encoder_weights_refusals(runs, data_root)
+    check_sentinel2_training(runs, data_root)
+    check_imagenet_cache_failure_names_the_command(runs, data_root)
 
     # A finished stage skips its work when rerun, also with another batch size after an OOM.
     unet = runs / "unet"
@@ -716,7 +908,21 @@ def test_pipeline_end_to_end() -> None:
         data_root=data_root,
     )
     results = pd.read_csv(merged / "results.csv")
-    assert set(results.model) == {"convnet", "unet"}
+    assert set(results.model) == {"convnet", "unet_scratch"}
+
+    # Two runs of one variant would merge into one model in every table.
+    same_variant = run(
+        "merge_results.py",
+        "--runs",
+        str(runs / "convnet"),
+        str(saturated),
+        "--out",
+        str(ARTIFACTS / "merged_refused"),
+        data_root=data_root,
+        check=False,
+    )
+    assert same_variant.returncode != 0
+    assert "same variant" in same_variant.stderr
     assert len(results) == 2 * len(EXPECTED_ROWS)
 
     summary = run("pipeline_check.py", "--run-dir", str(unet), data_root=data_root)

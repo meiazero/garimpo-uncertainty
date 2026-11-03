@@ -7,6 +7,7 @@ fail stay in the report with their reason; nothing is dropped silently.
 import concurrent.futures
 import hashlib
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -33,6 +34,11 @@ GPKG_MEMBER = "mining_area_data.gpkg"
 STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-2-l2a/items/"
 TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"
 TOKEN_REFRESH_S = 20 * 60
+SENTINEL2_MOCO_URL = (
+    "https://hf.co/torchgeo/resnet50_sentinel2_all_moco/resolve/"
+    "da4f3c9dbe09272eb902f3b37f46635fa4726879/resnet50_sentinel2_all_moco-df8b932e.pth"
+)
+SENTINEL2_MOCO_HASH = "df8b932e"
 ASSETS_10M = {"B02", "B03", "B04", "B08"}
 BASELINE_WITH_OFFSET = 4.0
 BOA_OFFSET_DN = -1000
@@ -55,6 +61,31 @@ def download_metadata(root: Path) -> None:
     if not gpkg_path(root).exists():
         with zipfile.ZipFile(archive) as bundle:
             bundle.extract(GPKG_MEMBER, archive.parent)
+
+
+def download_weights(root: Path, encoder_weights: list[str]) -> None:
+    """Fetch the chosen starting weights under the data root, for offline training."""
+    # huggingface_hub reads both variables when imported, hence these imports after setting them.
+    # A shell that exported HF_HUB_OFFLINE for training must not stop this fetch.
+    os.environ["HF_HOME"] = str(garimpo_uncertainty.data.huggingface_home(root))
+    os.environ.pop("HF_HUB_OFFLINE", None)
+    import torch.hub
+
+    import garimpo_uncertainty.models as models  # the alias keeps the package name module-level
+
+    target = garimpo_uncertainty.data.sentinel2_moco_path(root)
+    if "sentinel2_moco" in encoder_weights and not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        torch.hub.download_url_to_file(
+            SENTINEL2_MOCO_URL, str(target), hash_prefix=SENTINEL2_MOCO_HASH
+        )
+    if "imagenet" in encoder_weights:
+        # The same call as training, so the cache holds whatever smp resolves at that point.
+        models.build(
+            "unet",
+            len(garimpo_uncertainty.data.BANDS),
+            encoder_weights="imagenet",
+        )
 
 
 def _md5(path: Path) -> str:

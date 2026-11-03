@@ -11,4 +11,7 @@
 #SBATCH -e outputs/logs/%x-%j.err
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:?}"
+# Compute nodes are offline: ImageNet weights come from the cache `download_data.py weights` fills.
+export HF_HOME="${GARIMPO_DATA_DIR:-$HOME/Experiments/datasets/garimpo}/weights/huggingface"
+export HF_HUB_OFFLINE=1
 uv run --no-sync python "$@"

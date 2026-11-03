@@ -109,7 +109,7 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
         frames.append(
             pd.DataFrame(
                 {
-                    "model": metadata["arch"],
+                    "model": metadata["variant"],
                     "layer": args.layer,
                     "alpha": alpha,
                     "method": method,
@@ -132,7 +132,7 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--layer", required=True)

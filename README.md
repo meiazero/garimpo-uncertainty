@@ -21,14 +21,20 @@ cd garimpo-uncertainty
 uv sync
 git config core.hooksPath .githooks
 bash slurm/pilot.sbatch download
+ENCODER_WEIGHTS=imagenet bash slurm/pilot.sbatch download           # data, then that variant's weights
+ENCODER_WEIGHTS=sentinel2_moco bash slurm/pilot.sbatch download
 ```
 
 Then through SLURM, on the login node too:
 
 ```bash
-slurm/submit.sh slurm/pilot.sbatch
+slurm/submit.sh slurm/pilot.sbatch                                  # U-Net from scratch
+ENCODER_WEIGHTS=imagenet slurm/submit.sh slurm/pilot.sbatch
+ENCODER_WEIGHTS=sentinel2_moco slurm/submit.sh slurm/pilot.sbatch
 tail -f outputs/logs/garimpo-pilot-<JOBID>.out
 ```
+
+Each command is its own job with its own 4 h limit, and writes to `runs/pilot/unet-<weights>/`.
 
 The job ends with `scripts/pipeline_check.py`: status, seconds, peak memory and shapes per stage,
 the failing stage with its error, scenes missing, cells per role, Dice, percent monotonic per
@@ -56,23 +62,75 @@ sits outside that order: redo it with `FORCE_VALIDATE=1`. The same variables wor
 | 1 | login | `git clone --recurse-submodules <ROOT_REPO_URL> garimpo-uncertainty && cd garimpo-uncertainty && uv sync` |
 | 2 | login | `uv run --no-sync python scripts/download_data.py metadata` |
 | 3 | login | `uv run --no-sync python scripts/download_data.py scenes --resampling-20m <nearest\|bilinear>` (resumable; about 59 GB uncompressed, per `proposta/pendencias.md`; another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that leaves the manifest unchanged reaches no later stage by itself) |
-| 4 | login | `cp slurm/full.env.example slurm/unet.env`, then fill in every value (see decisions below) except `LAYER`, with `STOP_AFTER_DIAGNOSTICS=1` |
-| 5 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet.env` (stops after the layer diagnostics) |
-| 6 | login | Read `runs/unet/directions/diagnostics.csv` and `runs/unet/monotonicity_layer.csv` (validation role only); set `LAYER`, clear `STOP_AFTER_DIAGNOSTICS` |
-| 7 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet.env` (finished stages skip, so nothing retrains) |
-| 8 | both | Repeat steps 4 to 7 with `slurm/convnet.env` and `runs/convnet` |
-| 9 | login | `uv run --no-sync python scripts/merge_results.py --runs runs/unet runs/convnet --out outputs` |
+| 4 | login | `uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco` |
+| 5 | login | `cp slurm/full.env.example slurm/unet_scratch.env`, then fill in every value (see decisions below) except `LAYER`, with `STOP_AFTER_DIAGNOSTICS=1` |
+| 6 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch.env` (stops after the layer diagnostics) |
+| 7 | login | Read `runs/unet_scratch/directions/diagnostics.csv` and `runs/unet_scratch/monotonicity_layer.csv` (validation role only); set `LAYER`, clear `STOP_AFTER_DIAGNOSTICS` |
+| 8 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch.env` (finished stages skip, so nothing retrains) |
+| 9 | both | Repeat steps 5 to 8 for each other variant below |
+| 10 | login | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_scratch runs/unet_imagenet runs/unet_sentinel2 runs/convnet --out outputs` |
 
-Compute nodes have no internet, so `uv sync` and steps 2 and 3 only run on the login node; every job
+Compute nodes have no internet, so `uv sync` and steps 2 to 4 only run on the login node; every job
 uses `uv run --no-sync`. The data root is `$GARIMPO_DATA_DIR`, default
 `~/Experiments/datasets/garimpo`.
+
+### Model variants
+
+| Model in the results | `ARCH` | `ENCODER_WEIGHTS` | `RUN_DIR` | Input |
+|---|---|---|---|---|
+| `unet_scratch` | `unet` | `none` | `runs/unet_scratch` | z-score of the training cells |
+| `unet_imagenet` | `unet` | `imagenet` | `runs/unet_imagenet` | z-score of the training cells |
+| `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/unet_sentinel2` | reflectance / 10000, stored as mean 0 and std 1 |
+| `convnet` | `convnet` | empty | `runs/convnet` | z-score of the training cells |
+
+Each of the 4 variants gives 17 method and calibration rows: 68 in total.
+Each variant is one training, so differences between variants have no replication behind them and
+the comparison is descriptive only. `merge_results.py` refuses two runs of the same variant.
+
+| Weights | Source | License |
+|---|---|---|
+| `sentinel2_moco` | `torchgeo/resnet50_sentinel2_all_moco` on Hugging Face, revision `da4f3c9`, the file `ResNet50_Weights.SENTINEL2_ALL_MOCO` of torchgeo, trained on SSL4EO-S12; URL and hash from torchgeo's `models/resnet.py`; sha256 prefix `df8b932e` checked on download, full hash kept in the checkpoint | `cc-by-4.0` (Hugging Face API metadata) |
+| `imagenet` | `smp-hub/resnet50.imagenet` on Hugging Face, from `encoders/resnet.py` of segmentation-models-pytorch 0.6.0, whose `get_encoder` fetches `config.json` and `model.safetensors` with no URL fallback | `other` (Hugging Face API metadata): read the model card before citing it |
+
+Limits of these weights:
+
+- `sentinel2_moco` was trained on 13 TOA (L1C) bands, and these cells are L2A surface reflectance.
+  The filters meet a different radiometry than the one they learned.
+- Its original transform also resizes to 256 and crops to 224. Cells here stay at 512 pixels.
+- Only `conv1` columns of B2, B3, B4, B8, B11 and B12 are kept, without rescaling: the factor 13/6
+  assumes every band contributes alike, and `bn1` follows `conv1`, so training re-estimates the
+  activation scale.
+- `imagenet` starts `conv1` from RGB filters that smp cycles over the 6 bands, so its first layer
+  has no relation to these bands' wavelengths.
+
+Only a fresh start of `train.py` reads starting weights. Without them it fails naming the command in
+step 4. A finished or resumed run needs no weights file and takes the hash it started from out of
+`run_meta.json`; with both absent, `train.py` fails naming both. Restoring `runs/` without `weights/`
+reaches the later stages only if paths and modification times are preserved too, because the
+fingerprint compares each input's path, size and mtime: a `manifest.csv` restored with a new mtime
+makes `train` refuse, and the same holds for any stage's other inputs. ImageNet weights resolve from
+`$GARIMPO_DATA_DIR/weights/huggingface`, and the jobs set `HF_HOME` to that path and
+`HF_HUB_OFFLINE=1`. On Colab or RunPod, which have internet, run the same commands directly:
+
+```bash
+export GARIMPO_DATA_DIR=<DATA_DIR>
+export HF_HOME="$GARIMPO_DATA_DIR/weights/huggingface"
+uv run python scripts/download_data.py weights --encoder-weights sentinel2_moco
+uv run python scripts/train.py --arch unet --encoder-weights sentinel2_moco --run-dir runs/unet_sentinel2 ...
+```
+
+Every U-Net uses a ResNet-50 encoder, fixed in `models.UNET_ENCODER`, so `LAYERS` carries over between
+them and no run can mix encoders. `LAYER` is chosen per variant. The names `decoder.blocks.N` come
+from smp's decoder, which keeps one block per encoder stage and takes its input widths from the
+encoder (from memory of smp, `[NÃO VERIFICADO]` here). `fit_directions.py` checks each name against
+the built model and stops on an unknown one, and the E2E asserts the two names the pilot uses.
 
 Rerunning one stage needs no earlier stage: `slurm/submit.sh slurm/gpu.sbatch scripts/<stage>.py ...`
 for stages that need a GPU, `slurm/cpu.sbatch` for the rest. A new metric or another boundary F1
 tolerance, with the run's `SEED` because the seed is part of the fingerprint:
 
 ```bash
-slurm/submit.sh slurm/cpu.sbatch scripts/compute_metrics.py --run-dir runs/unet --boundary-tolerance-px <PX> --seed <SEED> --force
+slurm/submit.sh slurm/cpu.sbatch scripts/compute_metrics.py --run-dir runs/unet_scratch --boundary-tolerance-px <PX> --seed <SEED> --force
 ```
 
 ### Stages
@@ -81,8 +139,9 @@ slurm/submit.sh slurm/cpu.sbatch scripts/compute_metrics.py --run-dir runs/unet 
 |---|---|---|---|
 | `download_data.py metadata` | login | Zenodo 14195737 | `$DATA/zenodo/mining_area_data.gpkg` |
 | `download_data.py scenes` | login | `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/cells/`, `$DATA/tiles/*.json`, `$DATA/manifest.csv`, `$DATA/download_report.csv` |
+| `download_data.py weights` | login | Hugging Face | `$DATA/weights/resnet50_sentinel2_all_moco-df8b932e.pth`, `$DATA/weights/huggingface/` |
 | `validate_data.py` | CPU | manifest, report, cells, split | `outputs/data_validation.json`, `$DATA/validation_cells.csv` |
-| `train.py` | GPU | manifest, cells | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
+| `train.py` | GPU | manifest, cells, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
 | `infer.py` | GPU | checkpoint, cells | `predictions/cells.csv`, `predictions/{validation,calibration,test}.npy` |
 | `fit_directions.py` | GPU | checkpoint, training cells | `directions/<layer>.npz`, `directions/diagnostics.csv` |
 | `verify_monotonicity.py --use layer` | GPU | checkpoint, directions, validation cells | `monotonicity_layer.csv` |
@@ -98,8 +157,9 @@ Paths without a prefix are inside the run directory. Every stage skips its work 
 exists from the same inputs, stops with status `refused` when it exists from other inputs, and
 redoes it with `--force`; each writes `status/<stage>.json`, and a missing input is recorded there
 as a failure. Only `train.py` ever updates weights. `best_model.pt` stores the model configuration,
-seed, band statistics, split hash and the commits of root and submodule. Later stages refuse a
-checkpoint from another split, and `train.py` refuses to resume `last.pt` under other arguments.
+variant, starting weights, seed, normalization, split hash and the commits of root and submodule.
+Later stages take the normalization from it and need no weights file. They refuse a checkpoint from
+another split, and `train.py` refuses to resume `last.pt` under other arguments, weights included.
 
 `validate_data.py` separates what can fail from what cannot. `problems` fail the stage. A missing
 artisanal tile and group leakage are always problems. An industrial tile with `missing_item` or
@@ -125,7 +185,8 @@ are not suggestions.
 
 | Value | Where |
 |---|---|
-| Encoder (U-Net), channel widths (ConvNet), epochs, batch size, learning rate, weight decay, loss, seed | `train.py` |
+| Channel widths (ConvNet), epochs, batch size, learning rate, weight decay, loss, seed | `train.py` |
+| Starting weights: one env file per variant | `train.py`, `slurm/full.env.example` |
 | `EVAL_BATCH_SIZE`, for every stage after training; changing it after an OOM refuses nothing | `slurm/full.env.example` |
 | Layer to calibrate; layers to diagnose | `fit_directions.py`, `compass_scores.py` |
 | SVM `C`, `class_weight`, pixels sampled per cell | `fit_directions.py` |
@@ -188,8 +249,11 @@ The tests leave their artifacts in `tests/artifacts/`. One builds a synthetic da
 real cell writer and runs every stage after the download on CPU. Another runs the download code on
 local rasters. Not covered: real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real
 Sentinel-2 scenes, the shell scripts in `slurm/` including `FORCE_FROM` and the EXIT trap, the
-download CLI, a resume that actually continues training, cleanup of the temporary file in `infer.py`,
-GPU.
+download CLI including `download_data.py weights`, a resume that actually continues training, cleanup
+of the temporary file in `infer.py`, GPU, loading ImageNet weights (they need the hub; only the failure on an empty offline cache runs), and the real
+Sentinel-2 MoCo file: a synthetic 13-band file stands in, with the variant trained for one epoch and
+only inference after it. Also undecided until a run: whether the short synthetic training gives
+predictions degenerate enough to fail the boundary F1 assertion in `check_metrics_never_retrain`.
 
 ## Ways the pipeline can fail
 
@@ -227,6 +291,11 @@ Written before the pipeline, and the origin of the test.
 | 28 | An outage removes hundreds of industrial training tiles | any other industrial status is `industrial_download_errors`, E2E |
 | 29 | An OOM after training forces a lower batch size and a retrain | `EVAL_BATCH_SIZE` apart from `BATCH_SIZE` |
 | 30 | A mask filling the cell has no boundary, so its boundary F1 leaves the means | F1 is 1 for identical masks and 0 otherwise, `n_cells_boundary_by_rule` in `results.csv`, E2E |
+| 31 | Band columns of the 13-band `conv1` land out of order | literal column positions checked in E2E |
+| 32 | A weights file with missing or extra keys loads partially | strict load after dropping `fc.*`, E2E |
+| 33 | Variants merge under one model name | `variant` in the metadata and `model` column; `merge_results.py` refuses a repeated variant, E2E |
+| 34 | A compute node tries to fetch weights | `HF_HUB_OFFLINE=1` in `slurm/stages.sh` and `gpu.sbatch`; the Sentinel-2 file is read from the data root only |
+| 35 | Pretrained weights resume or skip under another identity | `encoder_weights` and the file hash in the fingerprint and `last.pt`, E2E |
 
 ## Attribution and licenses
 

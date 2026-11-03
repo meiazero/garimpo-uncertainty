@@ -75,6 +75,12 @@ def loader(
     )
 
 
+def identity_normalization() -> dict[str, list[float]]:
+    """Return statistics that leave reflectance untouched, as the Sentinel-2 MoCo weights expect."""
+    n_bands = len(garimpo_uncertainty.data.BANDS)
+    return {"mean": [0.0] * n_bands, "std": [1.0] * n_bands}
+
+
 def band_statistics(
     root: Path, cells: pd.DataFrame, batch_size: int, num_workers: int
 ) -> dict[str, list[float]]:

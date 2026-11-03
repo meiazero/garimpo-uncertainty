@@ -12,7 +12,7 @@ import garimpo_uncertainty.validation
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--split", type=Path, default="outputs/split.csv")
     parser.add_argument("--cell-px", type=int, default=garimpo_uncertainty.data.CELL_PX)
     parser.add_argument("--report", type=Path, required=True)

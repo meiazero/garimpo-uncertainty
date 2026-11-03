@@ -19,18 +19,23 @@ TABLES = {
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--runs", type=Path, nargs="+", required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
+    variants = [
+        garimpo_uncertainty.data.read_run_metadata(run_dir)["variant"] for run_dir in args.runs
+    ]
+    if len(set(variants)) != len(variants):
+        raise SystemExit(f"two runs of the same variant would merge into one model: {variants}")
+
     args.out.mkdir(parents=True, exist_ok=True)
     for name, relative in TABLES.items():
         frames = []
-        for run_dir in args.runs:
-            arch = garimpo_uncertainty.data.read_run_metadata(run_dir)["arch"]
+        for run_dir, variant in zip(args.runs, variants, strict=True):
             frame = pd.read_csv(run_dir / relative)
-            frames.append(frame if "model" in frame else frame.assign(model=arch))
+            frames.append(frame if "model" in frame else frame.assign(model=variant))
         pd.concat(frames, ignore_index=True).to_csv(args.out / name, index=False)
         print(f"{args.out / name}: {sum(len(f) for f in frames)} rows")
 

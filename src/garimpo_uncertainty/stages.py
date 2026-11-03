@@ -14,6 +14,7 @@ from argparse import Namespace
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import NoReturn
 
 IGNORED_ARGUMENTS = {"force", "device", "num_workers", "batch_size", "workers", "lightgbm_jobs"}
 MISSING_INPUT = "missing"
@@ -64,6 +65,27 @@ def write_json(path: Path, content: dict) -> None:
         temporary.write_text(json.dumps(content, indent=2, default=str) + "\n")
 
 
+def _identity(name: str) -> dict:
+    return {
+        "stage": name,
+        "host": socket.gethostname(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+    }
+
+
+def fail_stage(status_dir: Path, name: str, message: str) -> NoReturn:
+    """Record a failure found before a stage's work, and stop.
+
+    The last completed fingerprint stays, so fixing the cause lets a finished stage skip again.
+    """
+    status_path = status_dir / f"{name}.json"
+    previous = json.loads(status_path.read_text()) if status_path.exists() else {}
+    completed = previous.get("completed_fingerprint")
+    kept = {"completed_fingerprint": completed} if completed else {}
+    write_json(status_path, _identity(name) | kept | {"status": "failed", "error": message})
+    raise SystemExit(message)
+
+
 def run_stage(
     status_dir: Path,
     name: str,
@@ -81,18 +103,13 @@ def run_stage(
     status_path = status_dir / f"{name}.json"
     previous = json.loads(status_path.read_text()) if status_path.exists() else {}
     completed = previous.get("completed_fingerprint")
-    identity = {
-        "stage": name,
-        "host": socket.gethostname(),
-        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
-    }
+    identity = _identity(name)
 
     absent = [p for p, value in stage_fingerprint["inputs"].items() if value == MISSING_INPUT]
     if absent:
-        message = f"{name}: missing input {absent}; run the stage that writes it first"
-        kept = {"completed_fingerprint": completed} if completed else {}
-        write_json(status_path, identity | kept | {"status": "failed", "error": message})
-        raise SystemExit(message)
+        fail_stage(
+            status_dir, name, f"{name}: missing input {absent}; run the stage that writes it first"
+        )
 
     if outputs and completed and all(p.exists() for p in outputs) and not force:
         if completed == stage_fingerprint:

@@ -2,12 +2,17 @@
 # Pilot: exercises the real pipeline on a small real subset, to adjust code on the cluster.
 #
 #   bash slurm/pilot.sbatch download        # on the login node, once, resumable
+#   ENCODER_WEIGHTS=imagenet bash slurm/pilot.sbatch download   # adds that variant's weights
 #   slurm/submit.sh slurm/pilot.sbatch      # everything else, through SLURM
+#   ENCODER_WEIGHTS=imagenet slurm/submit.sh slurm/pilot.sbatch   # none, imagenet, sentinel2_moco
+#
+# Each variant is its own job in its own run directory, with its own time limit below.
 #
 # Memory and time are estimates, never measured: 8 workers holding 8 cells of 6.3 MB each are
-# under 1 GB, the pilot's SVM matrix is a few MB, and the U-Net forward passes need well under
-# 2 h on one A100 for ~300 calibration and test cells. 48 GB and 4 h are margin for NFS reads;
-# adjust them from the peak memory and seconds per stage that the pipeline check prints.
+# under 1 GB, and the pilot's SVM matrix is a few MB. The ResNet-50 encoder sets the forward cost
+# on one A100 for ~300 calibration and test cells, at no measured rate, and the COMPASS searches
+# rerun it. 48 GB and 4 h are guesses; adjust them from the peak memory and seconds per stage that
+# the pipeline check prints.
 #SBATCH -J garimpo-pilot
 #SBATCH -p gpuq
 #SBATCH --gres=gpu:a100:1
@@ -26,7 +31,8 @@ SUBSET_SEED=0
 RESAMPLING_20M=bilinear
 
 ARCH=unet
-ARCH_ARGS=(--encoder resnet18)
+ARCH_ARGS=()
+ENCODER_WEIGHTS="${ENCODER_WEIGHTS:-none}"
 EPOCHS=2
 BATCH_SIZE=8
 EVAL_BATCH_SIZE=8
@@ -56,10 +62,15 @@ if [ "${1:-}" = download ]; then
     uv run --no-sync python scripts/download_data.py scenes \
         --groups-per-role "$GROUPS_PER_ROLE" --max-industrial-tiles "$MAX_INDUSTRIAL_TILES" \
         --seed "$SUBSET_SEED" --resampling-20m "$RESAMPLING_20M"
+    # Last, so a hub outage never blocks the data, and only what this variant needs.
+    if [ "$ENCODER_WEIGHTS" != none ]; then
+        uv run --no-sync python scripts/download_data.py weights \
+            --encoder-weights "$ENCODER_WEIGHTS"
+    fi
     exit 0
 fi
 
-RUN_DIR=runs/pilot/unet
+RUN_DIR=runs/pilot/unet-$ENCODER_WEIGHTS
 VALIDATION_REPORT=runs/pilot/data_validation.json
 VALIDATE_ARGS=()             # no --split-summary: the counts of the full split do not apply
 NUM_WORKERS=${SLURM_CPUS_PER_TASK:-8}
@@ -72,4 +83,4 @@ source slurm/stages.sh
 run_validate
 run_diagnostics
 run_calibrated_stages
-uv run --no-sync python scripts/merge_results.py --runs "$RUN_DIR" --out runs/pilot/tables
+uv run --no-sync python scripts/merge_results.py --runs "$RUN_DIR" --out "runs/pilot/tables-$ENCODER_WEIGHTS"

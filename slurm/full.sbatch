@@ -24,7 +24,8 @@ source "${1:?usage: slurm/submit.sh slurm/full.sbatch <values.env>}"
 : "${ARCH:?}" "${RUN_DIR:?}" "${EPOCHS:?}" "${BATCH_SIZE:?}" "${LR:?}" "${WEIGHT_DECAY:?}"
 : "${EVAL_BATCH_SIZE:?}" "${LOSS:?}" "${SEED:?}" "${SVM_C:?}" "${SVM_CLASS_WEIGHT:?}" "${SVM_PIXELS_PER_CELL:?}"
 : "${SWEEP_STEPS:?}" "${SWEEP_CELLS:?}" "${BETA_RANGE_LOGITS:?}" "${BETA_RANGE_FEATURES:?}"
-[ "${#ARCH_ARGS[@]}" -gt 0 ] || { echo "ARCH_ARGS is empty" >&2; exit 1; }
+[ "$ARCH" != unet ] || : "${ENCODER_WEIGHTS:?}"
+[ "$ARCH" != convnet ] || [ "${#ARCH_ARGS[@]}" -gt 0 ] || { echo "ARCH_ARGS is empty" >&2; exit 1; }
 [ "${#LAYERS[@]}" -gt 0 ] || { echo "LAYERS is empty" >&2; exit 1; }
 
 if [ -z "${STOP_AFTER_DIAGNOSTICS:-}" ]; then

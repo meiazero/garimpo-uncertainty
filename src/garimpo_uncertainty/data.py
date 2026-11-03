@@ -29,6 +29,15 @@ def data_root() -> Path:
     return Path(os.environ.get("GARIMPO_DATA_DIR", default)).expanduser()
 
 
+def sentinel2_moco_path(root: Path) -> Path:
+    return root / "weights" / "resnet50_sentinel2_all_moco-df8b932e.pth"
+
+
+def huggingface_home(root: Path) -> Path:
+    """Return the ImageNet weights cache; slurm/stages.sh and gpu.sbatch export this path too."""
+    return root / "weights" / "huggingface"
+
+
 def select_tiles(
     split: pd.DataFrame,
     scales: list[str],

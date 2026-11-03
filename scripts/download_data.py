@@ -1,4 +1,4 @@
-"""Login-node stage: downloads metadata or Sentinel-2 cells; safe to rerun, it resumes."""
+"""Login-node stage: downloads metadata, weights or Sentinel-2 cells; safe to rerun, it resumes."""
 
 import argparse
 from pathlib import Path
@@ -12,10 +12,19 @@ import garimpo_uncertainty.stages
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("metadata", help="Jasansky et al. archive from Zenodo, md5 checked")
-    scenes = commands.add_parser("scenes", help="cells from Planetary Computer")
+    # Subparsers do not inherit allow_abbrev from the main parser.
+    commands.add_parser(
+        "metadata", help="Jasansky et al. archive from Zenodo, md5 checked", allow_abbrev=False
+    )
+    weights = commands.add_parser(
+        "weights", help="Sentinel-2 MoCo file and ImageNet cache", allow_abbrev=False
+    )
+    weights.add_argument(
+        "--encoder-weights", nargs="+", choices=["imagenet", "sentinel2_moco"], required=True
+    )
+    scenes = commands.add_parser("scenes", help="cells from Planetary Computer", allow_abbrev=False)
     scenes.add_argument("--split", type=Path, default="outputs/split.csv")
     scenes.add_argument("--scales", nargs="+", default=["Artisanal", "Industrial"])
     scenes.add_argument("--groups-per-role", type=int, help="whole artisanal groups kept per role")
@@ -34,6 +43,9 @@ def main() -> None:
     root = garimpo_uncertainty.data.data_root()
     if args.command == "metadata":
         garimpo_uncertainty.download.download_metadata(root)
+        return
+    if args.command == "weights":
+        garimpo_uncertainty.download.download_weights(root, args.encoder_weights)
         return
 
     selected = garimpo_uncertainty.data.select_tiles(
