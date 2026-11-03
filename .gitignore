@@ -1,0 +1,27 @@
+data/
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+proposta/*.aux
+proposta/*.log
+proposta/*.out
+proposta/*.fls
+proposta/*.fdb_latexmk
+proposta/*.xdv
+# Re-downloadable with scripts/proposal/get_papers.py; papers/INDEX.tsv stays versioned.
+papers/*.pdf
+tests/artifacts/
+# The pilot debugs code; its numbers never enter the repository.
+runs/pilot/
+# Run artifacts too large for git. Small tables (status/, history, metrics, diagnostics) stay.
+runs/**/*.pt
+runs/**/*.npy
+runs/**/*.npz
+runs/**/predictions/cells.csv
+runs/**/scores/compass_scores.csv
+runs/**/calibration/quantiles.csv
+runs/**/intervals/intervals.csv
+runs/**/metrics/cell_metrics.csv
+outputs/logs/
+*.tmp
