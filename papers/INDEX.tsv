@@ -1,0 +1,43 @@
+file	status	first_lines
+cheung2026compass	already	arXiv:2509.22240v2 [eess.IV] 28 Feb 2026 / COMPASS: Robust Feature Conformal Prediction for Medical
+singh2024conformal-eo	already	Uncertainty quantification for probabilistic machine learning in earth observation using / conformal prediction.
+mossina2024conformal-segmentation	already	arXiv:2405.05145v1 [cs.CV] 16 Apr 2024 / Conformal Semantic Image Segmentation: Post-hoc Quantification of Predictive
+mossina2025morphological-sets	already	arXiv:2503.05618v1 [cs.CV] 7 Mar 2025 / Conformal Prediction for Image Segmentation
+viti2026consign	already	Published as a conference paper at ICLR 2026 / CONSIGN: C ONFORMAL S EGMENTATION I NFORMED
+wundram2024performance-range	already	Conformal Performance Range Prediction for / Segmentation Output Quality Control
+cosarinsky2026confic-rca	already	IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. XX, NO. XX, XXXX 2020 / ConfIC-RCA: Statistically Grounded Efficient
+lehmann2026calibration-geofm	already	Beyond Accuracy: Assessing Calibration of Geospatial Foundation / Models and Their Sensitivity to Distribution Shifts
+gonzalez2026shrug-fm	already	SHRUG-FM: Reliability-Aware Foundation Models for Earth Observation / Maria Gonzalez-Calabuig* 1 Kai-Hendrik Cohrs∗1 Vishal Nedungadi∗2 Zuzanna Osika3
+cui2026eldor	already	ELDOR: A Dataset and Benchmark for Illegal Gold / Mining in the Amazon Rainforest
+lu2025regression-remote-sensing	already	Regression coefficient estimation from remote sensing maps / Kerri Lu∗1,2 , Dan M. Kluger∗4 , Stephen Bates∗1,2 , and Sherrie Wang∗1,3,4
+angelopoulos2023ppi	already	Prediction-Powered Inference / Anastasios N. Angelopoulos∗ Stephen Bates∗ Clara Fannjiang∗
+shirota2026ppi-spatial	already	Conditional validity of prediction-powered inference for spatially / dependent finite populations
+guo2017calibration	already	On Calibration of Modern Neural Networks / Chuan Guo * 1 Geoff Pleiss * 1 Yu Sun * 1 Kilian Q. Weinberger 1
+lakshminarayanan2017ensembles	already	Simple and Scalable Predictive Uncertainty / Estimation using Deep Ensembles
+monteiro2020ssn	already	arXiv:2006.06015v2 [cs.CV] 22 Dec 2020 / Stochastic Segmentation Networks:
+kohl2018probabilistic-unet	already	A Probabilistic U-Net for Segmentation of Ambiguous / arXiv:1806.05034v4 [cs.CV] 29 Jan 2019
+lei2018distribution-free	already	Distribution-Free Predictive Inference For Regression / Jing Lei, Max G’Sell, Alessandro Rinaldo, Ryan J. Tibshirani, and Larry Wasserman
+ronneberger2015unet	already	U-Net: Convolutional Networks for Biomedical / Image Segmentation
+tibshirani2019weighted-conformal	already	Conformal Prediction Under Covariate Shift / Ryan J. Tibshirani
+barber2023beyond-exchangeability	already	Conformal Prediction Beyond Exchangeability / arXiv:2202.13415v5 [stat.ME] 17 Mar 2023
+romano2019cqr	already	Conformalized Quantile Regression / arXiv:1905.03222v1 [stat.ME] 8 May 2019
+teng2022feature-conformal	already	Published as a conference paper at ICLR 2023 / P REDICTIVE I NFERENCE WITH
+angelopoulos2021gentle-intro	already	A Gentle Introduction to Conformal Prediction and / Distribution-Free Uncertainty Quantification
+angelopoulos2022risk-control	already	Conformal Risk Control / Anastasios N. Angelopoulos1 , Stephen Bates1 , Adam Fisch2 , Lihua Lei3 , and Tal Schuster4
+chen2018deeplabv3plus	already	Encoder-Decoder with Atrous Separable / Convolution for Semantic Image Segmentation
+dosovitskiy2020vit	already	Published as a conference paper at ICLR 2021 / A N I MAGE IS W ORTH 16 X 16 W ORDS :
+kirillov2023sam	already	Segment Anything / Alexander Kirillov1,2,4 Eric Mintun2 Nikhila Ravi1,2
+ravi2024sam2	already	SAM 2: Segment Anything in Images and Videos / Nikhila Ravi∗,† , Valentin Gabeur∗ , Yuan-Ting Hu∗ , Ronghang Hu∗ , Chaitanya Ryali∗ , Tengyu Ma∗ ,
+dunn2022hierarchical-conformal	already	Distribution-Free Prediction Sets for / Two-Layer Hierarchical Models
+xie2021segformer	ok	SegFormer: Simple and Efficient Design for Semantic / Segmentation with Transformers
+maus2020mining-dataset	already	www.nature.com/scientificdata / A global-scale data set of mining
+tang2023mining-footprint	already	https://doi.org/10.1038/s43247-023-00805-6 / Global mining footprint mapped from
+jasansky2025tropics	no-open-pdf	
+couttenier2022asm-west-africa	already	RESEARCH ARTICLE / Mapping artisanal and small-scale mines at
+olofsson2014good-practices	no-open-pdf	
+camalan2022amazon-change	no-open-pdf	
+queimadas-multisensor-active-fire2021	no-open-pdf	
+queimadas-cerrado-dataset2025	already	A multi-temporal dataset for mapping burned areas in the Brazilian Cerrado / using time series of remote sensing imagery
+smallminesds2025	no-open-pdf | matched: SmallMinesDS: A Multimodal Dataset for Mapping Artisanal and Small-Scale Gold Mines	
+queimadas-xingu-products2026	no-open-pdf | matched: Assessment of Burned Area Products During the Severe Fire Season in the Xingu River Basin, Brazilian Amazon	
+sentinela-ia2025	ok https://sol.sbc.org.br/index.php/eri-mt/article/download/39585/39357 | matched: Sentinela-IA: Detecção de Garimpo Ilegal na Amazônia com Deep Learning e Imagens Sentinel-2	Sentinela-IA: Detecção de Garimpo Ilegal na Amazônia com Deep / Learning e Imagens Sentinel-2
