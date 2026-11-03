@@ -1,0 +1,18 @@
+{
+  "seed": 0,
+  "tiles_by_scale_role": {
+    "Artisanal/calibration": 69,
+    "Artisanal/test": 89,
+    "Artisanal/train": 56,
+    "Artisanal/validation": 18,
+    "Industrial/dropped": 28,
+    "Industrial/train": 947
+  },
+  "groups_by_role": {
+    "calibration": 25,
+    "test": 24,
+    "train": 21,
+    "validation": 5
+  },
+  "train_chips": 16048
+}

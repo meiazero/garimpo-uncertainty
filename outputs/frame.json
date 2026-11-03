@@ -1,0 +1,66 @@
+{
+  "tiles_with_split": 1207,
+  "scale": {
+    "Industrial": 975,
+    "Artisanal": 232
+  },
+  "artisanal_by_region": {
+    "Asia/Oceania": 125,
+    "Amazonia BR": 54,
+    "Americas, other": 35,
+    "Africa/Europe": 18
+  },
+  "clusters_by_separation_km": {
+    "25": {
+      "Africa/Europe": 10,
+      "Amazonia BR": 19,
+      "Americas, other": 16,
+      "Asia/Oceania": 56
+    },
+    "50": {
+      "Africa/Europe": 10,
+      "Amazonia BR": 12,
+      "Americas, other": 12,
+      "Asia/Oceania": 41
+    },
+    "100": {
+      "Africa/Europe": 8,
+      "Amazonia BR": 8,
+      "Americas, other": 8,
+      "Asia/Oceania": 26
+    }
+  },
+  "amazon_artisanal_mine_type": {
+    "Placer": 30,
+    "Surface": 24
+  },
+  "amazon_artisanal_image_year": {
+    "2018": 3,
+    "2019": 47,
+    "2020": 3,
+    "2021": 1
+  },
+  "tile_side_m_median": 20480.000000000466,
+  "chips_total_all_tiles": 19312,
+  "chips_artisanal": 3712,
+  "chips_amazon": 864,
+  "chips_amazon_nonempty": 492,
+  "chip_ha_amazon_nonempty": {
+    "q0": 0.1,
+    "q10": 19.1,
+    "q25": 67.0,
+    "q50": 213.4,
+    "q75": 453.5,
+    "q90": 756.2,
+    "q100": 2395.7
+  },
+  "chip_ha_artisanal_nonempty": {
+    "q0": 0.0,
+    "q10": 24.6,
+    "q25": 84.2,
+    "q50": 249.3,
+    "q75": 523.0,
+    "q90": 941.5,
+    "q100": 2621.4
+  }
+}

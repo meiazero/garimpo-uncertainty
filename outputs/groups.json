@@ -1,0 +1,23 @@
+{
+  "amazon_groups_epsg5880": {
+    "25": 19,
+    "50": 14,
+    "100": 8
+  },
+  "groups_50km_total": 75,
+  "groups_50km_by_region": {
+    "Africa/Europe": 10,
+    "Amazonia BR": 12,
+    "Americas, other": 12,
+    "Asia/Oceania": 41
+  },
+  "groups_50km_spanning_regions": 0,
+  "other_americas_lat": [
+    -15.249982167519628,
+    18.41664560197304
+  ],
+  "other_americas_lon": [
+    -99.41666701016675,
+    -53.25000162325268
+  ]
+}

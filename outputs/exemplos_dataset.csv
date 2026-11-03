@@ -1,0 +1,5 @@
+panel,tile_id,item,scene_cloud_pct,chip_bounds_utm,epsg,mining_area_ha
+Amazônia brasileira artesanal,684,S2B_MSIL2A_20210219T142729_R053_T20MRE_20210220T100330,0.030222,"[np.float64(832979.5), np.float64(9916979.7), np.float64(838107.3), np.float64(9922107.5)]",32720,214.61
+África artesanal,1083,S2A_MSIL2A_20190226T102021_R065_T30NXN_20201007T205032,0.110361,"[np.float64(633119.0), np.float64(714553.0), np.float64(638239.0), np.float64(719673.0)]",32630,219.2
+Ásia/Oceania artesanal,2678,S2A_MSIL2A_20200913T024551_R132_T51UXA_20200917T110057,0.004486,"[np.float64(687706.2), np.float64(6065752.2), np.float64(692826.2), np.float64(6070872.2)]",32651,213.47
+Industrial (treinamento),1108,S2B_MSIL2A_20211204T101309_R022_T32SMD_20230130T074017,6e-05,"[np.float64(451514.5), np.float64(3798271.1), np.float64(456634.5), np.float64(3803391.1)]",32632,213.45

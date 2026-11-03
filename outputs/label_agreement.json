@@ -1,0 +1,120 @@
+{
+  "split_values": {
+    "train": 890,
+    "NaN": 307,
+    "val": 201,
+    "test": 116
+  },
+  "validated_by_our_role_and_scale": [
+    {
+      "our_role": "calibration",
+      "scale": "Artisanal",
+      "0": "10"
+    },
+    {
+      "our_role": "dropped",
+      "scale": "Industrial",
+      "0": "2"
+    },
+    {
+      "our_role": "test",
+      "scale": "Artisanal",
+      "0": "6"
+    },
+    {
+      "our_role": "train",
+      "scale": "Artisanal",
+      "0": "3"
+    },
+    {
+      "our_role": "train",
+      "scale": "Industrial",
+      "0": "93"
+    },
+    {
+      "our_role": "validation",
+      "scale": "Artisanal",
+      "0": "2"
+    }
+  ],
+  "preferred_vs_validated": {
+    "Artisanal": {
+      "tiles": 21,
+      "iou_q10_q50_q90": [
+        0.886,
+        0.945,
+        1.0
+      ],
+      "area_ratio_a_over_b_q10_q50_q90": [
+        0.906,
+        0.964,
+        1.027
+      ],
+      "total_area_ratio_a_over_b": 0.974,
+      "nonempty_chips": 187,
+      "chip_abs_diff_ha_q50_q90": [
+        0.0,
+        47.0
+      ]
+    },
+    "Industrial": {
+      "tiles": 95,
+      "iou_q10_q50_q90": [
+        0.884,
+        0.974,
+        1.0
+      ],
+      "area_ratio_a_over_b_q10_q50_q90": [
+        0.892,
+        0.979,
+        1.0
+      ],
+      "total_area_ratio_a_over_b": 0.975,
+      "nonempty_chips": 630,
+      "chip_abs_diff_ha_q50_q90": [
+        0.0,
+        38.5
+      ]
+    }
+  },
+  "maus_vs_tang": {
+    "Artisanal": {
+      "tiles": 41,
+      "iou_q10_q50_q90": [
+        0.324,
+        0.573,
+        0.996
+      ],
+      "area_ratio_a_over_b_q10_q50_q90": [
+        0.999,
+        1.473,
+        2.336
+      ],
+      "total_area_ratio_a_over_b": 1.549,
+      "nonempty_chips": 375,
+      "chip_abs_diff_ha_q50_q90": [
+        61.7,
+        372.2
+      ]
+    },
+    "Industrial": {
+      "tiles": 681,
+      "iou_q10_q50_q90": [
+        0.421,
+        0.658,
+        0.907
+      ],
+      "area_ratio_a_over_b_q10_q50_q90": [
+        0.942,
+        1.273,
+        2.104
+      ],
+      "total_area_ratio_a_over_b": 1.266,
+      "nonempty_chips": 4637,
+      "chip_abs_diff_ha_q50_q90": [
+        48.1,
+        373.8
+      ]
+    }
+  }
+}
