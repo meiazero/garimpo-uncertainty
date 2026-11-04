@@ -3,7 +3,8 @@
 Replication package of a master's dissertation: calibrated prediction intervals for artisanal mining
 area from Sentinel-2, evaluated under geographic domain shift. `compass/` (submodule) holds the
 adapted COMPASS method; `src/garimpo_uncertainty/` the satellite code; `scripts/` the stages;
-`slurm/` the cluster jobs; `outputs/` the versioned tables, including `split.csv`, the split used.
+`slurm/` the cluster jobs; `outputs/` the versioned tables, including `split.csv`, the split used,
+and `tiles/`, the tiles each training fraction downloads.
 
 No model result exists yet. The code has run only under pytest, on synthetic data; the pipeline has
 never run on real scenes or on the cluster.
@@ -11,7 +12,8 @@ never run on real scenes or on the cluster.
 ## Pilot: adjust the code on the cluster
 
 The pilot is the 1% training fraction, run through the same scripts as the full run: 186 tiles and
-2,976 cells, since validation, calibration and test stay whole. It exists to debug the
+2,976 cells, since validation, calibration and test stay whole. It downloads the versioned list
+`outputs/tiles/tiles_1pct.json`. It exists to debug the
 implementation, and its numbers say nothing about any method. Its values are in `slurm/pilot.sbatch`,
 labeled pilot-only. Results go to `runs/pilot/`, never to `outputs/`.
 
@@ -65,7 +67,7 @@ sits outside that order: redo it with `FORCE_VALIDATE=1`. The same variables wor
 |---|---|---|
 | 1 | login | `git clone --recurse-submodules <ROOT_REPO_URL> garimpo-uncertainty && cd garimpo-uncertainty && uv sync` |
 | 2 | login | `uv run --no-sync python scripts/download_data.py metadata` |
-| 3 | login | `uv run --no-sync python scripts/download_data.py scenes --train-fraction 1.0 --subset-seed <SUBSET_SEED> --resampling-20m <nearest\|bilinear>` (resumable; contains every smaller fraction of that seed; sizes in the table below; another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar, so later stages refuse until redone; a re-cut with identical content changes nothing) |
+| 3 | login | `uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m <nearest\|bilinear>` (from the versioned list, so `lists` need not run first; resumable; contains every smaller fraction of that list's seed; sizes in the table below; another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar, so later stages refuse until redone; a re-cut with identical content changes nothing) |
 | 4 | login | `uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco` |
 | 5 | login | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, then fill in every value (see decisions below) except `LAYER`, with `STOP_AFTER_DIAGNOSTICS=1` |
 | 6 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env` (stops after the layer diagnostics) |
@@ -105,6 +107,49 @@ The written sizes hold where the filesystem keeps holes; see the data layout bel
 `validate_data.py` runs per fraction and seed, with its status in
 `$DATA/status/fraction-<F>-seed-<S>/`. Another `--train-fraction` or `--subset-seed` under the same
 `RUN_DIR` refuses.
+
+### Tile lists
+
+`outputs/tiles/tiles_{1,5,10,100}pct.json` are versioned and are the source of every download, so a
+fresh clone downloads without generating anything. Each is complete for its fraction: the reduced
+training tiles plus all validation, calibration and test tiles, sorted by `tile_id`:
+
+```json
+{
+  "train_fraction": 0.01,
+  "subset_seed": 0,
+  "split_sha256": "<SHA-256 of outputs/split.csv>",
+  "tiles": [
+    {
+      "tile_id": 80,
+      "role": "train"
+    }
+  ]
+}
+```
+
+Downloads are incremental on the one store, so a larger list fetches only what is missing:
+
+```bash
+uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_1pct.json --resampling-20m bilinear
+uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_5pct.json --resampling-20m bilinear
+```
+
+`scenes` refuses a list whose `split_sha256` differs from the current split, or that names a tile the
+split does not keep. It downloads exactly what the list names, and training still selects by
+`--train-fraction` and `--subset-seed`. `validate_data.py` fails with `not_downloaded` if those two
+ask for a tile the download did not fetch, and the E2E asserts that each versioned list equals
+`select_tiles` for its fraction and seed.
+
+The versioned lists use subset seed 0, the value `slurm/pilot.sbatch` labels pilot-only. `lists`
+regenerates all four, and is needed only after `outputs/split.csv` changes or to use another seed:
+
+```bash
+uv run --no-sync python scripts/download_data.py lists --subset-seed <SUBSET_SEED>
+```
+
+The E2E fails if regenerating with the recorded seed does not reproduce the versioned files byte for
+byte, so commit the regenerated files with whatever changed them.
 
 ### Model variants
 
@@ -176,7 +221,8 @@ slurm/submit.sh slurm/cpu.sbatch scripts/compute_metrics.py --run-dir runs/unet_
 | Stage | Node | Input | Output |
 |---|---|---|---|
 | `download_data.py metadata` | login | Zenodo 14195737 | `$DATA/zenodo/mining_area_data.gpkg` |
-| `download_data.py scenes` | login | `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/{images,masks,scl,stats}.npy`, `$DATA/tiles/*.json` |
+| `download_data.py lists` | login, only to regenerate | `outputs/split.csv`, subset seed | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
+| `download_data.py scenes` | login | `outputs/tiles/tiles_<P>pct.json`, `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/{images,masks,scl,stats}.npy`, `$DATA/tiles/*.json` |
 | `download_data.py weights` | login | Hugging Face | `$DATA/weights/resnet50_sentinel2_all_moco-df8b932e.pth`, `$DATA/weights/resnet50_imagenet-df1aad85.safetensors` |
 | `validate_data.py` | CPU | store, sidecars, split, fraction | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
 | `train.py` | GPU | the run's slots and sidecars, split, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
@@ -290,7 +336,7 @@ are not suggestions.
 |---|---|
 | Channel widths (ConvNet), epochs, batch size, learning rate, weight decay, loss, seed | `train.py` |
 | Fixed epochs or fixed updates across fractions; `EPOCHS` is set per run either way | `slurm/full.env.example` |
-| Subset seed; one value keeps the fractions nested | `download_data.py scenes`, `train.py` |
+| Subset seed; one value keeps the fractions nested; another than the versioned lists' 0 means regenerating them | `download_data.py lists`, `train.py` |
 | Starting weights and fraction: one env file per run | `train.py`, `slurm/full.env.example` |
 | `EVAL_BATCH_SIZE`, for every stage after training; changing it after an OOM refuses nothing | `slurm/full.env.example` |
 | Layer to calibrate; layers to diagnose | `fit_directions.py`, `compass_scores.py` |
@@ -328,6 +374,7 @@ cd proposta && "$(mise -C ../../dissertacao-v4 which latexmk)" -lualatex propost
 | Sentinel-2 items found (232 of 232 artisanal) | `scripts/proposal/check_imagery.py` | `outputs/imagery.csv` |
 | PICP confidence intervals, power, required M, realized coverage | `scripts/proposal/coverage_precision.py` | `outputs/coverage_precision.json` |
 | Geographic partition and training chips | `scripts/proposal/make_split.py` | `outputs/split.csv`, `outputs/split_summary.json` |
+| Tiles and cells per training fraction | `scripts/download_data.py lists` | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
 | Agreement between dataset masks (not cited in the text yet) | `scripts/proposal/check_labels.py` | `outputs/label_agreement.json` |
 | Figure of dataset examples (`fig:exemplos`) | `scripts/proposal/make_examples.py` | `proposta/exemplos_dataset.pdf`, `outputs/exemplos_dataset.png`, `outputs/exemplos_dataset.csv` |
 | Data checks, scenes missing, clouds and nodata per role, per fraction | `scripts/validate_data.py` | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
@@ -352,14 +399,17 @@ uvx ruff format --check . && uvx ruff check .
 
 The tests leave their artifacts in `tests/artifacts/`. One builds a synthetic dataset through the
 real cell writer and runs every stage after the download on CPU. Another runs the download code on
-local rasters. Another runs two fractions on one data root, with the larger fraction's data arriving
-after the smaller run finished. Another checks counts and nesting on the real `outputs/split.csv`.
-Another writes the store's tiles in shuffled order and compares bytes. The first also recomputes
+local rasters, including `lists` and `scenes --tiles` from a small list to a larger one and the
+refusals of a list. Another runs two fractions on one data root, with the larger fraction's data
+arriving after the smaller run finished. Another checks counts and nesting on the real
+`outputs/split.csv`. Another regenerates the versioned tile lists and compares bytes, tiles and
+`select_tiles`. Another writes the store's tiles in shuffled order and compares bytes. The first
+also recomputes
 PICP, MPIW, interval score and Dice one cell at a time against `results.csv`, and every COMPASS row
 with its own loader against the one pass in `generate_intervals.py`, with no tolerance.
 Not covered: `--cells nonempty`, real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real
-Sentinel-2 scenes, the shell scripts in `slurm/` including `FORCE_FROM` and the EXIT trap, the
-download CLI including `download_data.py weights`, a resume that actually continues training, cleanup
+Sentinel-2 scenes, the shell scripts in `slurm/` including `FORCE_FROM` and the EXIT trap,
+`download_data.py metadata` and `weights`, a resume that actually continues training, cleanup
 of the temporary file in `infer.py`, GPU, the real ImageNet weights (a synthetic file covers the load), and the real
 Sentinel-2 MoCo file: a synthetic 13-band file stands in, with the variant trained for one epoch and
 only inference after it. The boundary F1 assertion in `check_metrics_never_retrain` depends on the

@@ -1,11 +1,12 @@
 """End-to-end checks on synthetic data, on CPU, through the same code the cluster runs.
 
-Covered: select_tiles on the real split, the cell store, the download on local rasters (tile_origin,
-process_tile, _read_band, _boa_offset, download_scenes), validation with check_split_counts, every
-later stage, and two training fractions sharing one data root.
+Covered: select_tiles on the real split, the versioned tile lists, the cell store, the download on
+local rasters (tile_origin, process_tile, _read_band, _boa_offset, download_scenes, the lists and
+scenes commands), validation with check_split_counts, every later stage, and two training fractions
+sharing one data root.
 Not covered: real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real Sentinel-2
-scenes, the shell scripts in slurm/ including FORCE_FROM and the EXIT trap, the download CLI, GPU,
-the real ImageNet and Sentinel-2 MoCo files (synthetic ones stand in).
+scenes, the shell scripts in slurm/ including FORCE_FROM and the EXIT trap, the metadata and weights
+download commands, GPU, the real ImageNet and Sentinel-2 MoCo files (synthetic ones stand in).
 Artifacts stay in tests/artifacts/.
 """
 
@@ -53,9 +54,17 @@ DOWNLOAD_ARTIFACTS = ROOT / "tests" / "artifacts" / "download"
 WEIGHTS_ARTIFACTS = ROOT / "tests" / "artifacts" / "weights"
 IMAGENET_ARTIFACTS = ROOT / "tests" / "artifacts" / "imagenet"
 FRACTION_ARTIFACTS = ROOT / "tests" / "artifacts" / "fractions"
+LIST_ARTIFACTS = ROOT / "tests" / "artifacts" / "lists"
 # Literal training tiles per fraction on outputs/split.csv, kept apart from the pipeline.
 REAL_SPLIT_TRAIN_TILES = {0.01: (1, 9), 0.05: (3, 47), 0.10: (6, 95), 1.0: (56, 947)}
 REAL_SPLIT_OTHER_TILES = 176
+# Literal list file, tiles and cells per fraction on outputs/split.csv.
+REAL_LISTS = {
+    0.01: ("tiles_1pct.json", 186, 2_976),
+    0.05: ("tiles_5pct.json", 226, 3_616),
+    0.10: ("tiles_10pct.json", 277, 4_432),
+    1.0: ("tiles_100pct.json", 1_179, 18_864),
+}
 # Literal positions of B2, B3, B4, B8, B11, B12 among the 13 bands, kept apart from the pipeline.
 SENTINEL2_MOCO_COLUMNS = (1, 2, 3, 7, 11, 12)
 SCENE_ORIGIN = (600_000.0, 9_100_000.0)
@@ -1404,6 +1413,46 @@ def test_select_tiles_on_the_real_split() -> None:
     assert small[small.role == "train"].scale.tolist() == ["Artisanal"]
 
 
+def test_versioned_tile_lists_on_the_real_split() -> None:
+    directory = ROOT / "outputs" / "tiles"
+    split_path = ROOT / "outputs" / "split.csv"
+    split = pd.read_csv(split_path)
+    listed_tiles = runpy.run_path(str(ROOT / "scripts" / "download_data.py"))["listed_tiles"]
+    seed = json.loads((directory / "tiles_1pct.json").read_text())["subset_seed"]
+
+    # A fresh clone downloads from these files, so the code must still reproduce them exactly.
+    regenerated = LIST_ARTIFACTS / "real"
+    shutil.rmtree(regenerated, ignore_errors=True)
+    arguments = ["lists", "--subset-seed", str(seed), "--out", str(regenerated)]
+    run("download_data.py", *arguments, data_root=regenerated)
+
+    nested: set[int] = set()
+    for fraction, (name, n_tiles, n_cells) in REAL_LISTS.items():
+        assert (directory / name).read_bytes() == (regenerated / name).read_bytes(), name
+
+        tile_list = json.loads((directory / name).read_text())
+        assert list(tile_list) == ["train_fraction", "subset_seed", "split_sha256", "tiles"]
+        assert tile_list["train_fraction"] == fraction
+        assert tile_list["subset_seed"] == seed
+        assert tile_list["split_sha256"] == hashlib.sha256(split_path.read_bytes()).hexdigest()
+        tiles = [(tile["tile_id"], tile["role"]) for tile in tile_list["tiles"]]
+        assert len(tiles) == n_tiles
+        assert len(tiles) * 16 == n_cells
+
+        # What training selects, what the list says and what the download takes are one set.
+        trained = garimpo_uncertainty.data.select_tiles(split, fraction, seed)
+        assert tiles == sorted(zip(trained.tile_id.tolist(), trained.role.tolist(), strict=True))
+        downloaded = listed_tiles(directory / name, split_path, split)
+        assert downloaded.tile_id.tolist() == trained.tile_id.tolist()
+
+        train = {tile_id for tile_id, role in tiles if role == "train"}
+        assert nested < train
+        nested = train
+    assert sorted(path.name for path in directory.iterdir()) == sorted(
+        name for name, _, _ in REAL_LISTS.values()
+    )
+
+
 def without_tile(root: Path, tile_id: int, name: str) -> Path:
     """Copy a data root with a tile's sidecar gone, as if never fetched."""
     damaged = FRACTION_ARTIFACTS / name
@@ -1705,6 +1754,113 @@ def to_wgs84(geometry: shapely.Geometry) -> shapely.Geometry:
     return gpd.GeoSeries([geometry], crs=EPSG).to_crs(4326).iloc[0]
 
 
+def write_local_gpkg(
+    root: Path, items: list[str], geometries: list[shapely.Geometry], masks: list[shapely.Geometry]
+) -> None:
+    garimpo_uncertainty.download.gpkg_path(root).parent.mkdir(parents=True)
+    gpd.GeoDataFrame(
+        {
+            "tile_id": range(len(items)),
+            "s2_tile_id": items,
+            "geometry": [to_wgs84(g) for g in geometries],
+        },
+        crs=4326,
+    ).to_file(garimpo_uncertainty.download.gpkg_path(root), layer="tiles", driver="GPKG")
+    gpd.GeoDataFrame(
+        {"tile_id": range(len(masks)), "geometry": [to_wgs84(m) for m in masks]}, crs=4326
+    ).to_file(
+        garimpo_uncertainty.download.gpkg_path(root), layer="preferred_polygons", driver="GPKG"
+    )
+
+
+def check_tile_lists_download_incrementally(
+    monkeypatch: pytest.MonkeyPatch, tile_box: shapely.Geometry, mask: shapely.Geometry
+) -> None:
+    """Through the real commands, with the caller's fake Planetary Computer still in place."""
+    directory = DOWNLOAD_ARTIFACTS / "lists"
+    directory.mkdir()
+    split_path = directory / "split.csv"
+    split = pd.DataFrame(
+        {
+            "tile_id": range(5),
+            "region": ["Amazonia BR", "Asia/Oceania", "Asia/Oceania", "Asia/Oceania", "Africa"],
+            "cluster_50km": [0.0, 1.0, 2.0, 3.0, 4.0],
+            "role": ["test", "train", "train", "train", "dropped"],
+            "scale": ["Artisanal"] * 4 + ["Industrial"],
+        }
+    )
+    split.to_csv(split_path, index=False)
+    arguments = ["lists", "--split", str(split_path), "--subset-seed", "0", "--out", str(directory)]
+    run("download_data.py", *arguments, data_root=directory)
+
+    def listed_ids(name: str) -> set[int]:
+        tile_list = json.loads((directory / name).read_text())
+        return {tile["tile_id"] for tile in tile_list["tiles"]}
+
+    small, large = listed_ids("tiles_1pct.json"), listed_ids("tiles_100pct.json")
+    assert small < large
+    assert large == {0, 1, 2, 3}
+
+    def scenes(root: Path, tile_list: Path) -> None:
+        monkeypatch.setenv("GARIMPO_DATA_DIR", str(root))
+        arguments = ["--split", str(split_path), "--tiles", str(tile_list)]
+        arguments += ["--resampling-20m", "bilinear"]
+        monkeypatch.setattr(sys, "argv", ["download_data.py", "scenes", *arguments])
+        runpy.run_path(str(ROOT / "scripts" / "download_data.py"), run_name="__main__")
+
+    # A different mask per tile, so slots written under another tile's index cannot pass.
+    root = directory / "data"
+    masks = [shapely.affinity.translate(mask, yoff=1000 * i) for i in range(4)]
+    write_local_gpkg(root, ["S2_LOCAL"] * 4, [tile_box] * 4, masks)
+    scenes(root, directory / "tiles_1pct.json")
+
+    def sidecars() -> dict[int, tuple[str, int]]:
+        paths = (root / "tiles").glob("*.json")
+        return {int(p.stem): (p.read_text(), p.stat().st_mtime_ns) for p in paths}
+
+    store = garimpo_uncertainty.data.open_store(root)
+
+    def slot_hashes(tile_id: int) -> list[str]:
+        slots = slice(tile_id * 16, (tile_id + 1) * 16)  # tile_index == tile_id in this split
+        return [hashlib.sha256(array[slots]).hexdigest() for array in store]
+
+    def written(tile_id: int) -> bool:
+        return bool(store.images[tile_id * 16 : (tile_id + 1) * 16].any())
+
+    before_sidecars = sidecars()
+    before_slots = {tile_id: slot_hashes(tile_id) for tile_id in small}
+    assert set(before_sidecars) == small
+    assert {tile_id for tile_id in large if written(tile_id)} == small
+
+    scenes(root, directory / "tiles_100pct.json")
+    after_sidecars = sidecars()
+    assert set(after_sidecars) == large
+    assert {tile_id: after_sidecars[tile_id] for tile_id in small} == before_sidecars
+    assert {tile_id: slot_hashes(tile_id) for tile_id in small} == before_slots
+    assert {tile_id for tile_id in large if written(tile_id)} == large
+    assert len({tuple(slot_hashes(tile_id)) for tile_id in large}) == len(large)
+
+    # A list from another split names other slots: it stops before creating a store.
+    stale = directory / "stale"
+    stale_split = split.assign(role=split.role.replace({"test": "validation"}))
+    stale_split.to_csv(split_path, index=False)
+    with pytest.raises(ValueError, match="split_sha256"):
+        scenes(stale, directory / "tiles_1pct.json")
+    assert not (stale / "images.npy").exists()
+    assert json.loads((stale / "status" / "download_scenes.json").read_text())["status"] == "failed"
+
+    # With the current split's hash: tile 4 is dropped and tile 99 was never in it.
+    split.to_csv(split_path, index=False)
+    tile_list = json.loads((directory / "tiles_1pct.json").read_text())
+    tile_list["tiles"] += [{"tile_id": 4, "role": "test"}, {"tile_id": 99, "role": "test"}]
+    edited = directory / "edited.json"
+    edited.write_text(json.dumps(tile_list))
+    with pytest.raises(ValueError, match=r"2 tiles .*\[4, 99\]"):
+        scenes(stale, edited)
+    assert not (stale / "images.npy").exists()
+    assert sidecars() == after_sidecars
+
+
 def test_download_on_local_rasters(monkeypatch: pytest.MonkeyPatch) -> None:
     download = garimpo_uncertainty.download
     shutil.rmtree(DOWNLOAD_ARTIFACTS, ignore_errors=True)
@@ -1751,19 +1907,7 @@ def test_download_on_local_rasters(monkeypatch: pytest.MonkeyPatch) -> None:
     off_scene = shapely.affinity.translate(tile_box, xoff=100_000)
     items = ["S2_LOCAL", "S2_ABSENT", "S2_ABSENT", "S2_LOCAL"]
     geometries = [tile_box, tile_box, tile_box, off_scene]
-    zenodo = root / "zenodo"
-    zenodo.mkdir(parents=True)
-    gpd.GeoDataFrame(
-        {
-            "tile_id": range(4),
-            "s2_tile_id": items,
-            "geometry": [to_wgs84(g) for g in geometries],
-        },
-        crs=4326,
-    ).to_file(download.gpkg_path(root), layer="tiles", driver="GPKG")
-    gpd.GeoDataFrame({"tile_id": range(4), "geometry": [to_wgs84(mask)] * 4}, crs=4326).to_file(
-        download.gpkg_path(root), layer="preferred_polygons", driver="GPKG"
-    )
+    write_local_gpkg(root, items, geometries, [mask] * 4)
 
     split = pd.DataFrame(
         {
@@ -1908,3 +2052,5 @@ def test_download_on_local_rasters(monkeypatch: pytest.MonkeyPatch) -> None:
     added = pd.concat([split, split.tail(1).assign(tile_id=99)])
     with pytest.raises(ValueError, match="holds 64 cells"):
         download.download_scenes(root, added, added, 2, nearest)
+
+    check_tile_lists_download_incrementally(monkeypatch, tile_box, mask)

@@ -41,6 +41,8 @@ cd "${SLURM_SUBMIT_DIR:-.}"
 # ---- PILOT-ONLY VALUES: chosen to make the pipeline run, NOT scientific choices ---------------
 TRAIN_FRACTION=0.01
 SUBSET_SEED=0
+# The versioned list of the two values above; validate_data fails on a tile this did not download.
+TILES=outputs/tiles/tiles_1pct.json
 RESAMPLING_20M=bilinear
 
 ARCH=unet
@@ -73,8 +75,7 @@ BOUNDARY_TOLERANCE_PX=2
 if [ "${1:-}" = download ]; then
     uv run --no-sync python scripts/download_data.py metadata
     uv run --no-sync python scripts/download_data.py scenes \
-        --train-fraction "$TRAIN_FRACTION" --subset-seed "$SUBSET_SEED" \
-        --resampling-20m "$RESAMPLING_20M"
+        --tiles "$TILES" --resampling-20m "$RESAMPLING_20M"
     # Last, so a Hugging Face outage never blocks the data, and only what this variant needs.
     if [ "$ENCODER_WEIGHTS" != none ]; then
         uv run --no-sync python scripts/download_data.py weights \

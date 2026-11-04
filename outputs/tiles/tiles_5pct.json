@@ -1,0 +1,911 @@
+{
+  "train_fraction": 0.05,
+  "subset_seed": 0,
+  "split_sha256": "c50503d19bafc2cf79e9b9e5bc31af8c06fb31c3f9dd0839825c807dcdb4e7b5",
+  "tiles": [
+    {
+      "tile_id": 6,
+      "role": "train"
+    },
+    {
+      "tile_id": 54,
+      "role": "train"
+    },
+    {
+      "tile_id": 80,
+      "role": "train"
+    },
+    {
+      "tile_id": 260,
+      "role": "test"
+    },
+    {
+      "tile_id": 271,
+      "role": "train"
+    },
+    {
+      "tile_id": 305,
+      "role": "train"
+    },
+    {
+      "tile_id": 413,
+      "role": "test"
+    },
+    {
+      "tile_id": 416,
+      "role": "test"
+    },
+    {
+      "tile_id": 423,
+      "role": "test"
+    },
+    {
+      "tile_id": 433,
+      "role": "train"
+    },
+    {
+      "tile_id": 455,
+      "role": "train"
+    },
+    {
+      "tile_id": 463,
+      "role": "test"
+    },
+    {
+      "tile_id": 464,
+      "role": "train"
+    },
+    {
+      "tile_id": 476,
+      "role": "test"
+    },
+    {
+      "tile_id": 487,
+      "role": "test"
+    },
+    {
+      "tile_id": 581,
+      "role": "test"
+    },
+    {
+      "tile_id": 586,
+      "role": "train"
+    },
+    {
+      "tile_id": 627,
+      "role": "test"
+    },
+    {
+      "tile_id": 632,
+      "role": "test"
+    },
+    {
+      "tile_id": 637,
+      "role": "test"
+    },
+    {
+      "tile_id": 639,
+      "role": "test"
+    },
+    {
+      "tile_id": 645,
+      "role": "test"
+    },
+    {
+      "tile_id": 648,
+      "role": "test"
+    },
+    {
+      "tile_id": 655,
+      "role": "test"
+    },
+    {
+      "tile_id": 659,
+      "role": "test"
+    },
+    {
+      "tile_id": 660,
+      "role": "test"
+    },
+    {
+      "tile_id": 661,
+      "role": "test"
+    },
+    {
+      "tile_id": 684,
+      "role": "test"
+    },
+    {
+      "tile_id": 740,
+      "role": "test"
+    },
+    {
+      "tile_id": 746,
+      "role": "test"
+    },
+    {
+      "tile_id": 747,
+      "role": "test"
+    },
+    {
+      "tile_id": 749,
+      "role": "test"
+    },
+    {
+      "tile_id": 750,
+      "role": "test"
+    },
+    {
+      "tile_id": 751,
+      "role": "test"
+    },
+    {
+      "tile_id": 752,
+      "role": "test"
+    },
+    {
+      "tile_id": 754,
+      "role": "test"
+    },
+    {
+      "tile_id": 755,
+      "role": "test"
+    },
+    {
+      "tile_id": 756,
+      "role": "test"
+    },
+    {
+      "tile_id": 758,
+      "role": "test"
+    },
+    {
+      "tile_id": 760,
+      "role": "test"
+    },
+    {
+      "tile_id": 761,
+      "role": "test"
+    },
+    {
+      "tile_id": 765,
+      "role": "test"
+    },
+    {
+      "tile_id": 767,
+      "role": "test"
+    },
+    {
+      "tile_id": 768,
+      "role": "test"
+    },
+    {
+      "tile_id": 771,
+      "role": "test"
+    },
+    {
+      "tile_id": 773,
+      "role": "test"
+    },
+    {
+      "tile_id": 778,
+      "role": "test"
+    },
+    {
+      "tile_id": 782,
+      "role": "test"
+    },
+    {
+      "tile_id": 783,
+      "role": "test"
+    },
+    {
+      "tile_id": 792,
+      "role": "test"
+    },
+    {
+      "tile_id": 795,
+      "role": "test"
+    },
+    {
+      "tile_id": 796,
+      "role": "test"
+    },
+    {
+      "tile_id": 803,
+      "role": "test"
+    },
+    {
+      "tile_id": 811,
+      "role": "test"
+    },
+    {
+      "tile_id": 814,
+      "role": "test"
+    },
+    {
+      "tile_id": 815,
+      "role": "test"
+    },
+    {
+      "tile_id": 817,
+      "role": "test"
+    },
+    {
+      "tile_id": 819,
+      "role": "test"
+    },
+    {
+      "tile_id": 821,
+      "role": "test"
+    },
+    {
+      "tile_id": 822,
+      "role": "test"
+    },
+    {
+      "tile_id": 829,
+      "role": "test"
+    },
+    {
+      "tile_id": 834,
+      "role": "test"
+    },
+    {
+      "tile_id": 838,
+      "role": "test"
+    },
+    {
+      "tile_id": 842,
+      "role": "test"
+    },
+    {
+      "tile_id": 848,
+      "role": "test"
+    },
+    {
+      "tile_id": 856,
+      "role": "test"
+    },
+    {
+      "tile_id": 867,
+      "role": "test"
+    },
+    {
+      "tile_id": 868,
+      "role": "test"
+    },
+    {
+      "tile_id": 869,
+      "role": "test"
+    },
+    {
+      "tile_id": 870,
+      "role": "test"
+    },
+    {
+      "tile_id": 873,
+      "role": "test"
+    },
+    {
+      "tile_id": 874,
+      "role": "test"
+    },
+    {
+      "tile_id": 877,
+      "role": "test"
+    },
+    {
+      "tile_id": 878,
+      "role": "test"
+    },
+    {
+      "tile_id": 880,
+      "role": "test"
+    },
+    {
+      "tile_id": 883,
+      "role": "test"
+    },
+    {
+      "tile_id": 884,
+      "role": "test"
+    },
+    {
+      "tile_id": 888,
+      "role": "test"
+    },
+    {
+      "tile_id": 891,
+      "role": "test"
+    },
+    {
+      "tile_id": 893,
+      "role": "test"
+    },
+    {
+      "tile_id": 895,
+      "role": "test"
+    },
+    {
+      "tile_id": 897,
+      "role": "test"
+    },
+    {
+      "tile_id": 898,
+      "role": "test"
+    },
+    {
+      "tile_id": 901,
+      "role": "test"
+    },
+    {
+      "tile_id": 912,
+      "role": "test"
+    },
+    {
+      "tile_id": 914,
+      "role": "test"
+    },
+    {
+      "tile_id": 916,
+      "role": "test"
+    },
+    {
+      "tile_id": 922,
+      "role": "test"
+    },
+    {
+      "tile_id": 924,
+      "role": "test"
+    },
+    {
+      "tile_id": 926,
+      "role": "test"
+    },
+    {
+      "tile_id": 930,
+      "role": "test"
+    },
+    {
+      "tile_id": 931,
+      "role": "test"
+    },
+    {
+      "tile_id": 932,
+      "role": "test"
+    },
+    {
+      "tile_id": 933,
+      "role": "test"
+    },
+    {
+      "tile_id": 937,
+      "role": "test"
+    },
+    {
+      "tile_id": 939,
+      "role": "test"
+    },
+    {
+      "tile_id": 948,
+      "role": "test"
+    },
+    {
+      "tile_id": 953,
+      "role": "train"
+    },
+    {
+      "tile_id": 962,
+      "role": "train"
+    },
+    {
+      "tile_id": 963,
+      "role": "test"
+    },
+    {
+      "tile_id": 964,
+      "role": "train"
+    },
+    {
+      "tile_id": 1005,
+      "role": "train"
+    },
+    {
+      "tile_id": 1018,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1100,
+      "role": "train"
+    },
+    {
+      "tile_id": 1107,
+      "role": "train"
+    },
+    {
+      "tile_id": 1127,
+      "role": "train"
+    },
+    {
+      "tile_id": 1154,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1165,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1170,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1190,
+      "role": "train"
+    },
+    {
+      "tile_id": 1191,
+      "role": "train"
+    },
+    {
+      "tile_id": 1239,
+      "role": "train"
+    },
+    {
+      "tile_id": 1245,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1280,
+      "role": "train"
+    },
+    {
+      "tile_id": 1302,
+      "role": "train"
+    },
+    {
+      "tile_id": 1314,
+      "role": "train"
+    },
+    {
+      "tile_id": 1345,
+      "role": "train"
+    },
+    {
+      "tile_id": 1367,
+      "role": "train"
+    },
+    {
+      "tile_id": 1414,
+      "role": "validation"
+    },
+    {
+      "tile_id": 1518,
+      "role": "train"
+    },
+    {
+      "tile_id": 1548,
+      "role": "train"
+    },
+    {
+      "tile_id": 1740,
+      "role": "train"
+    },
+    {
+      "tile_id": 1836,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1848,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1849,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1857,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1858,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1865,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1872,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1874,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1876,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1878,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1897,
+      "role": "train"
+    },
+    {
+      "tile_id": 1914,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1915,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 1954,
+      "role": "train"
+    },
+    {
+      "tile_id": 1991,
+      "role": "train"
+    },
+    {
+      "tile_id": 2028,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2033,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2057,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2070,
+      "role": "train"
+    },
+    {
+      "tile_id": 2083,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2091,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2117,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2120,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2121,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2140,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2198,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2199,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2200,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2224,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2244,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2262,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2291,
+      "role": "train"
+    },
+    {
+      "tile_id": 2292,
+      "role": "train"
+    },
+    {
+      "tile_id": 2298,
+      "role": "train"
+    },
+    {
+      "tile_id": 2303,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2305,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2328,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2342,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2344,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2346,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2366,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2368,
+      "role": "train"
+    },
+    {
+      "tile_id": 2400,
+      "role": "train"
+    },
+    {
+      "tile_id": 2403,
+      "role": "train"
+    },
+    {
+      "tile_id": 2452,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2453,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2454,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2455,
+      "role": "train"
+    },
+    {
+      "tile_id": 2463,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2464,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2465,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2474,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2488,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2494,
+      "role": "train"
+    },
+    {
+      "tile_id": 2500,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2505,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2511,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2530,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2541,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2554,
+      "role": "train"
+    },
+    {
+      "tile_id": 2577,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2600,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2606,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2610,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2618,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2628,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2630,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2631,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2633,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2639,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2645,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2647,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2648,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2655,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2656,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2657,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2669,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2670,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2671,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2678,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2680,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2685,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2686,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2689,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2693,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2695,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2696,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2699,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2701,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2705,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2711,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2722,
+      "role": "train"
+    },
+    {
+      "tile_id": 2739,
+      "role": "train"
+    },
+    {
+      "tile_id": 2753,
+      "role": "validation"
+    },
+    {
+      "tile_id": 2768,
+      "role": "calibration"
+    },
+    {
+      "tile_id": 2811,
+      "role": "train"
+    },
+    {
+      "tile_id": 2833,
+      "role": "train"
+    },
+    {
+      "tile_id": 2881,
+      "role": "train"
+    },
+    {
+      "tile_id": 2900,
+      "role": "train"
+    },
+    {
+      "tile_id": 2903,
+      "role": "train"
+    },
+    {
+      "tile_id": 2952,
+      "role": "train"
+    },
+    {
+      "tile_id": 2954,
+      "role": "train"
+    },
+    {
+      "tile_id": 2975,
+      "role": "train"
+    },
+    {
+      "tile_id": 2980,
+      "role": "calibration"
+    }
+  ]
+}
