@@ -4,6 +4,7 @@ No hyperparameter has a default: the proposal fixes none of them.
 """
 
 import argparse
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -28,14 +29,14 @@ def result_arguments(args: argparse.Namespace) -> dict[str, str]:
 
 
 def starting_weights_sha256(args: argparse.Namespace, root: Path) -> str | None:
-    """Return the hash of the MoCo file or, without the file, the one this run started from.
+    """Return the hash of the weights file or, without the file, the one this run started from.
 
     Only a fresh start reads the file, so its absence must not change a run's identity: that would
     refuse `train` and, with it, every later stage on a machine with `runs/` but no `weights/`.
     """
-    if args.encoder_weights != "sentinel2_moco":
+    weights_file = garimpo_uncertainty.data.starting_weights_path(root, args.encoder_weights)
+    if weights_file is None:
         return None
-    weights_file = garimpo_uncertainty.data.sentinel2_moco_path(root)
     if weights_file.exists():
         return garimpo_uncertainty.checkpoints.file_sha256(weights_file)
     if not (args.run_dir / "run_meta.json").exists():
@@ -44,8 +45,8 @@ def starting_weights_sha256(args: argparse.Namespace, root: Path) -> str | None:
             "train",
             f"train: cannot tell which weights this run used: {weights_file} and "
             f"{args.run_dir / 'run_meta.json'} are both absent. On a node with internet run "
-            "scripts/download_data.py weights --encoder-weights sentinel2_moco, or restore "
-            "run_meta.json with the run.",
+            f"scripts/download_data.py weights --encoder-weights {args.encoder_weights}, or "
+            "restore run_meta.json with the run.",
         )
     return garimpo_uncertainty.data.read_run_metadata(args.run_dir).get("encoder_weights_sha256")
 
@@ -77,14 +78,16 @@ def validation_dice(
     return float(np.mean(scores)) if scores else float("nan")
 
 
-def train(args: argparse.Namespace, root: Path, device: str) -> dict:
-    manifest = garimpo_uncertainty.data.read_manifest(root)
-    train_cells = manifest[manifest.role == "train"]
-    validation_cells = manifest[manifest.role == "validation"]
+def train(
+    args: argparse.Namespace, root: Path, device: str, split: pd.DataFrame, tile_ids: list[int]
+) -> dict:
+    cells = garimpo_uncertainty.data.cell_table(root, split, tile_ids)
+    train_cells = cells[cells.role == "train"]
+    validation_cells = cells[cells.role == "validation"]
     last_path = args.run_dir / "last.pt"
     best_path = args.run_dir / "best_model.pt"
     args.run_dir.mkdir(parents=True, exist_ok=True)
-    weights_file = garimpo_uncertainty.data.sentinel2_moco_path(root)
+    weights_file = garimpo_uncertainty.data.starting_weights_path(root, args.encoder_weights)
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -101,12 +104,12 @@ def train(args: argparse.Namespace, root: Path, device: str) -> dict:
         "on a node with internet run scripts/download_data.py weights "
         f"--encoder-weights {args.encoder_weights}"
     )
-    if resume is None and args.encoder_weights == "sentinel2_moco" and not weights_file.exists():
+    if resume is None and weights_file is not None and not weights_file.exists():
         raise FileNotFoundError(f"{weights_file} is absent: {fetch}")
 
     if resume is not None:
         metadata = resume["meta"]
-        garimpo_uncertainty.data.check_split(metadata, manifest)
+        garimpo_uncertainty.data.check_split(metadata, cells)
     else:
         metadata = {
             "arch": args.arch,
@@ -125,7 +128,14 @@ def train(args: argparse.Namespace, root: Path, device: str) -> dict:
                     root, train_cells, args.batch_size, args.num_workers
                 )
             ),
-            "split_hash": garimpo_uncertainty.data.split_hash(manifest),
+            "train_fraction": args.train_fraction,
+            "subset_seed": args.subset_seed,
+            # Recorded, so later stages read this run's slots however much else the store holds.
+            "split": str(args.split),
+            "tile_ids": tile_ids,
+            "split_hash": garimpo_uncertainty.data.split_hash(
+                cells, args.train_fraction, args.subset_seed
+            ),
             "arguments": {k: str(v) for k, v in vars(args).items()},
             **garimpo_uncertainty.checkpoints.code_versions(),
         }
@@ -133,21 +143,13 @@ def train(args: argparse.Namespace, root: Path, device: str) -> dict:
 
     # A resume fills the model from last.pt, so only a fresh start reads pretrained weights.
     starting_weights = args.encoder_weights if resume is None else "none"
-    try:
-        model = garimpo_uncertainty.models.build(
-            args.arch,
-            metadata["in_channels"],
-            args.channels,
-            starting_weights,
-            weights_file,
-        )
-    # Broad on purpose: what the hub raises on an empty offline cache is not pinned down here.
-    except Exception as error:
-        if starting_weights != "imagenet":
-            raise
-        cause = f"{type(error).__name__}: {error}"
-        raise RuntimeError(f"could not load ImageNet weights ({cause}): {fetch}") from error
-    model = model.to(device)
+    model = garimpo_uncertainty.models.build(
+        args.arch,
+        metadata["in_channels"],
+        args.channels,
+        starting_weights,
+        weights_file,
+    ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     loss_fn = build_loss(args.loss)
     history, best_dice, first_epoch = [], NO_BEST_DICE, 0
@@ -172,16 +174,31 @@ def train(args: argparse.Namespace, root: Path, device: str) -> dict:
     for epoch in range(first_epoch, args.epochs):
         model.train()
         losses = []
+        data_wait = 0.0
+        epoch_start = ready = time.monotonic()
         for images, masks, _ in train_loader:
+            data_wait += time.monotonic() - ready
             optimizer.zero_grad()
             loss = loss_fn(model(images.to(device)), masks.to(device))
             loss.backward()
             optimizer.step()
             losses.append(loss.item())
             last_batch_shape = list(images.shape)
+            ready = time.monotonic()
         dice = validation_dice(model, validation_loader, device)
-        history.append({"epoch": epoch, "train_loss": float(np.mean(losses)), "val_dice": dice})
+        history.append(
+            {
+                "epoch": epoch,
+                "train_loss": float(np.mean(losses)),
+                "val_dice": dice,
+                "train_data_wait_seconds": round(data_wait, 3),
+                "seconds": round(time.monotonic() - epoch_start, 3),
+            }
+        )
         print(history[-1], flush=True)
+        # Every epoch, so a job killed at its limit still reports what it measured.
+        with garimpo_uncertainty.stages.atomic(args.run_dir / "history.csv") as temporary:
+            pd.DataFrame(history).to_csv(temporary, index=False)
         score = NO_BEST_DICE if np.isnan(dice) else dice
         state = {k: v.cpu() for k, v in model.state_dict().items()}
         if score > best_dice:
@@ -207,8 +224,6 @@ def train(args: argparse.Namespace, root: Path, device: str) -> dict:
             "every val_dice is NaN, so no best_model.pt was written: "
             f"the {len(validation_cells)} validation cells have no reference mining"
         )
-    with garimpo_uncertainty.stages.atomic(args.run_dir / "history.csv") as temporary:
-        pd.DataFrame(history).to_csv(temporary, index=False)
     return {
         "train_cells": len(train_cells),
         "validation_cells": len(validation_cells),
@@ -227,6 +242,19 @@ def main() -> None:
         help="starting weights of the encoder; required for unet, invalid for convnet",
     )
     parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--split", type=Path, default="outputs/split.csv")
+    parser.add_argument(
+        "--train-fraction",
+        type=float,
+        choices=garimpo_uncertainty.data.TRAIN_FRACTIONS,
+        required=True,
+    )
+    parser.add_argument(
+        "--subset-seed",
+        type=int,
+        required=True,
+        help="picks the training tiles; apart from --seed, so subsets stay nested across seeds",
+    )
     parser.add_argument("--epochs", type=int, required=True)
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--lr", type=float, required=True)
@@ -247,13 +275,22 @@ def main() -> None:
     # In args, so both the stage fingerprint and the resume check see the file's identity. Hash and
     # not mtime: downloading the same file again must not invalidate a finished training.
     args.encoder_weights_sha256 = starting_weights_sha256(args, root)
+    split = pd.read_csv(args.split)
+    tile_ids = garimpo_uncertainty.data.select_tiles(
+        split, args.train_fraction, args.subset_seed
+    ).tile_id.tolist()
     garimpo_uncertainty.stages.run_stage(
         args.run_dir / "status",
         "train",
         [args.run_dir / "best_model.pt", args.run_dir / "history.csv"],
         args.force,
-        garimpo_uncertainty.stages.fingerprint(args, [root / "manifest.csv"], keep=["batch_size"]),
-        lambda: train(args, root, device),
+        garimpo_uncertainty.stages.fingerprint(
+            args,
+            [],
+            keep=["batch_size"],
+            hashed=garimpo_uncertainty.data.tiles_identity(root, split, tile_ids),
+        ),
+        lambda: train(args, root, device, split, tile_ids),
     )
 
 

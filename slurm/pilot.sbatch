@@ -1,5 +1,7 @@
 #!/bin/bash
-# Pilot: exercises the real pipeline on a small real subset, to adjust code on the cluster.
+# Pilot: the real pipeline at the 1% training fraction, to adjust code on the cluster. Validation,
+# calibration and test stay whole: 186 tiles, 2,976 cells, 10.9 GB written where the filesystem
+# keeps holes, 69.2 GB allocated at the first download where it does not (README, data layout).
 #
 #   bash slurm/pilot.sbatch download        # on the login node, once, resumable
 #   ENCODER_WEIGHTS=imagenet bash slurm/pilot.sbatch download   # adds that variant's weights
@@ -8,11 +10,23 @@
 #
 # Each variant is its own job in its own run directory, with its own time limit below.
 #
-# Memory and time are estimates, never measured: 8 workers holding 8 cells of 6.3 MB each are
-# under 1 GB, and the pilot's SVM matrix is a few MB. The ResNet-50 encoder sets the forward cost
-# on one A100 for ~300 calibration and test cells, at no measured rate, and the COMPASS searches
-# rerun it. 48 GB and 4 h are guesses; adjust them from the peak memory and seconds per stage that
-# the pipeline check prints.
+# Memory and time are estimates, never measured, and rest on the current code:
+# - Memory: 8 workers, 2 prefetched batches each, 8 cells of 6.3 MB stay under 1 GB; the SVM matrix
+#   is 160 training cells x 200 pixels, under 10 MB at 32 channels.
+# - Downstream cells are 2,528 calibration and test (158 tiles), about 8x the ~300 of the earlier
+#   pilot subset, so 4 h is less safe than it was.
+# - Cells read and passed through the encoder: train 896, infer 2,976, fit_directions 320,
+#   monotonicity 60, compass_scores 2,528, generate_intervals 1,424, 8,204 in total. So 4 h needs
+#   about 0.57 cells/s, reading from NFS included. Unmeasured. validate_data and the pipeline check
+#   each also hash every slot of the run, 10.9 GB read per call, which this count leaves out.
+# - compass_scores adds, per cell, 80 g(z) evaluations (20 steps x 2 endpoints x 2 directions) and
+#   one Jacobian, on the layers after LAYER; at decoder.blocks.4 that is the head alone.
+#   generate_intervals adds 8 g(z) per test cell (4 COMPASS-J rows x 2 endpoints); compass_l needs
+#   no decoder.
+# - EPOCHS=2 is 40 updates on 160 cells. A model still predicting nothing has all-zero Jacobians at
+#   temperature 10,000, and fit_directions stops; whether 40 updates avoid that is unknown.
+# 48 GB and 4 h are guesses; adjust them from the peak memory and seconds per stage that the
+# pipeline check prints. A job killed at the limit keeps its finished stages, which then skip.
 #SBATCH -J garimpo-pilot
 #SBATCH -p gpuq
 #SBATCH --gres=gpu:a100:1
@@ -25,8 +39,7 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-.}"
 
 # ---- PILOT-ONLY VALUES: chosen to make the pipeline run, NOT scientific choices ---------------
-GROUPS_PER_ROLE=3            # whole artisanal groups per split role
-MAX_INDUSTRIAL_TILES=12
+TRAIN_FRACTION=0.01
 SUBSET_SEED=0
 RESAMPLING_20M=bilinear
 
@@ -60,9 +73,9 @@ BOUNDARY_TOLERANCE_PX=2
 if [ "${1:-}" = download ]; then
     uv run --no-sync python scripts/download_data.py metadata
     uv run --no-sync python scripts/download_data.py scenes \
-        --groups-per-role "$GROUPS_PER_ROLE" --max-industrial-tiles "$MAX_INDUSTRIAL_TILES" \
-        --seed "$SUBSET_SEED" --resampling-20m "$RESAMPLING_20M"
-    # Last, so a hub outage never blocks the data, and only what this variant needs.
+        --train-fraction "$TRAIN_FRACTION" --subset-seed "$SUBSET_SEED" \
+        --resampling-20m "$RESAMPLING_20M"
+    # Last, so a Hugging Face outage never blocks the data, and only what this variant needs.
     if [ "$ENCODER_WEIGHTS" != none ]; then
         uv run --no-sync python scripts/download_data.py weights \
             --encoder-weights "$ENCODER_WEIGHTS"
@@ -72,12 +85,13 @@ fi
 
 RUN_DIR=runs/pilot/unet-$ENCODER_WEIGHTS
 VALIDATION_REPORT=runs/pilot/data_validation.json
-VALIDATE_ARGS=()             # no --split-summary: the counts of the full split do not apply
+VALIDATE_ARGS=(--split-summary outputs/split_summary.json)
 NUM_WORKERS=${SLURM_CPUS_PER_TASK:-8}
 
 # The check runs on any exit, so the failing stage and its error always reach the log. It gets the
-# exit code because an error before run_stage leaves every status ok.
-trap 'job_exit=$?; uv run --no-sync python scripts/pipeline_check.py --run-dir "$RUN_DIR" --job-exit-code "$job_exit" || true; exit "$job_exit"' EXIT
+# exit code because an error before run_stage leaves every status ok. A failed check fails the job,
+# so SLURM cannot show a broken run as completed; a stage's own exit code wins when there is one.
+trap 'job_exit=$?; check_exit=0; uv run --no-sync python scripts/pipeline_check.py --run-dir "$RUN_DIR" --train-fraction "$TRAIN_FRACTION" --subset-seed "$SUBSET_SEED" --job-exit-code "$job_exit" || check_exit=$?; exit "$((job_exit ? job_exit : check_exit))"' EXIT
 
 source slurm/stages.sh
 run_validate

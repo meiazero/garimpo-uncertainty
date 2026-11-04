@@ -13,13 +13,11 @@ import pandas as pd
 import scipy.ndimage
 import scipy.stats
 
-import garimpo_uncertainty.data
+import garimpo_uncertainty.intervals
 
 PROBABILITY_SCALE = 255
 HARD_THRESHOLD_U8 = 128  # round(0.5 * 255), so u8 >= 128 is p >= 0.5
 CONFIDENCE = (2.5, 97.5)
-INTERVAL_METRICS = ("picp", "mpiw", "interval_score")
-POINT_METRICS = ("mae", "bias", "relative_error", "dice", "boundary_f1")
 
 
 def dice(prediction: np.ndarray, reference: np.ndarray) -> float:
@@ -50,64 +48,48 @@ def boundary_f1(prediction: np.ndarray, reference: np.ndarray, tolerance_px: flo
 
 
 def segmentation_metrics(
-    root: Path, manifest: pd.DataFrame, prediction_dir: Path, tolerance_px: float
-) -> pd.DataFrame:
+    root: Path, cell_index: np.ndarray, prediction_dir: Path, tolerance_px: float
+) -> dict[str, np.ndarray]:
     """Per-cell Dice and boundary F1 on test cells with mining, from the persisted probabilities."""
-    cells = pd.read_csv(prediction_dir / "cells.csv")
-    test = cells[cells.role == "test"].reset_index(drop=True)
+    masks = np.load(root / "masks.npy", mmap_mode="r")
     probabilities = np.load(prediction_dir / "test.npy", mmap_mode="r")
-    paths = manifest.set_index("cell_id").path
-    rows = []
-    for index, cell_id in enumerate(test.cell_id):
-        reference = garimpo_uncertainty.data.read_reference_mask(root, paths[cell_id])
-        prediction = probabilities[index] >= HARD_THRESHOLD_U8
-        has_mining = reference.any()
-        rows.append(
-            {
-                "cell_id": cell_id,
-                "dice": dice(prediction, reference) if has_mining else float("nan"),
-                "boundary_f1": (
-                    boundary_f1(prediction, reference, tolerance_px) if has_mining else float("nan")
-                ),
-                "boundary_by_rule": bool(
-                    has_mining and not (_boundary(prediction).any() and _boundary(reference).any())
-                ),
-            }
-        )
-    return pd.DataFrame(rows)
+    dice_values = np.full(len(cell_index), np.nan)
+    boundary_values = np.full(len(cell_index), np.nan)
+    by_rule = np.zeros(len(cell_index), dtype=bool)
+    for position, index in enumerate(cell_index):
+        reference = masks[index] > 0
+        if reference.any():
+            prediction = probabilities[position] >= HARD_THRESHOLD_U8
+            dice_values[position] = dice(prediction, reference)
+            boundary_values[position] = boundary_f1(prediction, reference, tolerance_px)
+            by_rule[position] = not (_boundary(prediction).any() and _boundary(reference).any())
+    return {"dice": dice_values, "boundary_f1": boundary_values, "boundary_by_rule": by_rule}
 
 
-def add_cell_metrics(intervals: pd.DataFrame, alpha: float) -> pd.DataFrame:
-    frame = intervals.copy()
-    frame["width"] = frame.upper - frame.lower
-    frame["covered"] = (frame.v >= frame.lower) & (frame.v <= frame.upper)
-    penalty = (2 / alpha) * (
-        (frame.lower - frame.v).clip(lower=0) + (frame.v - frame.upper).clip(lower=0)
-    )
-    frame["interval_score"] = frame.width + penalty
-    frame["error"] = frame.vhat - frame.v
-    frame["abs_error"] = frame.error.abs()
-    frame["relative_abs_error"] = frame.abs_error / frame.v.where(frame.v > 0)
-    return frame
+def _group_means(values: np.ndarray, membership: np.ndarray) -> np.ndarray:
+    """Return per-group means of [..., N] values, skipping NaN; membership is [G, N]."""
+    present = ~np.isnan(values)
+    totals = np.where(present, values, 0.0) @ membership.T
+    with np.errstate(invalid="ignore"):
+        return totals / (present.astype(float) @ membership.T)
 
 
-def _group_means(frame: pd.DataFrame, column: str, groups: np.ndarray) -> np.ndarray:
-    return frame.groupby("group")[column].mean().reindex(groups).to_numpy(dtype=float)
-
-
-def _paired_differences(values: dict, indices: np.ndarray, model: str) -> pd.DataFrame:
+def _paired_differences(
+    values: np.ndarray, indices: np.ndarray, identity: dict[str, object]
+) -> pd.DataFrame:
     """Differences between rows on the same group resamples, so the comparison stays paired."""
     rows = []
-    for (key_a, a), (key_b, b) in combinations(values.items(), 2):
-        low, high = np.percentile((a - b)[indices].mean(axis=1), CONFIDENCE)
+    combos = garimpo_uncertainty.intervals.COMBINATIONS
+    for a, b in combinations(range(len(combos)), 2):
+        low, high = np.percentile((values[a] - values[b])[indices].mean(axis=1), CONFIDENCE)
         rows.append(
-            {
-                "model": model,
-                "method_a": key_a[0],
-                "calibration_a": key_a[1],
-                "method_b": key_b[0],
-                "calibration_b": key_b[1],
-                "mean_difference": float((a - b).mean()),
+            identity
+            | {
+                "method_a": combos[a][0],
+                "calibration_a": combos[a][1],
+                "method_b": combos[b][0],
+                "calibration_b": combos[b][1],
+                "mean_difference": float((values[a] - values[b]).mean()),
                 "ci_low": float(low),
                 "ci_high": float(high),
             }
@@ -123,36 +105,41 @@ def _spearman(pairs: np.ndarray) -> float:
 
 
 def spearman_by_model(
-    intervals: pd.DataFrame, segmentation: pd.DataFrame, n_bootstrap: int, seed: int
+    v: np.ndarray,
+    vhat: np.ndarray,
+    group: np.ndarray,
+    segmentation: dict[str, np.ndarray],
+    identity: dict[str, object],
+    n_bootstrap: int,
+    seed: int,
 ) -> pd.DataFrame:
     """Q1: rank correlation of area error with Dice and boundary F1, on cells with mining.
 
-    Point estimates, so one interval row per cell is enough. Intervals resample whole groups.
+    Intervals resample whole groups.
     """
-    cells = intervals.drop_duplicates("cell_id")[["model", "cell_id", "group", "v", "vhat"]]
-    cells = cells.merge(segmentation, on="cell_id")
-    cells = cells[cells.v > 0].reset_index(drop=True)
-    cells["abs_error_ha"] = (cells.vhat - cells.v).abs()
-    cells["abs_error_percent"] = 100 * cells.abs_error_ha / cells.v
-    groups = np.sort(cells.group.unique())
-    positions = [np.flatnonzero(cells.group == group) for group in groups]
+    mining = v > 0
+    abs_error_ha = np.abs(vhat[mining] - v[mining])
+    errors = {"abs_error_ha": abs_error_ha, "abs_error_percent": 100 * abs_error_ha / v[mining]}
+    kept_groups = group[mining]
+    groups = np.unique(kept_groups)
+    positions = [np.flatnonzero(kept_groups == one) for one in groups]
     indices = np.random.default_rng(seed).integers(0, len(groups), (n_bootstrap, len(groups)))
     rows = []
     with warnings.catch_warnings():
         # A constant column, such as a resample where Dice never varies, gives NaN.
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        for error in ("abs_error_ha", "abs_error_percent"):
+        for error_name, error in errors.items():
             for quality in ("dice", "boundary_f1"):
-                pair = cells[[error, quality]].to_numpy()
+                pair = np.column_stack([error, segmentation[quality][mining]])
                 resampled = [
                     _spearman(pair[np.concatenate([positions[i] for i in chosen])])
                     for chosen in indices
                 ]
                 low, high = np.nanpercentile(resampled, CONFIDENCE)
                 rows.append(
-                    {
-                        "model": cells.model.iloc[0],
-                        "area_error": error,
+                    identity
+                    | {
+                        "area_error": error_name,
                         "segmentation_quality": quality,
                         "spearman": _spearman(pair),
                         "ci_low": float(low),
@@ -165,63 +152,69 @@ def spearman_by_model(
 
 
 def summarize(
-    intervals: pd.DataFrame,
-    segmentation: pd.DataFrame,
-    calibration_summary: pd.DataFrame,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    v: np.ndarray,
+    vhat: np.ndarray,
+    group: np.ndarray,
+    segmentation: dict[str, np.ndarray],
+    saturation: dict[str, np.ndarray],
+    identity: dict[str, object],
+    layer: str,
+    alpha: float,
     n_bootstrap: int,
     seed: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """One row per model x method x calibration, plus paired width and coverage differences.
+    """One row per method x calibration of one run, plus paired width and coverage differences.
 
-    Q3 reads the coverage differences of a method between its calibration situations.
+    lower and upper are [K, N], K indexing COMBINATIONS. Q3 reads the coverage differences of a
+    method between its calibration situations.
     """
-    alpha = float(intervals.alpha.iloc[0])
-    frame = add_cell_metrics(intervals, alpha).merge(segmentation, on="cell_id", how="left")
-    groups = np.sort(frame.group.unique())
-    indices = np.random.default_rng(seed).integers(0, len(groups), (n_bootstrap, len(groups)))
+    width = upper - lower
+    covered = ((v >= lower) & (v <= upper)).astype(float)
+    penalty = (2 / alpha) * (np.clip(lower - v, 0, None) + np.clip(v - upper, 0, None))
+    error = vhat - v
+    with np.errstate(invalid="ignore", divide="ignore"):
+        relative = np.where(v > 0, np.abs(error) / v, np.nan)
     columns = {
-        "picp": "covered",
-        "mpiw": "width",
-        "interval_score": "interval_score",
-        "mae": "abs_error",
-        "bias": "error",
-        "relative_error": "relative_abs_error",
-        "dice": "dice",
-        "boundary_f1": "boundary_f1",
+        "picp": covered,
+        "mpiw": width,
+        "interval_score": width + penalty,
+        "mae": np.abs(error),
+        "bias": error,
+        "relative_error": relative,
+        "dice": segmentation["dice"],
+        "boundary_f1": segmentation["boundary_f1"],
     }
-    rows, widths, coverages = [], {}, {}
+    groups = np.unique(group)
+    membership = (group[None, :] == groups[:, None]).astype(float)
+    indices = np.random.default_rng(seed).integers(0, len(groups), (n_bootstrap, len(groups)))
+    combos = garimpo_uncertainty.intervals.COMBINATIONS
+    table: dict[str, object] = {
+        **identity,
+        "layer": layer,
+        "method": [method for method, _ in combos],
+        "calibration": [calibration for _, calibration in combos],
+        "alpha": alpha,
+        "n_cells": len(v),
+        "n_groups": len(groups),
+        "n_cells_boundary_by_rule": int(segmentation["boundary_by_rule"].sum()),
+    }
     with warnings.catch_warnings():
         # Groups with no mining cell give NaN in the segmentation metrics; nanmean skips them.
         warnings.simplefilter("ignore", category=RuntimeWarning)
-        for (method, calibration), one in frame.groupby(["method", "calibration"], sort=False):
-            row = {
-                "model": one.model.iloc[0],
-                "layer": one.layer.iloc[0],
-                "method": method,
-                "calibration": calibration,
-                "alpha": alpha,
-                "n_cells": len(one),
-                "n_groups": len(groups),
-                "n_cells_boundary_by_rule": int(one.boundary_by_rule.sum()),
+        for name, values in columns.items():
+            means = np.broadcast_to(_group_means(values, membership), (len(combos), len(groups)))
+            low, high = np.nanpercentile(np.nanmean(means[:, indices], axis=2), CONFIDENCE, axis=1)
+            table |= {
+                name: np.nanmean(means, axis=1),
+                f"{name}_ci_low": low,
+                f"{name}_ci_high": high,
             }
-            for name, column in columns.items():
-                means = _group_means(one, column, groups)
-                resampled = np.nanmean(means[indices], axis=1)
-                low, high = np.nanpercentile(resampled, CONFIDENCE)
-                row |= {
-                    name: float(np.nanmean(means)),
-                    f"{name}_ci_low": float(low),
-                    f"{name}_ci_high": float(high),
-                }
-            rows.append(row)
-            widths[(method, calibration)] = _group_means(one, "width", groups)
-            coverages[(method, calibration)] = _group_means(one, "covered", groups)
 
-    saturation = calibration_summary.drop(columns="alpha")
-    results = pd.DataFrame(rows).merge(saturation, on=["method", "calibration"], how="left")
-    model = frame.model.iloc[0]
+    results = pd.DataFrame(table | saturation)
     return (
         results,
-        _paired_differences(widths, indices, model),
-        _paired_differences(coverages, indices, model),
+        _paired_differences(_group_means(width, membership), indices, identity),
+        _paired_differences(_group_means(covered, membership), indices, identity),
     )

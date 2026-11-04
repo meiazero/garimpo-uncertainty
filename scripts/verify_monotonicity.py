@@ -1,6 +1,6 @@
 """Stage: Algorithm 2 sweep per layer and direction; writes monotonicity_<use>.csv.
 
---use layer informs the choice of layer, so it reads the validation role only, never test.
+--use layer informs the choice of layer, so it reads the validation role only, never test;
 --use endpoint checks the chosen layer on the cells the endpoint search actually runs on.
 The sweep sees only its grid points: a response that turns between two of them passes.
 """
@@ -9,7 +9,6 @@ import argparse
 from pathlib import Path
 
 import compass2d.compass
-import compass2d.decomposition
 import compass2d.directions
 import compass2d.metrics
 import numpy as np
@@ -19,6 +18,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
+import garimpo_uncertainty.models
 import garimpo_uncertainty.stages
 
 ROLES_BY_USE = {"layer": ("validation",), "endpoint": ("calibration", "test")}
@@ -71,19 +71,17 @@ def sweep_role(
     )
     for images, _, _ in loader:
         x = images.to(device)
-        with torch.no_grad():
-            logits = model(x)
+        features = garimpo_uncertainty.models.encode(model, x)
+        logits, _ = garimpo_uncertainty.models.split_at(
+            model, garimpo_uncertainty.models.LOGITS, features
+        )
         uniform.append(
             compass2d.compass.verify_monotonicity(
                 lambda z: z, hard, logits, torch.ones_like(logits), args.beta_max_logits, args.steps
             )
         )
         for layer in args.layers:
-            z = compass2d.decomposition.encode(model, layer, x)
-
-            def decode(zi: torch.Tensor, layer: str = layer, x: torch.Tensor = x) -> torch.Tensor:
-                return compass2d.decomposition.decode(model, layer, x, zi)
-
+            z, decode = garimpo_uncertainty.models.split_at(model, layer, features)
             jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
             for direction in ("pca", "svm"):
                 delta = compass2d.directions.cell_deltas(
@@ -97,7 +95,7 @@ def sweep_role(
                         decode, soft, z, channel_delta, args.beta_max_features, args.steps
                     )
                 )
-    rows = [summarize(uniform, compass2d.decomposition.LOGITS, "uniform", role)]
+    rows = [summarize(uniform, garimpo_uncertainty.models.LOGITS, "uniform", role)]
     rows += [
         summarize(flags, layer, direction, role)
         for (layer, direction), flags in per_direction.items()
@@ -126,18 +124,18 @@ def main() -> None:
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
     output = args.run_dir / f"monotonicity_{args.use}.csv"
-    inputs = [args.checkpoint, root / "manifest.csv", args.run_dir / "directions/diagnostics.csv"]
+    inputs = [args.checkpoint, args.run_dir / "directions/diagnostics.csv"]
     inputs += [args.run_dir / "directions" / f"{layer}.npz" for layer in args.layers]
 
     def work() -> dict:
-        manifest = garimpo_uncertainty.data.read_manifest(root)
-        model, metadata = garimpo_uncertainty.checkpoints.load_model(
-            args.checkpoint, manifest, device
-        )
+        cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
+        model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
         rows = []
         for role in ROLES_BY_USE[args.use]:
-            cells = manifest[manifest.role == role]
-            subset = cells.sample(min(args.cells_per_role, len(cells)), random_state=args.seed)
+            role_cells = cells[cells.role == role]
+            subset = role_cells.sample(
+                min(args.cells_per_role, len(role_cells)), random_state=args.seed
+            )
             rows += sweep_role(model, role, subset, root, metadata, args, device)
         with garimpo_uncertainty.stages.atomic(output) as temporary:
             pd.DataFrame(rows).to_csv(temporary, index=False)
@@ -148,7 +146,9 @@ def main() -> None:
         f"{args.use}_monotonicity",
         [output],
         args.force,
-        garimpo_uncertainty.stages.fingerprint(args, inputs),
+        garimpo_uncertainty.stages.fingerprint(
+            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
+        ),
         work,
     )
 

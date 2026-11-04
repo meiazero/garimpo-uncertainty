@@ -50,13 +50,11 @@ def save(path: Path, content: dict) -> None:
         torch.save(content, temporary)
 
 
-def load_model(
-    checkpoint: Path, manifest: pd.DataFrame, device: str
-) -> tuple[torch.nn.Module, dict]:
+def load_model(checkpoint: Path, cells: pd.DataFrame, device: str) -> tuple[torch.nn.Module, dict]:
     """Model in eval mode with frozen weights; stages after training never update it."""
     content = torch.load(checkpoint, map_location="cpu", weights_only=True)
     metadata = content["meta"]
-    garimpo_uncertainty.data.check_split(metadata, manifest)
+    garimpo_uncertainty.data.check_split(metadata, cells)
     warn_on_code_change(metadata)
     model = garimpo_uncertainty.models.build(
         metadata["arch"],

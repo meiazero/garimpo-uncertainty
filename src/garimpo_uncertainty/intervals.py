@@ -32,7 +32,7 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("compass_j_svm", "external"),
     ("compass_j_svm", "own_region"),
 )
-COMPASS_METHODS = {"compass_l", "compass_j_pca", "compass_j_svm"}
+COMPASS_METHODS = ("compass_l", "compass_j_pca", "compass_j_svm")  # the rows of scores/scores.npz
 # Upstream's values, also in Cheung et al. (2026), Appendix E.
 CQR_PARAMETERS = {
     "learning_rate": 0.1,

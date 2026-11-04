@@ -6,14 +6,15 @@ Reads only persisted files and prints what exists, so it also works after a fail
 
 import argparse
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
+import garimpo_uncertainty.validation
 
-DATA_STAGES = ("download_scenes", "validate_data")
 RUN_STAGES = (
     "train",
     "infer",
@@ -32,7 +33,7 @@ def read_status(status_dir: Path, stage: str) -> dict:
     return json.loads(path.read_text()) if path.exists() else {"stage": stage, "status": "not_run"}
 
 
-def print_table(title: str, path: Path, build) -> None:
+def print_table(title: str, path: Path, build: Callable[[pd.DataFrame], object]) -> None:
     print(f"\n--- {title}")
     if not path.exists():
         print(f"not produced: {path}")
@@ -43,6 +44,10 @@ def print_table(title: str, path: Path, build) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--split", type=Path, default="outputs/split.csv")
+    # Arguments and not run_meta.json: a job that fails before training has no run_meta.json.
+    parser.add_argument("--train-fraction", type=float, required=True)
+    parser.add_argument("--subset-seed", type=int, required=True)
     parser.add_argument(
         "--through",
         choices=RUN_STAGES,
@@ -55,12 +60,21 @@ def main() -> None:
         default=0,
         help="exit code of the job; nonzero fails the check even when every status says ok",
     )
+    parser.add_argument("--workers", type=int, default=8, help="threads hashing the slots")
     args = parser.parse_args()
 
     root = garimpo_uncertainty.data.data_root()
     run_dir = args.run_dir
     expected = RUN_STAGES[: RUN_STAGES.index(args.through) + 1]
-    records = [read_status(root / "status", stage) for stage in DATA_STAGES]
+    split = pd.read_csv(args.split)
+    tile_ids = garimpo_uncertainty.data.select_tiles(
+        split, args.train_fraction, args.subset_seed
+    ).tile_id.tolist()
+    selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
+    records = [
+        read_status(root / "status", "download_scenes"),
+        read_status(root / "status" / selection, "validate_data"),
+    ]
     records += [read_status(run_dir / "status", stage) for stage in expected]
 
     print("=" * 78)
@@ -78,11 +92,12 @@ def main() -> None:
         if "shapes" in record:
             print(f"{record['stage']}: {record['shapes']}")
 
-    # download_scenes runs on the login node and a rerun may legitimately skip it.
-    required = [r for r in records if r["stage"] != "download_scenes" or r["status"] != "not_run"]
+    # download_scenes is shared by every fraction, so another fraction's download running or failing
+    # says nothing of this run; validate_data decides whether this run's tiles are there.
+    required = [r for r in records if r["stage"] != "download_scenes"]
     failed = [r for r in required if r["status"] != "ok"]
     first_failure = next(
-        (r for r in records if r["status"] in ("failed", "refused", "running")), None
+        (r for r in required if r["status"] in ("failed", "refused", "running")), None
     )
     if first_failure is not None:
         print(f"\n--- failing stage: {first_failure['stage']} ({first_failure['status']})")
@@ -93,18 +108,31 @@ def main() -> None:
         failed.append({"stage": f"job exit code {args.job_exit_code}"})
         print(f"\n--- job exit code {args.job_exit_code}: see the job's .err log")
 
+    store_problems = garimpo_uncertainty.validation.unusable_store(root, split, tile_ids)
+    tiles = None
+    if not store_problems or store_problems[0].startswith("store_missing"):
+        tiles = garimpo_uncertainty.data.tile_records(root, split, tile_ids)
+        print("\n--- scenes of this run's tiles by scale, role and status")
+        print(
+            tiles.groupby(["scale", "role", "status"]).size().rename("tiles").to_frame().to_string()
+        )
+        absent = tiles[tiles.status == garimpo_uncertainty.data.NOT_ATTEMPTED].tile_id.tolist()
+        if absent:
+            store_problems.append(
+                f"sidecars_missing: {len(absent)} tiles, for example {absent[:5]}"
+            )
+    if not store_problems:
+        cells = garimpo_uncertainty.data.cell_table(root, split, tile_ids)
+        print("\n--- cells of this run's tiles per role")
+        print(
+            cells.groupby("role")
+            .agg(cells=("cell_index", "size"), groups=("group", "nunique"))
+            .to_string()
+        )
     print_table(
-        "scenes by scale, role and status",
-        root / "download_report.csv",
-        lambda f: f.groupby(["scale", "role", "status"]).size().rename("tiles").to_frame(),
-    )
-    print_table(
-        "cells per role",
-        root / "manifest.csv",
-        lambda f: f.groupby("role").agg(cells=("cell_id", "size"), groups=("group", "nunique")),
-    )
-    print_table(
-        "validation Dice per epoch", run_dir / "history.csv", lambda f: f.set_index("epoch")
+        "validation Dice, seconds and data wait per epoch",
+        run_dir / "history.csv",
+        lambda f: f.set_index("epoch"),
     )
     print_table(
         "monotonicity for choosing the layer (validation role)",
@@ -133,7 +161,7 @@ def main() -> None:
     )
     print_table(
         "saturated searches",
-        run_dir / "calibration" / "summary.csv",
+        run_dir / "metrics" / "results.csv",
         lambda f: f.dropna(subset=["n_saturated_calibration"])[
             [
                 "method",
@@ -161,6 +189,13 @@ def main() -> None:
             failed.append({"stage": f"results rows absent: {sorted(absent)}"})
         if results[["picp", "mpiw"]].isna().any(axis=None):
             failed.append({"stage": "results contain NaN in PICP or MPIW"})
+
+    # Last, and flushed first: this reads every slot of the run, and a job at its limit may not end.
+    print("\n--- this run's slots against the hashes in their sidecars", flush=True)
+    if tiles is not None and not store_problems:
+        store_problems += garimpo_uncertainty.validation.slot_mismatches(root, tiles, args.workers)
+    print("\n".join(store_problems) or "every slot matches")
+    failed += [{"stage": problem} for problem in store_problems]
 
     print("\n" + "=" * 78)
     if failed:

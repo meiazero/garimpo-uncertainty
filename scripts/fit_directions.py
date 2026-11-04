@@ -7,7 +7,6 @@ Writes directions/<layer>.npz and directions/diagnostics.csv with explained vari
 import argparse
 from pathlib import Path
 
-import compass2d.decomposition
 import compass2d.directions
 import compass2d.metrics
 import numpy as np
@@ -43,11 +42,10 @@ def fit_layer(
     feature_shape = None
     for images, masks, _ in loader:
         x, mask = images.to(device), masks.to(device)
-        z = compass2d.decomposition.encode(model, layer, x)
+        encoded = garimpo_uncertainty.models.encode(model, x)
+        z, decode = garimpo_uncertainty.models.split_at(model, layer, encoded)
         feature_shape = list(z.shape[1:])
-        jacobian = compass2d.directions.jacobian_sum(
-            lambda zi, x=x: compass2d.decomposition.decode(model, layer, x, zi), z, metric
-        )
+        jacobian = compass2d.directions.jacobian_sum(decode, z, metric)
         jacobians.append(jacobian.cpu().numpy())
         pixels, targets = compass2d.directions.sample_pixels(
             z, mask, args.svm_pixels_per_cell, generator
@@ -115,15 +113,13 @@ def main() -> None:
     layer_paths = {layer: directions_dir / f"{layer}.npz" for layer in args.layers}
 
     def work() -> dict:
-        manifest = garimpo_uncertainty.data.read_manifest(root)
-        model, metadata = garimpo_uncertainty.checkpoints.load_model(
-            args.checkpoint, manifest, device
-        )
+        cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
+        model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
         available = garimpo_uncertainty.models.feature_layers(model)
         unknown = set(args.layers) - set(available)
         if unknown:
             raise ValueError(f"unknown layers {sorted(unknown)}; available: {available}")
-        train_cells = manifest[manifest.role == "train"]
+        train_cells = cells[cells.role == "train"]
         rows = []
         for layer, path in layer_paths.items():
             fitted, row = fit_layer(model, layer, train_cells, root, metadata, args, device)
@@ -140,7 +136,11 @@ def main() -> None:
         "fit_directions",
         [diagnostics_path, *layer_paths.values()],
         args.force,
-        garimpo_uncertainty.stages.fingerprint(args, [args.checkpoint, root / "manifest.csv"]),
+        garimpo_uncertainty.stages.fingerprint(
+            args,
+            [args.checkpoint],
+            hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir),
+        ),
         work,
     )
 

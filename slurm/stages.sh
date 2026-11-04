@@ -5,10 +5,6 @@
 # after it; `train` runs again only when named, so a downstream fix never retrains.
 # The sweep's beta_max is the search range, so it covers the domain the binary search walks.
 
-# Compute nodes are offline: ImageNet weights come from the cache `download_data.py weights` fills.
-export HF_HOME="${GARIMPO_DATA_DIR:-$HOME/Experiments/datasets/garimpo}/weights/huggingface"
-export HF_HUB_OFFLINE=1
-
 STAGE_ORDER=(train infer fit_directions layer_monotonicity endpoint_monotonicity compass_scores
     calibrate generate_intervals compute_metrics)
 COMMON=(--checkpoint "$RUN_DIR/best_model.pt" --run-dir "$RUN_DIR" --batch-size "$EVAL_BATCH_SIZE"
@@ -46,7 +42,8 @@ monotonicity_args() {
 }
 
 run_validate() {
-    uv run --no-sync python scripts/validate_data.py --report "$VALIDATION_REPORT" \
+    uv run --no-sync python scripts/validate_data.py --train-fraction "$TRAIN_FRACTION" \
+        --subset-seed "$SUBSET_SEED" --report "$VALIDATION_REPORT" \
         "${VALIDATE_ARGS[@]}" ${FORCE_VALIDATE:+--force}
 }
 
@@ -57,7 +54,8 @@ run_diagnostics() {
     local encoder_weights=()
     [ -z "${ENCODER_WEIGHTS:-}" ] || encoder_weights=(--encoder-weights "$ENCODER_WEIGHTS")
     run_stage train train --arch "$ARCH" "${ARCH_ARGS[@]}" "${encoder_weights[@]}" --run-dir "$RUN_DIR" \
-        --epochs "$EPOCHS" --batch-size "$BATCH_SIZE" --lr "$LR" --weight-decay "$WEIGHT_DECAY" \
+        --train-fraction "$TRAIN_FRACTION" --subset-seed "$SUBSET_SEED" --epochs "$EPOCHS" \
+        --batch-size "$BATCH_SIZE" --lr "$LR" --weight-decay "$WEIGHT_DECAY" \
         --loss "$LOSS" --seed "$SEED" --num-workers "$NUM_WORKERS"
     run_stage infer infer "${COMMON[@]}"
     run_stage fit_directions fit_directions "${COMMON[@]}" --layers "${LAYERS[@]}" \

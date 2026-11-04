@@ -18,10 +18,5 @@ runs/pilot/
 runs/**/*.pt
 runs/**/*.npy
 runs/**/*.npz
-runs/**/predictions/cells.csv
-runs/**/scores/compass_scores.csv
-runs/**/calibration/quantiles.csv
-runs/**/intervals/intervals.csv
-runs/**/metrics/cell_metrics.csv
 outputs/logs/
 *.tmp

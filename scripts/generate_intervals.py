@@ -1,13 +1,13 @@
 """Stage: intervals of every combination on test cells; COMPASS rows run the decoder, never train.
 
-Output-space rows are arithmetic on persisted terms. Writes intervals/intervals.csv.
+Output-space rows are arithmetic on persisted terms. Writes intervals/intervals.npz: lower, upper
+and quantile as [K, N] arrays, K indexing COMBINATIONS and N the test cells.
 """
 
 import argparse
 from pathlib import Path
 
 import compass2d.compass
-import compass2d.decomposition
 import compass2d.directions
 import compass2d.metrics
 import numpy as np
@@ -18,117 +18,105 @@ import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
+import garimpo_uncertainty.models
 import garimpo_uncertainty.stages
 
 
 @torch.no_grad()
 def compass_endpoints(
     model: torch.nn.Module,
-    method: str,
-    quantiles: pd.Series,
+    quantile: np.ndarray,
     cells: pd.DataFrame,
-    jacobians: dict[str, np.ndarray],
+    jacobians: np.ndarray,
     fitted: compass2d.directions.Directions,
     root: Path,
     metadata: dict,
     args: argparse.Namespace,
     device: str,
-) -> tuple[dict, dict]:
+    lower: np.ndarray,
+    upper: np.ndarray,
+) -> None:
+    """Fill the COMPASS rows of lower and upper in one pass: one read and one encoder per batch."""
     pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-    lower, upper = {}, {}
+
+    def hard(logits: torch.Tensor) -> torch.Tensor:
+        return compass2d.metrics.hard_area(logits, pixel_ha)
+
+    def soft(logits: torch.Tensor) -> torch.Tensor:
+        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
+
+    rows = [
+        (k, method)
+        for k, (method, _) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS)
+        if method in garimpo_uncertainty.intervals.COMPASS_METHODS
+    ]
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
-    for images, _, cell_ids in loader:
-        x = images.to(device)
-        beta = torch.as_tensor(quantiles.loc[list(cell_ids)].to_numpy(), device=device)
-        if method == "compass_l":
-            z = model(x)
-            low, high = compass2d.compass.endpoints(
-                lambda zi: zi,
-                lambda logits: compass2d.metrics.hard_area(logits, pixel_ha),
-                z,
-                torch.ones_like(z),
-                beta,
+    first = 0
+    for images, _, _ in loader:
+        last = first + len(images)
+        features = garimpo_uncertainty.models.encode(model, images.to(device))
+        logits, _ = garimpo_uncertainty.models.split_at(
+            model, garimpo_uncertainty.models.LOGITS, features
+        )
+        z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
+        batch_jacobians = jacobians[first:last].astype(np.float64)
+        deltas = {
+            f"compass_j_{direction}": compass2d.compass.channel_delta(
+                torch.from_numpy(
+                    compass2d.directions.cell_deltas(direction, batch_jacobians, fitted).copy()
+                ).to(z)
             )
-        else:
-            z = compass2d.decomposition.encode(model, args.layer, x)
-            batch_jacobians = np.stack([jacobians[c] for c in cell_ids]).astype(np.float64)
-            direction = method.removeprefix("compass_j_")
-            delta = compass2d.directions.cell_deltas(direction, batch_jacobians, fitted)
-            low, high = compass2d.compass.endpoints(
-                lambda zi, x=x: compass2d.decomposition.decode(model, args.layer, x, zi),
-                lambda logits: compass2d.metrics.soft_area(logits, pixel_ha, args.temperature),
-                z,
-                compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z)),
-                beta,
-            )
-        lower.update(zip(cell_ids, low.cpu().tolist(), strict=True))
-        upper.update(zip(cell_ids, high.cpu().tolist(), strict=True))
-    return lower, upper
+            for direction in ("pca", "svm")
+        }
+        for k, method in rows:
+            beta = torch.as_tensor(quantile[k, first:last], device=device)
+            if method == "compass_l":
+                low, high = compass2d.compass.endpoints(
+                    lambda zi: zi, hard, logits, torch.ones_like(logits), beta
+                )
+            else:
+                low, high = compass2d.compass.endpoints(decode, soft, z, deltas[method], beta)
+            lower[k, first:last], upper[k, first:last] = low.cpu().numpy(), high.cpu().numpy()
+        first = last
 
 
 def generate(args: argparse.Namespace, root: Path, device: str, output: Path) -> dict:
     run_dir = args.run_dir
-    manifest = garimpo_uncertainty.data.read_manifest(root)
-    model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, manifest, device)
-    cells = pd.read_csv(run_dir / "predictions" / "cells.csv").set_index("cell_id")
-    quantiles = pd.read_csv(run_dir / "calibration" / "quantiles.csv")
-    alpha = pd.read_csv(run_dir / "calibration" / "summary.csv").alpha.iloc[0]
-    with np.load(run_dir / "scores" / "eval_features.npz") as stored:
-        jacobians = dict(zip(stored["cell_id"].tolist(), stored["jacobians"], strict=True))
+    predictions = garimpo_uncertainty.data.read_predictions(root, run_dir)
+    model, metadata = garimpo_uncertainty.checkpoints.load_model(
+        args.checkpoint, predictions, device
+    )
     fitted = compass2d.directions.Directions.load(run_dir / "directions" / f"{args.layer}.npz")
-
-    test_ids = quantiles.cell_id.drop_duplicates()
-    test_manifest = manifest.set_index("cell_id").loc[test_ids].reset_index()
-    frames = []
-    for (method, calibration), rows in quantiles.groupby(["method", "calibration"], sort=False):
-        rows = rows.set_index("cell_id")
-        if method in garimpo_uncertainty.intervals.COMPASS_METHODS:
-            low, high = compass_endpoints(
-                model,
-                method,
-                rows.quantile_value,
-                test_manifest,
-                jacobians,
-                fitted,
-                root,
-                metadata,
-                args,
-                device,
-            )
-            lower = rows.index.map(low).to_numpy(dtype=float)
-            upper = rows.index.map(high).to_numpy(dtype=float)
-        else:
-            lower = (rows.lower_term - rows.quantile_value * rows.scale).to_numpy()
-            upper = (rows.upper_term + rows.quantile_value * rows.scale).to_numpy()
-        one = cells.loc[rows.index]
-        lower, upper = garimpo_uncertainty.intervals.clip_to_cell(
-            lower, upper, one.cell_ha.to_numpy()
-        )
-        frames.append(
-            pd.DataFrame(
-                {
-                    "model": metadata["variant"],
-                    "layer": args.layer,
-                    "alpha": alpha,
-                    "method": method,
-                    "calibration": calibration,
-                    "cell_id": rows.index,
-                    "group": rows.group.to_numpy(),
-                    "quantile_value": rows.quantile_value.to_numpy(),
-                    "lower": lower,
-                    "upper": upper,
-                    "v": one.v.to_numpy(),
-                    "vhat": one.vhat.to_numpy(),
-                    "cell_ha": one.cell_ha.to_numpy(),
-                }
-            )
-        )
-    intervals = pd.concat(frames, ignore_index=True)
-    with garimpo_uncertainty.stages.atomic(output) as temporary:
-        intervals.to_csv(temporary, index=False)
-    return {"rows": len(intervals), "test_cells": len(test_ids), "combinations": len(frames)}
+    with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
+        cell_index = stored["cell_index"]
+        quantile = stored["quantile"]
+        alpha = stored["alpha"]
+        # Terms are NaN on COMPASS rows, which compass_endpoints then fills.
+        lower = stored["lower_term"] - quantile * stored["scale"]
+        upper = stored["upper_term"] + quantile * stored["scale"]
+    test = predictions.iloc[
+        garimpo_uncertainty.data.positions_of(predictions.cell_index.to_numpy(), cell_index)
+    ]
+    with np.load(run_dir / "scores" / "scores.npz") as stored:
+        jacobians = stored["jacobians"][
+            garimpo_uncertainty.data.positions_of(stored["cell_index"], cell_index)
+        ]
+    compass_endpoints(
+        model, quantile, test, jacobians, fitted, root, metadata, args, device, lower, upper
+    )
+    lower, upper = garimpo_uncertainty.intervals.clip_to_cell(lower, upper, test.cell_ha.to_numpy())
+    garimpo_uncertainty.stages.write_arrays(
+        output,
+        cell_index=cell_index,
+        lower=lower,
+        upper=upper,
+        quantile=quantile,
+        alpha=alpha,
+        layer=np.array(args.layer),
+    )
+    return {"lower": list(lower.shape), "test_cells": len(cell_index)}
 
 
 def main() -> None:
@@ -146,20 +134,22 @@ def main() -> None:
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
     run_dir = args.run_dir
-    output = run_dir / "intervals" / "intervals.csv"
+    output = run_dir / "intervals" / "intervals.npz"
     inputs = [
         args.checkpoint,
-        root / "manifest.csv",
-        run_dir / "predictions" / "cells.csv",
-        run_dir / "calibration" / "quantiles.csv",
-        run_dir / "scores" / "eval_features.npz",
+        run_dir / "predictions" / "cells.npz",
+        run_dir / "calibration" / "quantiles.npz",
+        run_dir / "scores" / "scores.npz",
+        run_dir / "directions" / f"{args.layer}.npz",
     ]
     garimpo_uncertainty.stages.run_stage(
         run_dir / "status",
         "generate_intervals",
         [output],
         args.force,
-        garimpo_uncertainty.stages.fingerprint(args, inputs),
+        garimpo_uncertainty.stages.fingerprint(
+            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
+        ),
         lambda: generate(args, root, device, output),
     )
 

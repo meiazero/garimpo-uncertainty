@@ -1,4 +1,4 @@
-"""Stage: joins the small tables of several runs, one row per model x method x calibration."""
+"""Stage: joins the small tables of several runs; a run is identified by (model, train_fraction)."""
 
 import argparse
 from pathlib import Path
@@ -24,18 +24,18 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
-    variants = [
-        garimpo_uncertainty.data.read_run_metadata(run_dir)["variant"] for run_dir in args.runs
-    ]
-    if len(set(variants)) != len(variants):
-        raise SystemExit(f"two runs of the same variant would merge into one model: {variants}")
+    metadata = [garimpo_uncertainty.data.read_run_metadata(run_dir) for run_dir in args.runs]
+    identities = [{"model": m["variant"], "train_fraction": m["train_fraction"]} for m in metadata]
+    keys = [tuple(identity.values()) for identity in identities]
+    if len(set(keys)) != len(keys):
+        raise SystemExit(f"two runs of the same model and train_fraction would merge: {keys}")
 
     args.out.mkdir(parents=True, exist_ok=True)
     for name, relative in TABLES.items():
         frames = []
-        for run_dir, variant in zip(args.runs, variants, strict=True):
+        for run_dir, identity in zip(args.runs, identities, strict=True):
             frame = pd.read_csv(run_dir / relative)
-            frames.append(frame if "model" in frame else frame.assign(model=variant))
+            frames.append(frame.assign(**{k: v for k, v in identity.items() if k not in frame}))
         pd.concat(frames, ignore_index=True).to_csv(args.out / name, index=False)
         print(f"{args.out / name}: {sum(len(f) for f in frames)} rows")
 

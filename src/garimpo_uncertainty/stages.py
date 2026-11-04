@@ -16,15 +16,32 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import NoReturn
 
-IGNORED_ARGUMENTS = {"force", "device", "num_workers", "batch_size", "workers", "lightgbm_jobs"}
+import numpy as np
+
+# `report` names an output: another job's path for the same selection must redo it, not refuse.
+IGNORED_ARGUMENTS = {
+    "force",
+    "device",
+    "num_workers",
+    "batch_size",
+    "workers",
+    "lightgbm_jobs",
+    "report",
+}
 MISSING_INPUT = "missing"
 
 
-def fingerprint(args: Namespace, inputs: list[Path], keep: Iterable[str] = ()) -> dict:
+def fingerprint(
+    args: Namespace,
+    inputs: list[Path],
+    keep: Iterable[str] = (),
+    hashed: dict[str, str | None] | None = None,
+) -> dict:
     """Arguments that change a result plus the identity of input files, comparable after JSON.
 
-    Commits stay out on purpose: a pull must not invalidate training. After a code fix, the stage
-    and those after it are redone by name, with FORCE_FROM in slurm/stages.sh.
+    `hashed` holds inputs known by content, with None when absent: the shared store, of which a run
+    reads only its own slots. Commits stay out on purpose: a pull must not invalidate training, and
+    after a code fix FORCE_FROM redoes the stage and those after it by name.
     """
     ignored = IGNORED_ARGUMENTS - set(keep)
     arguments = {k: v for k, v in vars(args).items() if k not in ignored}
@@ -32,6 +49,7 @@ def fingerprint(args: Namespace, inputs: list[Path], keep: Iterable[str] = ()) -
         str(p): f"{p.stat().st_size}:{p.stat().st_mtime_ns}" if p.exists() else MISSING_INPUT
         for p in inputs
     }
+    files |= {path: value or MISSING_INPUT for path, value in (hashed or {}).items()}
     return json.loads(json.dumps({"arguments": arguments, "inputs": files}, default=str))
 
 
@@ -63,6 +81,12 @@ def atomic(path: Path) -> Iterator[Path]:
 def write_json(path: Path, content: dict) -> None:
     with atomic(path) as temporary:
         temporary.write_text(json.dumps(content, indent=2, default=str) + "\n")
+
+
+def write_arrays(path: Path, **arrays: np.ndarray) -> None:
+    with atomic(path) as temporary:
+        with temporary.open("wb") as file:
+            np.savez(file, **arrays)
 
 
 def _identity(name: str) -> dict:

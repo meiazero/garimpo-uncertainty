@@ -1,10 +1,9 @@
-"""Torch access to the cells, with the role selection done by the caller."""
+"""Torch access to the cell store, with the role selection done by the caller."""
 
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import rasterio
 import torch
 import torch.utils.data
 
@@ -12,7 +11,7 @@ import garimpo_uncertainty.data
 
 
 class CellDataset(torch.utils.data.Dataset):
-    """Yields (image, mask, cell_id); image is BOA reflectance, z-scored when stats are given."""
+    """Yields (image, mask, cell_index); image is BOA reflectance, z-scored when stats are given."""
 
     def __init__(
         self,
@@ -22,39 +21,38 @@ class CellDataset(torch.utils.data.Dataset):
         augment: bool = False,
     ) -> None:
         self.root = root
-        self.paths = cells.path.tolist()
-        self.offsets = cells.boa_offset.tolist()
-        self.cell_ids = cells.cell_id.tolist()
+        self.cell_index = cells.cell_index.to_numpy()
+        self.offsets = cells.boa_offset.to_numpy(dtype=np.float32)
         self.augment = augment
+        # Opened in __getitem__, once per worker: a map held here would be pickled by value when
+        # workers spawn. SCL stays out: nothing in training reads it.
+        self.images, self.masks = None, None
         self.mean, self.std = None, None
         if normalization is not None:
             self.mean = np.array(normalization["mean"], dtype=np.float32).reshape(-1, 1, 1)
             self.std = np.array(normalization["std"], dtype=np.float32).reshape(-1, 1, 1)
 
     def __len__(self) -> int:
-        return len(self.paths)
+        return len(self.cell_index)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, str]:
-        with rasterio.open(self.root / self.paths[index]) as source:
-            stack = source.read().astype(np.float32)
-        n_bands = len(garimpo_uncertainty.data.BANDS)
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, int]:
+        if self.images is None:
+            self.images = np.load(self.root / "images.npy", mmap_mode="r")
+            self.masks = np.load(self.root / "masks.npy", mmap_mode="r")
+        cell_index = int(self.cell_index[index])
+        raw = self.images[cell_index].astype(np.float32)
         # Baseline 04.00 shifts DN by the offset; nodata 0 would go negative, hence the floor.
-        reflectance = np.maximum(stack[:n_bands] + self.offsets[index], 0)
+        reflectance = np.maximum(raw + self.offsets[index], 0)
         image = reflectance / garimpo_uncertainty.data.REFLECTANCE_SCALE
         if self.mean is not None:
             image = (image - self.mean) / self.std
-        mask_band = garimpo_uncertainty.data.MASK_BAND
-        mask = (stack[mask_band - 1 : mask_band] > 0).astype(np.float32)
+        mask = (self.masks[cell_index][None] > 0).astype(np.float32)
         if self.augment:
             if torch.rand(1).item() > 0.5:
                 image, mask = image[..., ::-1], mask[..., ::-1]
             if torch.rand(1).item() > 0.5:
                 image, mask = image[..., ::-1, :], mask[..., ::-1, :]
-        return (
-            torch.from_numpy(image.copy()),
-            torch.from_numpy(mask.copy()),
-            self.cell_ids[index],
-        )
+        return torch.from_numpy(image.copy()), torch.from_numpy(mask.copy()), cell_index
 
 
 def loader(
