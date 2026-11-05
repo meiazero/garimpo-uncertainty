@@ -97,8 +97,8 @@ def infer_role(
     )
     first = 0
     data_wait = 0.0
-    ready = time.monotonic()
     with probability_writer(probabilities_path, len(role_cells)) as write_probabilities:
+        ready = time.monotonic()
         for images, masks, _ in loader:
             data_wait += time.monotonic() - ready
             logits = model(images.to(device))
