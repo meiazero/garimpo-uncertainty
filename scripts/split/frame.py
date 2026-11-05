@@ -48,17 +48,14 @@ def quantiles(values: pd.Series) -> dict[str, float]:
     return {f"q{int(q * 100)}": float(v) for q, v in points.items()}
 
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpkg", type=pathlib.Path, default="data/zenodo/mining_area_data.gpkg")
     parser.add_argument("--biomes", type=pathlib.Path, default="data/biomes/lm_bioma_250.shp")
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    tiles = geopandas.read_file(args.gpkg, layer="tiles")
-    tiles = tiles[tiles.split.notna()].copy()
-    masks = geopandas.read_file(args.gpkg, layer="preferred_polygons").set_index("tile_id").geometry
-    biomes = geopandas.read_file(args.biomes).to_crs(4326)
 
+def add_location_columns(tiles: geopandas.GeoDataFrame, biomes: geopandas.GeoDataFrame) -> None:
     centers = tiles.geometry.representative_point()
     tiles["lon"], tiles["lat"] = centers.x, centers.y
     tiles["biome"] = geopandas.sjoin(
@@ -71,6 +68,8 @@ def main() -> None:
         int(re.search(r"_(20\d{2})\d{4}T", s).group(1)) for s in tiles.s2_tile_id
     ]
 
+
+def artisanal_with_regions(tiles: geopandas.GeoDataFrame) -> geopandas.GeoDataFrame:
     artisanal = tiles[tiles.minetype2 == "Artisanal"].copy()
     artisanal["region"] = np.select(
         [
@@ -81,6 +80,11 @@ def main() -> None:
         ["Amazonia BR", "Americas, other", "Africa/Europe"],
         "Asia/Oceania",
     )
+    return artisanal
+
+
+def add_cluster_columns(artisanal: geopandas.GeoDataFrame) -> dict[int, dict[str, int]]:
+    """Add one label column per separation; return the clusters each region has under each."""
     # One projection for all continents; tropical distances distort about 15%, tolerable for a
     # grouping threshold.
     metric = artisanal.to_crs(6933)
@@ -88,25 +92,33 @@ def main() -> None:
     for km in SEPARATIONS_KM:
         artisanal[f"cluster_{km}km"] = cluster_labels(metric, km)
         clusters[km] = artisanal.groupby("region")[f"cluster_{km}km"].nunique().to_dict()
+    return clusters
 
+
+def measure_chips(artisanal: geopandas.GeoDataFrame, masks: geopandas.GeoSeries) -> pd.DataFrame:
     rows = []
     for tile in artisanal.itertuples():
         crs = geopandas.GeoSeries([tile.geometry], crs=4326).estimate_utm_crs()
         areas, side_m = chip_areas_ha(tile.geometry, masks.loc[tile.tile_id], crs)
         rows += [(tile.tile_id, tile.region, area, side_m) for area in areas]
-    chips = pd.DataFrame(rows, columns=["tile_id", "region", "ha", "side_m"])
-    amazon_chips = chips[chips.region == "Amazonia BR"]
+    return pd.DataFrame(rows, columns=["tile_id", "region", "ha", "side_m"])
 
-    report = {
+
+def frame_report(
+    tiles: geopandas.GeoDataFrame,
+    artisanal: geopandas.GeoDataFrame,
+    clusters: dict[int, dict[str, int]],
+    chips: pd.DataFrame,
+) -> dict:
+    amazon_chips = chips[chips.region == "Amazonia BR"]
+    amazon_artisanal = artisanal[artisanal.region == "Amazonia BR"]
+    return {
         "tiles_with_split": len(tiles),
         "scale": tiles.minetype2.value_counts().to_dict(),
         "artisanal_by_region": artisanal.region.value_counts().to_dict(),
         "clusters_by_separation_km": clusters,
-        "amazon_artisanal_mine_type": artisanal[artisanal.region == "Amazonia BR"]
-        .minetype1.value_counts()
-        .to_dict(),
-        "amazon_artisanal_image_year": artisanal[artisanal.region == "Amazonia BR"]
-        .image_year.value_counts()
+        "amazon_artisanal_mine_type": amazon_artisanal.minetype1.value_counts().to_dict(),
+        "amazon_artisanal_image_year": amazon_artisanal.image_year.value_counts()
         .sort_index()
         .to_dict(),
         "tile_side_m_median": float(chips.side_m.median()),
@@ -117,6 +129,20 @@ def main() -> None:
         "chip_ha_amazon_nonempty": quantiles(amazon_chips.ha[amazon_chips.ha > 0]),
         "chip_ha_artisanal_nonempty": quantiles(chips.ha[chips.ha > 0]),
     }
+
+
+def main() -> None:
+    args = parse_args()
+    tiles = geopandas.read_file(args.gpkg, layer="tiles")
+    tiles = tiles[tiles.split.notna()].copy()
+    masks = geopandas.read_file(args.gpkg, layer="preferred_polygons").set_index("tile_id").geometry
+    biomes = geopandas.read_file(args.biomes).to_crs(4326)
+
+    add_location_columns(tiles, biomes)
+    artisanal = artisanal_with_regions(tiles)
+    clusters = add_cluster_columns(artisanal)
+    chips = measure_chips(artisanal, masks)
+    report = frame_report(tiles, artisanal, clusters, chips)
     if not TILE_SIDE_MIN_M < report["tile_side_m_median"] < TILE_SIDE_MAX_M:
         raise ValueError(
             f"tile is not 2048 px at 10 m: median side is {report['tile_side_m_median']} m"
