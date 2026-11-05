@@ -319,6 +319,19 @@ and the metrics tables. No stage keeps a derived copy of the store, and
 nothing is memoized. `history.csv` records `train_data_wait_seconds` and `seconds` per epoch, and
 `infer.py` records `data_wait_seconds` per role in its status; `pipeline_check.py` prints both.
 
+Resource measurements stay raw, with no summary table, so how to present them can be decided later.
+A GPU peak counts the bytes of tensors on the current device, not the memory reserved by torch or
+what `nvidia-smi` shows. Each part's peak starts from what is already allocated, so
+`validation_peak_gpu_bytes` includes the weights and the last step's gradients.
+
+| Where | Field | Meaning |
+|---|---|---|
+| `history.csv`, per epoch | `train_seconds`, `validation_seconds` | Unrounded time of each part of the epoch |
+| `history.csv`, per epoch | `train_peak_gpu_bytes`, `validation_peak_gpu_bytes` | GPU peak of each part, empty if no GPU is in use |
+| `status/infer.json`, `shapes` | `seconds_per_role` | Unrounded time per role, including writing its probabilities |
+| `status/infer.json`, `shapes` | `peak_gpu_bytes_per_role` | GPU peak per role, `null` if no GPU is in use |
+| `status/<stage>.json` | `seconds`, `peak_rss_gb`, `peak_gpu_gb`, `host`, `slurm_job_id` | The stage's last process, so a resumed `train` reports only its last stretch; `history.csv` keeps every epoch. `peak_rss_gb` is the largest single process, not a sum |
+
 Boundary F1 has a rule for a mask with no boundary, such as one filling the cell: with no boundary in
 either mask, F1 is 1 for identical masks and 0 otherwise; with a boundary in only one, F1 is 0.
 `n_cells_boundary_by_rule` in `results.csv` counts these cells. Cells with no reference mining stay

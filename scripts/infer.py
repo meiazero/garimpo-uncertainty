@@ -133,23 +133,24 @@ def main() -> None:
         model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
         prediction_dir.mkdir(parents=True, exist_ok=True)
         columns = {name: np.empty(len(cells)) for name in AREA_COLUMNS}
-        data_wait = {
-            role: round(
-                infer_role(
-                    model,
-                    cells[cells.role == role],
-                    root,
-                    metadata,
-                    args,
-                    device=device,
-                    columns=columns,
-                    positions=np.flatnonzero(cells.role == role),
-                    probabilities_path=arrays.get(role),
-                ),
-                3,
+        data_wait, role_seconds, role_peaks = {}, {}, {}
+        for role in garimpo_uncertainty.data.ROLES:
+            garimpo_uncertainty.stages.take_gpu_peak_bytes()
+            role_start = time.monotonic()
+            wait = infer_role(
+                model,
+                cells[cells.role == role],
+                root,
+                metadata,
+                args,
+                device=device,
+                columns=columns,
+                positions=np.flatnonzero(cells.role == role),
+                probabilities_path=arrays.get(role),
             )
-            for role in garimpo_uncertainty.data.ROLES
-        }
+            role_seconds[role] = time.monotonic() - role_start
+            role_peaks[role] = garimpo_uncertainty.stages.take_gpu_peak_bytes()
+            data_wait[role] = round(wait, 3)
         garimpo_uncertainty.stages.write_arrays(
             cells_path, cell_index=cells.cell_index.to_numpy(), **columns
         )
@@ -157,6 +158,8 @@ def main() -> None:
         return shapes | {
             "cells_per_role": cells.role.value_counts().to_dict(),
             "data_wait_seconds": data_wait,
+            "seconds_per_role": role_seconds,
+            "peak_gpu_bytes_per_role": role_peaks,
         }
 
     garimpo_uncertainty.stages.run_stage(

@@ -68,6 +68,22 @@ def fingerprint(
     return json.loads(json.dumps({"arguments": arguments, "inputs": files}, default=str))
 
 
+# Restarting torch's count per section would otherwise shrink the peak the stage reports.
+GPU_PEAK = {"highest_bytes": 0}
+
+
+def take_gpu_peak_bytes() -> int | None:
+    """Return the GPU peak since the last call and restart the count; None if no GPU is in use."""
+    torch = sys.modules.get("torch")
+    # Not is_available: a `--device cpu` run on a GPU host would record a peak of zero bytes.
+    if torch is None or not torch.cuda.is_initialized():
+        return None
+    peak = torch.cuda.max_memory_allocated()
+    GPU_PEAK["highest_bytes"] = max(GPU_PEAK["highest_bytes"], peak)
+    torch.cuda.reset_peak_memory_stats()
+    return peak
+
+
 def _peak_memory() -> dict:
     # ru_maxrss is in KiB on Linux; children covers DataLoader workers.
     rss = max(
@@ -77,7 +93,8 @@ def _peak_memory() -> dict:
     peak = {"peak_rss_gb": round(rss / 1024**2, 3)}
     torch = sys.modules.get("torch")
     if torch is not None and torch.cuda.is_available():
-        peak["peak_gpu_gb"] = round(torch.cuda.max_memory_allocated() / 1024**3, 3)
+        highest = max(GPU_PEAK["highest_bytes"], torch.cuda.max_memory_allocated())
+        peak["peak_gpu_gb"] = round(highest / 1024**3, 3)
     return peak
 
 
