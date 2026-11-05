@@ -198,7 +198,10 @@ def test_tile_outside_the_selection_is_no_concern_of_this_fraction(no_outside: P
 
 def test_tile_outside_the_selection_concerns_the_full_fraction(no_outside: Path) -> None:
     report = FRACTION_ARTIFACTS / "validation_no_outside_full.json"
-    assert support.validate(no_outside, SPLIT_PATH, report, False, "1.0", SUMMARY).returncode != 0
+    assert (
+        support.validate(no_outside, SPLIT_PATH, report, False, "1.0", summary=SUMMARY).returncode
+        != 0
+    )
     assert "not_downloaded" in " ".join(json.loads(report.read_text())["problems"])
 
 
@@ -209,7 +212,10 @@ def test_tile_inside_the_selection_must_be_there(grown_root: GrownRoot) -> None:
     inside = int(train[train.isin(grown_root.small.tile_id)].iloc[0])
     no_inside = without_tile(inside, "data_no_inside")
     report = FRACTION_ARTIFACTS / "validation_no_inside.json"
-    assert support.validate(no_inside, SPLIT_PATH, report, False, "0.01", SUMMARY).returncode != 0
+    assert (
+        support.validate(no_inside, SPLIT_PATH, report, False, "0.01", summary=SUMMARY).returncode
+        != 0
+    )
     problems = " ".join(json.loads(report.read_text())["problems"])
     for check in ("not_downloaded", "split_counts"):
         assert check in problems, problems

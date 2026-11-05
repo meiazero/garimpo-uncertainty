@@ -186,10 +186,9 @@ def write_synthetic_tile(
     bound = garimpo_uncertainty.download.write_cells(
         store,
         tile_index,
-        np.clip(image, 1, 65535).astype(np.uint16),
-        scl,
-        geometry,
-        transform,
+        garimpo_uncertainty.download.CutTile(
+            np.clip(image, 1, 65535).astype(np.uint16), scl, geometry, transform
+        ),
         CELL_PX,
     )
     garimpo_uncertainty.download.write_sidecar(
@@ -232,6 +231,7 @@ def train_args(
     batch_size: str = "8",
     lr: str = "1e-3",
     epochs: str = "3",
+    *,
     split_path: Path = SPLIT_PATH,
     fraction: str = "1.0",
     subset_seed: str = "0",
@@ -289,6 +289,7 @@ def validate(
     report: Path,
     check: bool = True,
     fraction: str = "1.0",
+    *,
     summary: Path | None = None,
 ) -> subprocess.CompletedProcess:
     return run(
