@@ -12,6 +12,14 @@ import garimpo_uncertainty.data
 FLIP_PROBABILITY = 0.5
 
 
+def _random_flips(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if torch.rand(1).item() > FLIP_PROBABILITY:
+        image, mask = image[..., ::-1], mask[..., ::-1]
+    if torch.rand(1).item() > FLIP_PROBABILITY:
+        image, mask = image[..., ::-1, :], mask[..., ::-1, :]
+    return image, mask
+
+
 class CellDataset(torch.utils.data.Dataset):
     """Yields (image, mask, cell_index); image is BOA reflectance, z-scored when stats are given."""
 
@@ -51,10 +59,7 @@ class CellDataset(torch.utils.data.Dataset):
             image = (image - self.mean) / self.std
         mask = (self.masks[cell_index][None] > 0).astype(np.float32)
         if self.augment:
-            if torch.rand(1).item() > FLIP_PROBABILITY:
-                image, mask = image[..., ::-1], mask[..., ::-1]
-            if torch.rand(1).item() > FLIP_PROBABILITY:
-                image, mask = image[..., ::-1, :], mask[..., ::-1, :]
+            image, mask = _random_flips(image, mask)
         return torch.from_numpy(image.copy()), torch.from_numpy(mask.copy()), cell_index
 
 

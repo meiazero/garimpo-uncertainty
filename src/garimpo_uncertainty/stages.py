@@ -124,49 +124,34 @@ def fail_stage(status_dir: Path, name: str, message: str) -> NoReturn:
     raise SystemExit(message)
 
 
-def run_stage(
-    status_dir: Path,
-    name: str,
-    outputs: list[Path],
-    stage_fingerprint: dict,
-    work: Callable[[], dict],
-    *,
-    force: bool,
+def _reusable(outputs: list[Path], completed: dict | None, *, force: bool) -> bool:
+    """Tell whether finished outputs exist that this run must either skip over or refuse."""
+    return bool(outputs and completed) and all(p.exists() for p in outputs) and not force
+
+
+def _skip_or_refuse(status_path: Path, name: str, previous: dict, stage_fingerprint: dict) -> None:
+    """Skip when the finished outputs came from these inputs; otherwise stop the stage."""
+    if previous["completed_fingerprint"] == stage_fingerprint:
+        if previous["status"] != "ok":
+            restored = {k: v for k, v in previous.items() if k != "error"}
+            write_json(status_path, restored | {"status": "ok"})
+        logger.info("%s: outputs exist, skipping (use --force to redo)", name)
+        return
+    # The validation sits outside STAGE_ORDER in slurm/stages.sh.
+    redo = (
+        "FORCE_VALIDATE=1 to redo it"
+        if name == "validate_data"
+        else f"FORCE_FROM={name} to redo this stage and those after it"
+    )
+    message = f"{name}: outputs exist from other inputs or arguments; use --force, or {redo}"
+    write_json(status_path, previous | {"status": "refused", "error": message})
+    raise SystemExit(message)
+
+
+def _run_work(
+    status_path: Path, name: str, stage_fingerprint: dict, work: Callable[[], dict]
 ) -> None:
-    """Run `work` unless its outputs exist from the same inputs; `work` returns shapes to record.
-
-    Outputs from other inputs or arguments stop the stage instead of being reused, so a changed
-    tolerance can never silently keep the old table. A refusal is a status of its own, and keeps the
-    last completed fingerprint, so it can never turn into a rerun on the next attempt.
-    """
-    status_path = status_dir / f"{name}.json"
-    previous = json.loads(status_path.read_text()) if status_path.exists() else {}
-    completed = previous.get("completed_fingerprint")
     identity = _identity(name)
-
-    absent = [p for p, value in stage_fingerprint["inputs"].items() if value == MISSING_INPUT]
-    if absent:
-        fail_stage(
-            status_dir, name, f"{name}: missing input {absent}; run the stage that writes it first"
-        )
-
-    if outputs and completed and all(p.exists() for p in outputs) and not force:
-        if completed == stage_fingerprint:
-            if previous["status"] != "ok":
-                restored = {k: v for k, v in previous.items() if k != "error"}
-                write_json(status_path, restored | {"status": "ok"})
-            logger.info("%s: outputs exist, skipping (use --force to redo)", name)
-            return
-        # The validation sits outside STAGE_ORDER in slurm/stages.sh.
-        redo = (
-            "FORCE_VALIDATE=1 to redo it"
-            if name == "validate_data"
-            else f"FORCE_FROM={name} to redo this stage and those after it"
-        )
-        message = f"{name}: outputs exist from other inputs or arguments; use --force, or {redo}"
-        write_json(status_path, previous | {"status": "refused", "error": message})
-        raise SystemExit(message)
-
     write_json(status_path, identity | {"status": "running"})
     start = time.monotonic()
     try:
@@ -188,3 +173,33 @@ def run_stage(
     }
     write_json(status_path, record | _peak_memory())
     logger.info("%s: ok in %s s, %s", name, record["seconds"], shapes)
+
+
+def run_stage(
+    status_dir: Path,
+    name: str,
+    outputs: list[Path],
+    stage_fingerprint: dict,
+    work: Callable[[], dict],
+    *,
+    force: bool,
+) -> None:
+    """Run `work` unless its outputs exist from the same inputs; `work` returns shapes to record.
+
+    Outputs from other inputs or arguments stop the stage instead of being reused, so a changed
+    tolerance can never silently keep the old table. A refusal is a status of its own, and keeps the
+    last completed fingerprint, so it can never turn into a rerun on the next attempt.
+    """
+    status_path = status_dir / f"{name}.json"
+    previous = json.loads(status_path.read_text()) if status_path.exists() else {}
+
+    absent = [p for p, value in stage_fingerprint["inputs"].items() if value == MISSING_INPUT]
+    if absent:
+        fail_stage(
+            status_dir, name, f"{name}: missing input {absent}; run the stage that writes it first"
+        )
+
+    if _reusable(outputs, previous.get("completed_fingerprint"), force=force):
+        _skip_or_refuse(status_path, name, previous, stage_fingerprint)
+        return
+    _run_work(status_path, name, stage_fingerprint, work)

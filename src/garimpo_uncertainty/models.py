@@ -125,6 +125,19 @@ def load_sentinel2_moco(model: torch.nn.Module, path: Path) -> None:
     model.encoder.load_state_dict(state)
 
 
+def _build_unet(
+    in_channels: int, encoder_weights: str, weights_file: Path | None
+) -> segmentation_models_pytorch.Unet:
+    model = segmentation_models_pytorch.Unet(
+        encoder_name=UNET_ENCODER, encoder_weights=None, in_channels=in_channels, classes=1
+    )
+    if encoder_weights == "imagenet":
+        load_imagenet(model, weights_file)
+    if encoder_weights == "sentinel2_moco":
+        load_sentinel2_moco(model, weights_file)
+    return model
+
+
 def build(
     arch: str,
     in_channels: int,
@@ -141,14 +154,7 @@ def build(
             raise ValueError("convnet needs channels")
         return ConvNet(in_channels, channels)
     if arch == "unet":
-        model = segmentation_models_pytorch.Unet(
-            encoder_name=UNET_ENCODER, encoder_weights=None, in_channels=in_channels, classes=1
-        )
-        if encoder_weights == "imagenet":
-            load_imagenet(model, weights_file)
-        if encoder_weights == "sentinel2_moco":
-            load_sentinel2_moco(model, weights_file)
-        return model
+        return _build_unet(in_channels, encoder_weights, weights_file)
     raise ValueError(f"unknown architecture: {arch!r}")
 
 
