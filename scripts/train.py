@@ -81,10 +81,11 @@ def validation_dice(
 
 @dataclass
 class TrainingState:
-    """What one epoch hands to the next, and what last.pt restores after an interruption."""
+    """What the epochs share, and what last.pt restores after an interruption."""
 
     model: torch.nn.Module
     optimizer: torch.optim.Optimizer
+    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
     metadata: dict
     arguments: dict[str, str]
     history: list[dict]
@@ -161,15 +162,17 @@ def start_training(
         weights_file,
     ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    loss_fn = build_loss(args.loss)
     arguments = result_arguments(args)
     if resume is None:
-        return TrainingState(model, optimizer, metadata, arguments, [], NO_BEST_DICE, 0)
+        return TrainingState(model, optimizer, loss_fn, metadata, arguments, [], NO_BEST_DICE, 0)
     model.load_state_dict(resume["model"])
     optimizer.load_state_dict(resume["optimizer"])
     torch.set_rng_state(resume["rng"])
     return TrainingState(
         model,
         optimizer,
+        loss_fn,
         metadata,
         arguments,
         resume["history"],
@@ -181,19 +184,19 @@ def start_training(
 def fit_epoch(
     state: TrainingState,
     loader: torch.utils.data.DataLoader,
-    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     device: str,
+    started: float,
 ) -> tuple[float, float, list[int] | None]:
     """Return the mean loss, the seconds spent waiting for data, and the last batch's shape."""
-    state.model.train()
     losses = []
     data_wait = 0.0
     batch_shape = None
-    ready = time.monotonic()
+    # The wait starts with the epoch's clock, so the two timings share one origin.
+    ready = started
     for images, masks, _ in loader:
         data_wait += time.monotonic() - ready
         state.optimizer.zero_grad()
-        loss = loss_fn(state.model(images.to(device)), masks.to(device))
+        loss = state.loss_fn(state.model(images.to(device)), masks.to(device))
         loss.backward()
         state.optimizer.step()
         losses.append(loss.item())
@@ -238,11 +241,11 @@ def run_epochs(
     device: str,
 ) -> list[int] | None:
     """Train up to args.epochs; return the shape of the last batch, None if no epoch ran."""
-    loss_fn = build_loss(args.loss)
     batch_shape = None
     for epoch in range(state.first_epoch, args.epochs):
+        state.model.train()
         epoch_start = time.monotonic()
-        train_loss, data_wait, batch_shape = fit_epoch(state, train_loader, loss_fn, device)
+        train_loss, data_wait, batch_shape = fit_epoch(state, train_loader, device, epoch_start)
         dice = validation_dice(state.model, validation_loader, device)
         state.history.append(
             {
