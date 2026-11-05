@@ -21,7 +21,7 @@ SENTINEL2_MOCO_COLUMNS = (1, 2, 3, 7, 11, 12)
     ids=["convnet", "unet"],
 )
 def test_decomposition_reproduces_the_model(arch: str, options: dict) -> None:
-    """f then g must reproduce the model at every layer, and z must really drive the output."""
+    """F then g must reproduce the model at every layer, and z must really drive the output."""
     torch.manual_seed(0)
     x = torch.randn(2, 6, support.CELL_PX, support.CELL_PX)
     model = garimpo_uncertainty.models.build(arch, in_channels=6, **options).eval()

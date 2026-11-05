@@ -188,7 +188,8 @@ def cell_table(root: Path, split: pd.DataFrame, tile_ids: list[int]) -> pd.DataF
 
 def positions_of(cell_index: np.ndarray, wanted: np.ndarray) -> np.ndarray:
     """Return where each wanted value sits in an ascending array; a bare searchsorted would give a
-    neighbor's position for an absent one."""
+    neighbor's position for an absent one.
+    """
     at = np.searchsorted(cell_index, wanted)
     found = at < len(cell_index)
     found[found] = cell_index[at[found]] == wanted[found]

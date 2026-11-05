@@ -137,7 +137,8 @@ def check_tiles(tiles: pd.DataFrame) -> list[str]:
 
 def unusable_store(root: Path, split: pd.DataFrame, tile_ids: list[int]) -> list[str]:
     """Return why the store cannot be read for this selection at all: an array gone, or a split
-    that no longer matches its slots."""
+    that no longer matches its slots.
+    """
     missing = garimpo_uncertainty.data.missing_arrays(root)
     if missing:
         return _problem("store_missing", missing)

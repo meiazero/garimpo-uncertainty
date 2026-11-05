@@ -73,7 +73,7 @@ def atomic(path: Path) -> Iterator[Path]:
     temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
         yield temporary
-        os.replace(temporary, path)
+        Path(temporary).replace(path)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -84,9 +84,8 @@ def write_json(path: Path, content: dict) -> None:
 
 
 def write_arrays(path: Path, **arrays: np.ndarray) -> None:
-    with atomic(path) as temporary:
-        with temporary.open("wb") as file:
-            np.savez(file, **arrays)
+    with atomic(path) as temporary, temporary.open("wb") as file:
+        np.savez(file, **arrays)
 
 
 def _identity(name: str) -> dict:
