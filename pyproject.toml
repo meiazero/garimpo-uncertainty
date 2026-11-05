@@ -7,8 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "compass",
     "geopandas>=1.0",
-    "lightgbm>=4.0",
-    "matplotlib>=3.11.2",
     "numpy>=2.0",
     "pandas>=2.0",
     "pyogrio>=0.9",
@@ -26,6 +24,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-xdist>=3.8",
     "ruff>=0.16.9",
 ]
 
@@ -49,10 +48,118 @@ packages = ["src/garimpo_uncertainty"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# loadfile keeps each module on one worker, so its fixtures and fixed paths need no marks; `-n 0`
+# runs serially. xdist 3.8 ignores xdist_group under pytest 9.2, so loadgroup is no alternative.
+addopts = "-n 4 --dist loadfile --basetemp=tests/artifacts/tmp"
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# A submodule with its own config and repository; these rules reach it in a later, separate change.
+extend-exclude = ["compass"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]  # pycodestyle, pyflakes, isort, pyupgrade, bugbear
+# Each family below catches something that nobody decided to write.
+preview = true
+# Preview enables only the preview rules that `select` names, so a Ruff upgrade adds nothing unchosen.
+explicit-preview-rules = true
+select = [
+    "A",     # a name that hides a builtin
+    "ANN",   # a signature with no type
+    "ARG",   # an unused argument
+    "ASYNC", # a blocking call inside a coroutine
+    "B",     # a bug pattern
+    "BLE",   # an `except Exception` with no stated reason
+    "C4",    # a comprehension written as a loop
+    "C90",   # a function that no longer fits in one reading
+    "D",     # a docstring that breaks PEP 257
+    "DTZ",   # a `datetime` with no timezone
+    "E",     # pycodestyle errors
+    "ERA",   # code left behind as a comment
+    "EXE",   # a shebang that does not match the file mode
+    "F",     # pyflakes
+    "FA",    # an annotation that needs `from __future__ import annotations`
+    "FBT",   # a positional boolean, such as `f(True)`
+    "FIX",   # a TODO, FIXME or XXX left for somebody else
+    "FLY",   # a `join` that is an f-string
+    "FURB",  # a stdlib call written by hand
+    "G",     # a log message formatted before the logger filters it
+    "I",     # import order
+    "ICN",   # an unconventional import alias
+    "ISC",   # two strings glued where a comma was meant
+    "LOG",   # a logger misuse
+    "N",     # naming
+    "NPY",   # legacy NumPy calls, such as the global random seed
+    "PERF",  # a loop that a comprehension states
+    "PGH",   # a blanket `noqa` or `type: ignore` that names no code
+    "PIE",   # a statement that does nothing
+    "PL",    # pylint
+    "PT",    # a pytest idiom written the long way
+    "PTH",   # `os.path` where `pathlib` is shorter
+    "PYI",   # a return type that should be `Self`
+    "RET",   # a return path stated twice
+    "RSE",   # `raise X()` with empty parentheses
+    "RUF",   # ruff's own, including a `# noqa` that suppresses nothing
+    "S",     # bandit, including an `assert`, which `python -O` deletes
+    "SIM",   # a condition written the long way
+    "SLF",   # a private member reached from outside its class
+    "SLOT",  # a subclass of `str` or `tuple` with no `__slots__`
+    "T10",   # a debugger call left behind
+    "T20",   # a `print` outside the code that prints
+    "TID",   # a relative import
+    "TRY",   # an `except` that loses its cause
+    "UP",    # an idiom of an older Python
+    "W",     # pycodestyle warnings
+    # Preview rules.
+    "FURB113", # repeated `append` instead of one `extend`
+    "PLC1901", # a comparison with `""` instead of truthiness
+    "PLC2701", # a private name imported from another module
+    "PLC2801", # a dunder method called by hand
+    "PLR0914", # too many local variables
+    "PLR0916", # too many boolean expressions in one condition
+    "PLR1702", # too many nested blocks
+    "PLR6301", # a method that never reads `self`
+    "PLW0717", # a `try` that guards more than the call that can fail
+    "PLW1514", # a file opened with no encoding
+    "RUF069",  # a float compared with `==`
+]
+ignore = [
+    # `Any` is the honest type of a parsed JSON payload.
+    "ANN401",
+    # A docstring written only for the linter restates the name above it.
+    "D1",
+    # Ruff itself says to disable `ISC001` with `ruff format`.
+    "ISC001",
+    # PLR0917 already forces arguments past the fifth to be named, so a call stays readable.
+    "PLR0913",
+    # The raise message belongs at the raise; tests and users read it there.
+    "TRY003",
+]
+
+[tool.ruff.lint.mccabe]
+# Past five paths, a function holds a decision that belongs to a function of its own.
+max-complexity = 5
+
+[tool.ruff.lint.pylint]
+max-bool-expr = 3
+max-branches = 8
+max-locals = 10
+max-nested-blocks = 4
+max-returns = 5
+max-statements = 35
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+# A check suite writes expected numbers inline, reaches into the object it checks, and keeps
+# the signature of what a fake replaces; a fixture is often an argument used only for its effect.
+"tests/*" = [
+    "ANN", "ARG", "C901", "FBT", "N801", "PLC2701", "PLC2801", "PLR0912",
+    "PLR0914", "PLR0915", "PLR2004", "PLR6301", "RUF069", "S101", "SLF001", "T201",
+]
+# The output of a script is its purpose.
+"scripts/*" = ["T201"]

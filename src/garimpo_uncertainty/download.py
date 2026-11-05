@@ -6,15 +6,18 @@ flushed. Tiles that fail keep their reason in the sidecar; nothing is dropped si
 
 import concurrent.futures
 import hashlib
+import http
 import json
+import logging
 import threading
 import time
 import urllib.error
 import urllib.request
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
-import geopandas as gpd
+import geopandas
 import numpy as np
 import pandas as pd
 import rasterio
@@ -27,11 +30,13 @@ import shapely
 import garimpo_uncertainty.data
 import garimpo_uncertainty.stages
 
+logger = logging.getLogger(__name__)
+
 ZENODO_URL = "https://zenodo.org/records/14195737/files/mining_area_data.zip?download=1"
-ZENODO_MD5 = "1259ad8045ae648c547ef3db1fccab3b"  # from scripts/proposal/get_data.sh
+ZENODO_MD5 = "1259ad8045ae648c547ef3db1fccab3b"
 GPKG_MEMBER = "mining_area_data.gpkg"
 STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-2-l2a/items/"
-TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"
+TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"  # noqa: S105 - a URL, not a password
 TOKEN_REFRESH_S = 20 * 60
 SENTINEL2_MOCO_URL = (
     "https://hf.co/torchgeo/resnet50_sentinel2_all_moco/resolve/"
@@ -69,7 +74,7 @@ def download_metadata(root: Path) -> None:
 
 def download_weights(root: Path, encoder_weights: list[str]) -> None:
     """Fetch the chosen starting weights under the data root, for offline training."""
-    import torch.hub
+    import torch.hub  # noqa: PLC0415 - only this command needs torch; the others run without it
 
     sources = {
         "imagenet": (IMAGENET_URL, IMAGENET_HASH),
@@ -84,7 +89,7 @@ def download_weights(root: Path, encoder_weights: list[str]) -> None:
 
 
 def _md5(path: Path) -> str:
-    digest = hashlib.md5()
+    digest = hashlib.md5(usedforsecurity=False)
     with path.open("rb") as file:
         for block in iter(lambda: file.read(2**20), b""):
             digest.update(block)
@@ -94,10 +99,10 @@ def _md5(path: Path) -> str:
 def _get_json(url: str) -> dict:
     for attempt in range(8):
         try:
-            with urllib.request.urlopen(url, timeout=60) as response:
+            with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 - callers fix an https prefix
                 return json.load(response)
         except urllib.error.HTTPError as error:
-            if error.code != 429:
+            if error.code != http.HTTPStatus.TOO_MANY_REQUESTS:
                 raise
             time.sleep(int(error.headers.get("Retry-After") or 2**attempt))
     raise TimeoutError(f"still rate limited: {url}")
@@ -177,54 +182,69 @@ def create_store(root: Path, n_tiles: int, tile_px: int, cell_px: int) -> None:
             )
 
 
+@dataclass(frozen=True)
+class CutTile:
+    """A tile's pixels and its mask geometry, both on the tile's own grid."""
+
+    image: np.ndarray
+    scl: np.ndarray
+    geometry: shapely.Geometry
+    transform: rasterio.Affine
+
+
+def _rasterized_mask(
+    geometry: shapely.Geometry, transform: rasterio.Affine, shape: tuple[int, int]
+) -> np.ndarray:
+    if geometry.is_empty:
+        return np.zeros(shape, dtype=np.uint8)
+    return rasterio.features.rasterize(
+        [geometry],
+        out_shape=shape,
+        transform=transform,
+        fill=0,
+        default_value=1,
+        dtype="uint8",
+    )
+
+
+def _cell_windows(height: int, width: int, cell_px: int) -> list[rasterio.windows.Window]:
+    return [
+        rasterio.windows.Window(col * cell_px, row * cell_px, cell_px, cell_px)
+        for row in range(height // cell_px)
+        for col in range(width // cell_px)
+    ]
+
+
 def write_cells(
-    store: garimpo_uncertainty.data.CellStore,
-    tile_index: int,
-    image: np.ndarray,
-    scl: np.ndarray,
-    geometry: shapely.Geometry,
-    transform: rasterio.Affine,
-    cell_px: int,
+    store: garimpo_uncertainty.data.CellStore, tile_index: int, tile: CutTile, cell_px: int
 ) -> dict[str, int | str]:
     """Rasterize the mask on the image's own grid, then fill and flush this tile's slots.
 
     Returns what the tile's sidecar records to bind itself to those slots.
     """
-    height, width = image.shape[1:]
-    geometry = shapely.make_valid(geometry)
-    mask = np.zeros((height, width), dtype=np.uint8)
-    if not geometry.is_empty:
-        mask = rasterio.features.rasterize(
-            [geometry],
-            out_shape=(height, width),
-            transform=transform,
-            fill=0,
-            default_value=1,
-            dtype="uint8",
-        )
-    per_row = width // cell_px
-    cells_per_tile = (height // cell_px) * per_row
-    for position in range(cells_per_tile):
-        row, col = divmod(position, per_row)
-        rows = slice(row * cell_px, (row + 1) * cell_px)
-        cols = slice(col * cell_px, (col + 1) * cell_px)
-        slot = tile_index * cells_per_tile + position
-        store.images[slot] = image[:, rows, cols]
+    height, width = tile.image.shape[1:]
+    geometry = shapely.make_valid(tile.geometry)
+    mask = _rasterized_mask(geometry, tile.transform, (height, width))
+    windows = _cell_windows(height, width, cell_px)
+    first_slot = tile_index * len(windows)
+    for slot, window in enumerate(windows, start=first_slot):
+        rows, cols = window.toslices()
+        store.images[slot] = tile.image[:, rows, cols]
         store.masks[slot] = mask[rows, cols]
-        store.scl[slot] = scl[rows, cols]
-        window = rasterio.windows.Window(cols.start, rows.start, cell_px, cell_px)
-        box = shapely.box(*rasterio.windows.bounds(window, transform))
+        store.scl[slot] = tile.scl[rows, cols]
+        box = shapely.box(*rasterio.windows.bounds(window, tile.transform))
         store.stats[slot] = (
             mask[rows, cols].sum() * garimpo_uncertainty.data.PIXEL_HA,
             geometry.intersection(box).area / 1e4,
         )
     for array in store:
         array.flush()
-    slots = slice(tile_index * cells_per_tile, (tile_index + 1) * cells_per_tile)
     return {
         "tile_index": tile_index,
-        "cells_per_tile": cells_per_tile,
-        "slots_sha256": garimpo_uncertainty.data.slots_sha256(store, slots),
+        "cells_per_tile": len(windows),
+        "slots_sha256": garimpo_uncertainty.data.slots_sha256(
+            store, slice(first_slot, first_slot + len(windows))
+        ),
     }
 
 
@@ -253,85 +273,172 @@ def _boa_offset(item: dict) -> int:
     return BOA_OFFSET_DN if float(baseline) >= BASELINE_WITH_OFFSET else 0
 
 
+def _check_inside_scene(
+    col: int, row: int, tile_px: int, scene_width: int, scene_height: int
+) -> None:
+    inside = (
+        col >= 0 and row >= 0 and col + tile_px <= scene_width and row + tile_px <= scene_height
+    )
+    if not inside:
+        raise ValueError(f"tile window ({col}, {row}) leaves the scene")
+
+
+@dataclass(frozen=True)
+class TileSource:
+    """Where one tile comes from: its slot, its Sentinel-2 item and its geometries in WGS 84."""
+
+    tile_id: int
+    tile_index: int
+    item_id: str
+    tile_geometry: shapely.Geometry
+    mask_geometry: shapely.Geometry
+
+
+@dataclass(frozen=True)
+class TilePlacement:
+    """A tile's window on its scene's 10 m grid, with the offsets the sidecar records."""
+
+    epsg: int
+    transform: rasterio.Affine
+    offset_m: float
+    excess_m: float
+
+
+def _to_utm(geometry: shapely.Geometry, epsg: int) -> shapely.Geometry:
+    return geopandas.GeoSeries([geometry], crs=4326).to_crs(epsg).iloc[0]
+
+
+def _place_tile(reference_href: str, tile_geometry: shapely.Geometry) -> TilePlacement:
+    tile_px = garimpo_uncertainty.data.TILE_PX
+    with rasterio.open(reference_href) as reference:
+        epsg = reference.crs.to_epsg()
+        grid, scene_width, scene_height = reference.transform, reference.width, reference.height
+    col, row, offset, excess = tile_origin(grid, _to_utm(tile_geometry, epsg).bounds, tile_px)
+    _check_inside_scene(col, row, tile_px, scene_width, scene_height)
+    return TilePlacement(epsg, grid * rasterio.Affine.translation(col, row), offset, excess)
+
+
+def _read_bands(
+    item: dict,
+    transform: rasterio.Affine,
+    token: _Token,
+    resampling: rasterio.enums.Resampling,
+) -> tuple[np.ndarray, np.ndarray]:
+    tile_px = garimpo_uncertainty.data.TILE_PX
+    bounds = rasterio.transform.array_bounds(tile_px, tile_px, transform)
+    image = np.stack(
+        [
+            _read_band(
+                _signed(item["assets"][band]["href"], token),
+                bounds,
+                tile_px,
+                rasterio.enums.Resampling.nearest if band in ASSETS_10M else resampling,
+            )
+            for band in garimpo_uncertainty.data.BANDS
+        ]
+    )
+    scl = _read_band(
+        _signed(item["assets"]["SCL"]["href"], token),
+        bounds,
+        tile_px,
+        rasterio.enums.Resampling.nearest,
+    )
+    return image, scl
+
+
+def _cut_and_store(
+    root: Path,
+    store: garimpo_uncertainty.data.CellStore,
+    source: TileSource,
+    item: dict,
+    *,
+    token: _Token,
+    resampling: rasterio.enums.Resampling,
+) -> dict:
+    """Read the item's bands into the tile's slots; return what the sidecar records of them."""
+    env = {"GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR", "GDAL_HTTP_MAX_RETRY": "5"}
+    with rasterio.Env(**env):
+        placement = _place_tile(_signed(item["assets"]["B02"]["href"], token), source.tile_geometry)
+        image, scl = _read_bands(item, placement.transform, token, resampling)
+    mask_utm = _to_utm(source.mask_geometry, placement.epsg)
+    # A forced re-cut overwrites slots in place: a crash midway must leave no `ok` vouching.
+    (root / "tiles" / f"{source.tile_id}.json").unlink(missing_ok=True)
+    bound = write_cells(
+        store,
+        source.tile_index,
+        CutTile(image, scl, mask_utm, placement.transform),
+        garimpo_uncertainty.data.CELL_PX,
+    )
+    return bound | {
+        "status": "ok",
+        "epsg": placement.epsg,
+        "transform": list(placement.transform)[:6],
+        "tile_offset_m": placement.offset_m,
+        "tile_box_excess_m": placement.excess_m,
+    }
+
+
 def process_tile(
     root: Path,
     store: garimpo_uncertainty.data.CellStore,
-    tile_id: int,
-    tile_index: int,
-    item_id: str,
-    tile_geometry: shapely.Geometry,
-    mask_geometry: shapely.Geometry,
+    source: TileSource,
     token: _Token,
     resampling: rasterio.enums.Resampling,
 ) -> str:
     """Download one tile. Every outcome ends in its sidecar; the caller reports statuses."""
-    record: dict = {"item": item_id, "resampling_20m": resampling.name}
+    record: dict = {"item": source.item_id, "resampling_20m": resampling.name}
     try:
-        item = _get_json(STAC + item_id)
+        item = _get_json(STAC + source.item_id)
         record |= {
             "scene_cloud": item["properties"].get("eo:cloud_cover"),
             "boa_offset": _boa_offset(item),
         }
-        tile_px = garimpo_uncertainty.data.TILE_PX
-        env = {"GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR", "GDAL_HTTP_MAX_RETRY": "5"}
-        with rasterio.Env(**env):
-            with rasterio.open(_signed(item["assets"]["B02"]["href"], token)) as reference:
-                epsg = reference.crs.to_epsg()
-                grid, scene_width, scene_height = (
-                    reference.transform,
-                    reference.width,
-                    reference.height,
-                )
-            bounds_utm = gpd.GeoSeries([tile_geometry], crs=4326).to_crs(epsg).iloc[0].bounds
-            col, row, offset, excess = tile_origin(grid, bounds_utm, tile_px)
-            inside = (
-                col >= 0
-                and row >= 0
-                and col + tile_px <= scene_width
-                and row + tile_px <= scene_height
-            )
-            if not inside:
-                raise ValueError(f"tile window ({col}, {row}) leaves the scene")
-            transform = grid * rasterio.Affine.translation(col, row)
-            bounds = rasterio.transform.array_bounds(tile_px, tile_px, transform)
-            image = np.stack(
-                [
-                    _read_band(
-                        _signed(item["assets"][band]["href"], token),
-                        bounds,
-                        tile_px,
-                        rasterio.enums.Resampling.nearest if band in ASSETS_10M else resampling,
-                    )
-                    for band in garimpo_uncertainty.data.BANDS
-                ]
-            )
-            scl = _read_band(
-                _signed(item["assets"]["SCL"]["href"], token),
-                bounds,
-                tile_px,
-                rasterio.enums.Resampling.nearest,
-            )
-        mask_utm = gpd.GeoSeries([mask_geometry], crs=4326).to_crs(epsg).iloc[0]
-        # A forced re-cut overwrites slots in place: a crash midway must leave no `ok` vouching.
-        (root / "tiles" / f"{tile_id}.json").unlink(missing_ok=True)
-        bound = write_cells(
-            store, tile_index, image, scl, mask_utm, transform, garimpo_uncertainty.data.CELL_PX
-        )
-        record |= bound | {
-            "status": "ok",
-            "epsg": epsg,
-            "transform": list(transform)[:6],
-            "tile_offset_m": offset,
-            "tile_box_excess_m": excess,
-        }
+        record |= _cut_and_store(root, store, source, item, token=token, resampling=resampling)
     except urllib.error.HTTPError as error:
-        status = "missing_item" if error.code == 404 else f"http_{error.code}"
+        status = "missing_item" if error.code == http.HTTPStatus.NOT_FOUND else f"http_{error.code}"
         record |= {"status": status, "detail": str(error)}
     # Thread boundary: one bad tile must end in the report, not abort the other tiles.
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - the thread boundary stated above
         record |= {"status": f"error_{type(error).__name__}", "detail": str(error)}
-    write_sidecar(root, tile_id, record)
+    write_sidecar(root, source.tile_id, record)
     return record["status"]
+
+
+def _read_mask_geometries(root: Path) -> geopandas.GeoSeries:
+    masks = (
+        geopandas.read_file(gpkg_path(root), layer="preferred_polygons")
+        .set_index("tile_id")
+        .geometry
+    )
+    if not masks.index.is_unique:
+        raise ValueError("preferred_polygons has more than one row for a tile")
+    return masks
+
+
+def _finished_tiles(root: Path, selected: pd.DataFrame) -> dict[int, dict]:
+    """Return the sidecars with status ok of the selected tiles, by tile id."""
+    finished = {}
+    for tile_id in selected.tile_id.astype(int):
+        sidecar = root / "tiles" / f"{tile_id}.json"
+        record = json.loads(sidecar.read_text()) if sidecar.exists() else {}
+        if record.get("status") == "ok":
+            finished[tile_id] = record
+    return finished
+
+
+def _refuse_other_resampling(
+    finished: dict[int, dict], resampling: rasterio.enums.Resampling
+) -> None:
+    mismatched = [
+        tile_id
+        for tile_id, record in finished.items()
+        if record.get("resampling_20m") != resampling.name
+    ]
+    if mismatched:
+        raise ValueError(
+            f"{len(mismatched)} tiles were cut with another 20 m resampling than "
+            f"{resampling.name}, for example {mismatched[:5]}; use --force to redo them"
+        )
 
 
 def download_scenes(
@@ -340,13 +447,12 @@ def download_scenes(
     selected: pd.DataFrame,
     workers: int,
     resampling: rasterio.enums.Resampling,
+    *,
     force: bool = False,
 ) -> None:
     """Fetch pending tiles; `force` redoes every selected tile, so a cutting fix has a path."""
-    tiles = gpd.read_file(gpkg_path(root), layer="tiles").set_index("tile_id")
-    masks = gpd.read_file(gpkg_path(root), layer="preferred_polygons").set_index("tile_id").geometry
-    if not masks.index.is_unique:
-        raise ValueError("preferred_polygons has more than one row for a tile")
+    tiles = geopandas.read_file(gpkg_path(root), layer="tiles").set_index("tile_id")
+    masks = _read_mask_geometries(root)
     token = _Token()
     order = garimpo_uncertainty.data.tile_table(split).set_index("tile_id").tile_index
     create_store(
@@ -356,44 +462,22 @@ def download_scenes(
     # Every tile, not only the selected ones: a moved tile of another fraction would be overwritten.
     garimpo_uncertainty.data.tile_records(root, split, order.index.tolist())
 
-    def finished_record(tile_id: int) -> dict | None:
-        sidecar = root / "tiles" / f"{tile_id}.json"
-        record = json.loads(sidecar.read_text()) if sidecar.exists() else {}
-        return record if record.get("status") == "ok" else None
-
-    finished = {int(t): finished_record(int(t)) for t in selected.tile_id}
-    finished = {tile_id: record for tile_id, record in finished.items() if record}
-    mismatched = [
-        tile_id
-        for tile_id, record in finished.items()
-        if record.get("resampling_20m") != resampling.name
-    ]
-    if mismatched and not force:
-        raise ValueError(
-            f"{len(mismatched)} tiles were cut with another 20 m resampling than "
-            f"{resampling.name}, for example {mismatched[:5]}; use --force to redo them"
-        )
+    finished = _finished_tiles(root, selected)
+    if not force:
+        _refuse_other_resampling(finished, resampling)
 
     def one(tile_id: int) -> tuple[int, str]:
         if tile_id not in masks.index:
             write_sidecar(root, tile_id, {"status": "no_mask_polygon"})
             return tile_id, "no_mask_polygon"
         tile = tiles.loc[tile_id]
-        status = process_tile(
-            root,
-            store,
-            tile_id,
-            int(order[tile_id]),
-            tile.s2_tile_id,
-            tile.geometry,
-            masks.loc[tile_id],
-            token,
-            resampling,
+        source = TileSource(
+            tile_id, int(order[tile_id]), tile.s2_tile_id, tile.geometry, masks.loc[tile_id]
         )
-        return tile_id, status
+        return tile_id, process_tile(root, store, source, token, resampling)
 
     pending = [int(t) for t in selected.tile_id if force or int(t) not in finished]
-    print(f"{len(selected) - len(pending)} tiles already done, {len(pending)} pending")
+    logger.info("%s tiles already done, %s pending", len(selected) - len(pending), len(pending))
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         for count, (tile_id, status) in enumerate(pool.map(one, pending), start=1):
-            print(f"[{count}/{len(pending)}] tile {tile_id}: {status}", flush=True)
+            logger.info("[%s/%s] tile %s: %s", count, len(pending), tile_id, status)

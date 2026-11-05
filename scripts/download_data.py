@@ -39,7 +39,7 @@ def write_tile_lists(split_path: Path, subset_seed: int, directory: Path) -> Non
 
 def listed_tiles(list_path: Path, split_path: Path, split: pd.DataFrame) -> pd.DataFrame:
     """Return the split's rows a list names; a list from another split would mean other slots."""
-    tile_list = json.loads(list_path.read_text())
+    tile_list = json.loads(list_path.read_text(encoding="utf-8"))
     current = file_sha256(split_path)
     if tile_list["split_sha256"] != current:
         raise ValueError(
@@ -92,6 +92,7 @@ def main() -> None:
     )
     scenes.add_argument("--force", action="store_true", help="redo every listed tile")
     args = parser.parse_args()
+    garimpo_uncertainty.stages.log_to_stdout()
 
     if args.command == "lists":
         write_tile_lists(args.split, args.subset_seed, args.out)
@@ -113,7 +114,7 @@ def main() -> None:
             selected,
             args.workers,
             rasterio.enums.Resampling[args.resampling_20m],
-            args.force,
+            force=args.force,
         )
         statuses = garimpo_uncertainty.data.tile_records(
             root, split, selected.tile_id.tolist()
@@ -126,9 +127,9 @@ def main() -> None:
         root / "status",
         "download_scenes",
         [],
-        False,
         garimpo_uncertainty.stages.fingerprint(args, []),
         work,
+        force=False,
     )
 
 

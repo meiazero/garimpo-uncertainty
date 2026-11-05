@@ -6,6 +6,7 @@ Jacobians (PCA directions, interval stage) and summed features (density ratio), 
 
 import argparse
 from pathlib import Path
+from typing import NamedTuple
 
 import compass2d.compass
 import compass2d.directions
@@ -22,24 +23,84 @@ import garimpo_uncertainty.models
 import garimpo_uncertainty.stages
 
 
+class BatchScores(NamedTuple):
+    score: np.ndarray
+    saturated: np.ndarray
+    jacobians: np.ndarray
+    feature_sums: np.ndarray
+
+
+def search_logits(
+    model: torch.nn.Module,
+    features: list[torch.Tensor],
+    target: torch.Tensor,
+    args: argparse.Namespace,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    logits, _ = garimpo_uncertainty.models.split_at(
+        model, garimpo_uncertainty.models.LOGITS, features
+    )
+    return compass2d.compass.binary_search_scores(
+        lambda z: z,
+        lambda output: compass2d.metrics.hard_area(output, garimpo_uncertainty.data.PIXEL_HA),
+        logits,
+        torch.ones_like(logits),
+        target,
+        args.beta_range_logits,
+        args.search_threshold_logits,
+    )
+
+
+def score_batch(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    masks: torch.Tensor,
+    fitted: compass2d.directions.Directions,
+    args: argparse.Namespace,
+) -> BatchScores:
+    """Search each method's score on one batch, sharing one encoder pass; one row per method."""
+    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
+
+    def soft(logits: torch.Tensor) -> torch.Tensor:
+        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
+
+    target = masks.to(torch.float64).flatten(1).sum(1) * pixel_ha
+    features = garimpo_uncertainty.models.encode(model, x)
+    searches = [search_logits(model, features, target, args)]
+    z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
+    jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
+    feature_sums = z.flatten(2).sum(2).cpu().numpy()
+    for direction in ("pca", "svm"):
+        delta = compass2d.directions.cell_deltas(direction, jacobian.astype(np.float64), fitted)
+        searches.append(
+            compass2d.compass.binary_search_scores(
+                decode,
+                soft,
+                z,
+                compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z)),
+                target,
+                args.beta_range_features,
+                args.search_threshold_features,
+            )
+        )
+    return BatchScores(
+        np.stack([found.cpu().numpy() for found, _ in searches]),
+        np.stack([flags.cpu().numpy() for _, flags in searches]),
+        jacobian,
+        feature_sums,
+    )
+
+
 def score_cells(
     model: torch.nn.Module,
     cells: pd.DataFrame,
     root: Path,
     metadata: dict,
     args: argparse.Namespace,
+    *,
     device: str,
 ) -> dict[str, np.ndarray]:
     """Return arrays aligned with `cells`; scores have one row per COMPASS_METHODS entry."""
-    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
     fitted = compass2d.directions.Directions.load(args.run_dir / "directions" / f"{args.layer}.npz")
-
-    def hard(logits: torch.Tensor) -> torch.Tensor:
-        return compass2d.metrics.hard_area(logits, pixel_ha)
-
-    def soft(logits: torch.Tensor) -> torch.Tensor:
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
-
     methods = garimpo_uncertainty.intervals.COMPASS_METHODS
     score = np.empty((len(methods), len(cells)))
     saturated = np.empty((len(methods), len(cells)), dtype=bool)
@@ -50,40 +111,11 @@ def score_cells(
     first = 0
     for images, masks, _ in loader:
         last = first + len(images)
-        x = images.to(device)
-        target = masks.to(device).to(torch.float64).flatten(1).sum(1) * pixel_ha
-        features = garimpo_uncertainty.models.encode(model, x)
-        logits, _ = garimpo_uncertainty.models.split_at(
-            model, garimpo_uncertainty.models.LOGITS, features
-        )
-        found, flags = compass2d.compass.binary_search_scores(
-            lambda z: z,
-            hard,
-            logits,
-            torch.ones_like(logits),
-            target,
-            args.beta_range_logits,
-            args.search_threshold_logits,
-        )
-        score[0, first:last], saturated[0, first:last] = found.cpu().numpy(), flags.cpu().numpy()
-
-        z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
-        jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
-        jacobians.append(jacobian)
-        feature_sums.append(z.flatten(2).sum(2).cpu().numpy())
-        for row, direction in ((1, "pca"), (2, "svm")):
-            delta = compass2d.directions.cell_deltas(direction, jacobian.astype(np.float64), fitted)
-            found, flags = compass2d.compass.binary_search_scores(
-                decode,
-                soft,
-                z,
-                compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z)),
-                target,
-                args.beta_range_features,
-                args.search_threshold_features,
-            )
-            score[row, first:last] = found.cpu().numpy()
-            saturated[row, first:last] = flags.cpu().numpy()
+        batch = score_batch(model, images.to(device), masks.to(device), fitted, args)
+        score[:, first:last] = batch.score
+        saturated[:, first:last] = batch.saturated
+        jacobians.append(batch.jacobians)
+        feature_sums.append(batch.feature_sums)
         first = last
     return {
         "cell_index": cells.cell_index.to_numpy(),
@@ -113,6 +145,7 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
@@ -123,7 +156,7 @@ def main() -> None:
         cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
         model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
         evaluated = cells[cells.role.isin(["calibration", "test"])]
-        arrays = score_cells(model, evaluated, root, metadata, args, device)
+        arrays = score_cells(model, evaluated, root, metadata, args, device=device)
         garimpo_uncertainty.stages.write_arrays(scores_path, **arrays)
         return {
             "jacobians": list(arrays["jacobians"].shape),
@@ -141,11 +174,11 @@ def main() -> None:
         args.run_dir / "status",
         "compass_scores",
         [scores_path],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),
         work,
+        force=args.force,
     )
 
 

@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     split = pd.read_csv(args.split)
@@ -45,7 +46,7 @@ def main() -> None:
                 json.loads(args.split_summary.read_text()), args.train_fraction
             )
         report, cells = garimpo_uncertainty.validation.validate(
-            root, split, tile_ids, args.cell_px, summary, args.workers
+            root, split, tile_ids, args.cell_px, summary, workers=args.workers
         )
         garimpo_uncertainty.stages.write_json(args.report, report)
         print(json.dumps(report, indent=2))
@@ -63,13 +64,13 @@ def main() -> None:
         root / "status" / selection,
         "validate_data",
         [args.report],
-        args.force or bool(store_changed),
         garimpo_uncertainty.stages.fingerprint(
             args,
             [],
             hashed=garimpo_uncertainty.data.tiles_identity(root, split, tile_ids),
         ),
         work,
+        force=args.force or bool(store_changed),
     )
 
 

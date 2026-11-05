@@ -329,7 +329,7 @@ test cells make about 0.74 GB per model. Training cells keep their row in `predi
 
 ### Values to decide before the full run
 
-The proposal fixes none of these, so `slurm/full.sbatch` stops when one is missing. Pilot values
+Nothing fixes these yet, so `slurm/full.sbatch` stops when one is missing. Pilot values
 are not suggestions.
 
 | Value | Where |
@@ -350,33 +350,20 @@ are not suggestions.
 
 ## Numbers, scripts and outputs
 
-Run from the repository root. The proposal scripts need `data/zenodo`: link it with
-`mkdir -p data && ln -s "$GARIMPO_DATA_DIR/zenodo" data/zenodo`, or run
-`scripts/proposal/get_data.sh`.
+Run from the repository root. The split scripts read `data/zenodo`: after
+`download_data.py metadata`, link it with `mkdir -p data && ln -s "$GARIMPO_DATA_DIR/zenodo" data/zenodo`.
 
 ```bash
-scripts/proposal/get_biomes.sh                        # IBGE biomes into data/biomes, sha256 checked
-uv run python -I scripts/proposal/frame.py
-uv run python -I scripts/proposal/check_groups.py
-uv run python -I scripts/proposal/check_imagery.py    # one STAC request per artisanal tile
-uv run python -I scripts/proposal/coverage_precision.py
-uv run python -I scripts/proposal/make_split.py      # writes outputs/split.csv; a changed tile order or set then refuses the store
-uv run python -I scripts/proposal/check_labels.py     # agreement between the dataset's own masks
-uv run python -I scripts/proposal/make_examples.py    # reads 4 Sentinel-2 chips
-python3 -I scripts/proposal/get_papers.py             # open-access references into papers/
-cd proposta && "$(mise -C ../../dissertacao-v4 which latexmk)" -lualatex proposta_orientador.tex
+scripts/split/get_biomes.sh                 # IBGE biomes into data/biomes, sha256 checked
+uv run python -I scripts/split/frame.py
+uv run python -I scripts/split/make_split.py   # writes outputs/split.csv; a changed tile order or set then refuses the store
 ```
 
 | Number | Script | Output |
 |---|---|---|
-| Tiles by scale and region, chip areas, image years | `scripts/proposal/frame.py` | `outputs/frame.json`, `outputs/tiles_artisanal.csv` |
-| Groups at 50 km, cross-check in EPSG:5880 | `scripts/proposal/frame.py`, `check_groups.py` | `outputs/groups.json` |
-| Sentinel-2 items found (232 of 232 artisanal) | `scripts/proposal/check_imagery.py` | `outputs/imagery.csv` |
-| PICP confidence intervals, power, required M, realized coverage | `scripts/proposal/coverage_precision.py` | `outputs/coverage_precision.json` |
-| Geographic partition and training chips | `scripts/proposal/make_split.py` | `outputs/split.csv`, `outputs/split_summary.json` |
+| Tiles by scale and region, chip areas, image years | `scripts/split/frame.py` | `outputs/frame.json`, `outputs/tiles_artisanal.csv` |
+| Geographic partition and training chips | `scripts/split/make_split.py` | `outputs/split.csv`, `outputs/split_summary.json` |
 | Tiles and cells per training fraction | `scripts/download_data.py lists` | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
-| Agreement between dataset masks (not cited in the text yet) | `scripts/proposal/check_labels.py` | `outputs/label_agreement.json` |
-| Figure of dataset examples (`fig:exemplos`) | `scripts/proposal/make_examples.py` | `proposta/exemplos_dataset.pdf`, `outputs/exemplos_dataset.png`, `outputs/exemplos_dataset.csv` |
 | Data checks, scenes missing, clouds and nodata per role, per fraction | `scripts/validate_data.py` | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
 | PICP, MPIW, interval score, MAE, bias, relative error, Dice, boundary F1, with 95% group bootstrap, one row per model x fraction x method x calibration | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/results.csv` |
 | Paired width differences between methods | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/width_comparisons.csv` |
@@ -386,33 +373,44 @@ cd proposta && "$(mise -C ../../dissertacao-v4 which latexmk)" -lualatex propost
 | Monotonic fraction per layer and direction, validation role, for choosing the layer | `scripts/verify_monotonicity.py`, `merge_results.py` | `outputs/monotonicity_layer.csv` |
 | Monotonic fraction of the chosen layer, calibration and test roles | `scripts/verify_monotonicity.py`, `merge_results.py` | `outputs/monotonicity_endpoint.csv` |
 
-Claims outside these scripts map to their sources in `proposta/evidencias.csv`. Groups join tiles
-closer than 50 km, measured edge to edge. EPSG:6933 is the frame used (12 Amazon groups); EPSG:5880
-gives 14, within the distortion of a global projection.
+Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Amazon groups).
 
 ## Test
 
 ```bash
 slurm/submit.sh slurm/cpu.sbatch -m pytest -q
-uvx ruff format --check . && uvx ruff check .
+uv run ruff format --check . && uv run ruff check .
 ```
 
-The tests leave their artifacts in `tests/artifacts/`. One builds a synthetic dataset through the
-real cell writer and runs every stage after the download on CPU. Another runs the download code on
-local rasters, including `lists` and `scenes --tiles` from a small list to a larger one and the
-refusals of a list. Another runs two fractions on one data root, with the larger fraction's data
-arriving after the smaller run finished. Another checks counts and nesting on the real
-`outputs/split.csv`. Another regenerates the versioned tile lists and compares bytes, tiles and
-`select_tiles`. Another writes the store's tiles in shuffled order and compares bytes. The first
-also recomputes
-PICP, MPIW, interval score and Dice one cell at a time against `results.csv`, and every COMPASS row
-with its own loader against the one pass in `generate_intervals.py`, with no tolerance.
+The tests live in `tests/e2e/` and leave their artifacts in `tests/artifacts/`, reset when a session
+starts. They run on 4 workers by default; `pytest -n <N>` changes that and `pytest -n 0` runs serially.
+Each module has one subject and runs whole on one worker (`--dist loadfile`).
+`tests/e2e/conftest.py` builds the shared dataset and the finished runs once, under a file lock, and
+every worker reads them. A scenario that damages data works on a private copy under `tmp_path`, or on
+data of its own in a module fixture when it must still skip, since fingerprints record paths. Each
+process runs with `OMP_NUM_THREADS=1`: the thread count changes the trained weights, and the one-tile
+run of `test_fractions.py` fails `fit_directions.py` at 2 threads.
+
+| Module | Subject |
+|---|---|
+| `test_models.py` | f/g decomposition of each architecture; ImageNet and Sentinel-2 starting weights |
+| `test_tile_lists.py` | Counts and nesting on the real `outputs/split.csv`; the versioned lists regenerated and compared by bytes, tiles and `select_tiles` |
+| `test_store.py` | The store's tiles written in shuffled order and compared by bytes; the dataset reading slots |
+| `test_download.py` | The download code on local rasters, including `lists` and `scenes --tiles` from a small list to a larger one and the refusals of a list |
+| `test_validation.py` | Defects in the store and the split against the validation |
+| `test_damaged_store.py` | A store damaged under a finished run: stages may skip, the validation and the report may not |
+| `test_training.py` | What training writes and every refusal |
+| `test_sentinel2_training.py` | The identity of the Sentinel-2 weights file, present, absent and replaced |
+| `test_results.py` | PICP, MPIW, interval score and Dice recomputed one cell at a time against `results.csv`; every COMPASS row with its own loader against the one pass in `generate_intervals.py`, with no tolerance |
+| `test_stages.py` | Reruns, refusals, saturation, absent cells, merge and `pipeline_check.py` |
+| `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
+
 Not covered: `--cells nonempty`, real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real
 Sentinel-2 scenes, the shell scripts in `slurm/` including `FORCE_FROM` and the EXIT trap,
 `download_data.py metadata` and `weights`, a resume that actually continues training, cleanup
 of the temporary file in `infer.py`, GPU, the real ImageNet weights (a synthetic file covers the load), and the real
 Sentinel-2 MoCo file: a synthetic 13-band file stands in, with the variant trained for one epoch and
-only inference after it. The boundary F1 assertion in `check_metrics_never_retrain` depends on the
+only inference after it. The boundary F1 assertion in `test_wider_tolerance_can_only_match_more_boundary` depends on the
 short synthetic training not being degenerate; it held on the suite's fixed seeds.
 
 ## Ways the pipeline can fail

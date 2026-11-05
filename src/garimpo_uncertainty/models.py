@@ -1,5 +1,6 @@
 """The segmentation models: a plain ConvNet and a ResNet-50 smp U-Net that may start pretrained."""
 
+import itertools
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -19,6 +20,7 @@ UNET_VARIANTS = {
     "sentinel2_moco": "unet_sentinel2",
 }
 UNET_ENCODER = "resnet50"
+IMAGENET_N_BANDS = 3
 SENTINEL2_MOCO_BANDS = (
     "B01",
     "B02",
@@ -45,19 +47,17 @@ def _conv_block(in_channels: int, out_channels: int) -> torch.nn.Sequential:
 
 
 class ConvNet(torch.nn.Module):
-    """Down and up convolutions with no skip connections, the proposal's simple model."""
+    """Down and up convolutions with no skip connections, the simple model compared."""
 
     def __init__(self, in_channels: int, channels: list[int]) -> None:
         super().__init__()
         widths = [in_channels, *channels]
-        self.down = torch.nn.ModuleList(
-            _conv_block(a, b) for a, b in zip(widths[:-1], widths[1:], strict=True)
-        )
+        self.down = torch.nn.ModuleList(_conv_block(a, b) for a, b in itertools.pairwise(widths))
         self.pool = torch.nn.MaxPool2d(2)
         reverse = channels[::-1]
         self.up = torch.nn.ModuleList(
             torch.nn.Sequential(torch.nn.Upsample(scale_factor=2), _conv_block(a, b))
-            for a, b in zip(reverse[:-1], reverse[1:], strict=True)
+            for a, b in itertools.pairwise(reverse)
         )
         self.head = torch.nn.Conv2d(channels[0], 1, 1)
 
@@ -96,11 +96,14 @@ def load_imagenet(model: torch.nn.Module, path: Path) -> None:
     file_state = safetensors.torch.load_file(path)
     state = {key: value for key, value in file_state.items() if not key.startswith("fc.")}
     conv1 = state.get("conv1.weight")
-    if conv1 is None or conv1.shape[1] != 3:
+    if conv1 is None or conv1.shape[1] != IMAGENET_N_BANDS:
         shape = None if conv1 is None else tuple(conv1.shape)
-        raise ValueError(f"{path}: conv1.weight must have 3 bands, found shape {shape}")
+        raise ValueError(
+            f"{path}: conv1.weight must have {IMAGENET_N_BANDS} bands, found shape {shape}"
+        )
     n_bands = model.encoder.conv1.in_channels
-    state["conv1.weight"] = conv1[:, [band % 3 for band in range(n_bands)]] * (3 / n_bands)
+    columns = [band % IMAGENET_N_BANDS for band in range(n_bands)]
+    state["conv1.weight"] = conv1[:, columns] * (IMAGENET_N_BANDS / n_bands)
     model.encoder.load_state_dict(state)
 
 
@@ -122,6 +125,19 @@ def load_sentinel2_moco(model: torch.nn.Module, path: Path) -> None:
     model.encoder.load_state_dict(state)
 
 
+def _build_unet(
+    in_channels: int, encoder_weights: str, weights_file: Path | None
+) -> segmentation_models_pytorch.Unet:
+    model = segmentation_models_pytorch.Unet(
+        encoder_name=UNET_ENCODER, encoder_weights=None, in_channels=in_channels, classes=1
+    )
+    if encoder_weights == "imagenet":
+        load_imagenet(model, weights_file)
+    if encoder_weights == "sentinel2_moco":
+        load_sentinel2_moco(model, weights_file)
+    return model
+
+
 def build(
     arch: str,
     in_channels: int,
@@ -138,14 +154,7 @@ def build(
             raise ValueError("convnet needs channels")
         return ConvNet(in_channels, channels)
     if arch == "unet":
-        model = segmentation_models_pytorch.Unet(
-            encoder_name=UNET_ENCODER, encoder_weights=None, in_channels=in_channels, classes=1
-        )
-        if encoder_weights == "imagenet":
-            load_imagenet(model, weights_file)
-        if encoder_weights == "sentinel2_moco":
-            load_sentinel2_moco(model, weights_file)
-        return model
+        return _build_unet(in_channels, encoder_weights, weights_file)
     raise ValueError(f"unknown architecture: {arch!r}")
 
 

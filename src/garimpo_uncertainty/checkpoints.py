@@ -1,6 +1,7 @@
 """Checkpoint metadata: enough to rebuild the exact model and to refuse mismatched data."""
 
 import hashlib
+import logging
 import subprocess
 from pathlib import Path
 
@@ -11,11 +12,13 @@ import garimpo_uncertainty.data
 import garimpo_uncertainty.models
 import garimpo_uncertainty.stages
 
+logger = logging.getLogger(__name__)
+
 
 def _git(directory: str, *args: str) -> str:
     try:
         command = ["git", "-C", directory, *args]
-        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()
+        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 
@@ -42,7 +45,9 @@ def warn_on_code_change(metadata: dict) -> None:
     current = code_versions()
     for key in ("root_commit", "compass_commit"):
         if metadata[key] != current[key]:
-            print(f"warning: {key} is {current[key]}, the checkpoint came from {metadata[key]}")
+            logger.warning(
+                "warning: %s is %s, the checkpoint came from %s", key, current[key], metadata[key]
+            )
 
 
 def save(path: Path, content: dict) -> None:
@@ -62,7 +67,7 @@ def load_model(checkpoint: Path, cells: pd.DataFrame, device: str) -> tuple[torc
         channels=metadata["channels"],
     )
     model.load_state_dict(content["model"])
-    return model.eval().requires_grad_(False).to(device), metadata
+    return model.eval().requires_grad_(requires_grad=False).to(device), metadata
 
 
 def default_device() -> str:

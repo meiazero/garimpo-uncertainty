@@ -1,4 +1,4 @@
-"""Output-space interval methods of the proposal, sharing one normalized score.
+"""Output-space interval methods, sharing one normalized score.
 
 Every method is described by a lower term, an upper term and a scale; the score is
 max(lower - v, v - upper) / scale and the interval is [lower - q scale, upper + q scale]. Simple,

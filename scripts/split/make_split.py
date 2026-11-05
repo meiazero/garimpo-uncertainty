@@ -1,9 +1,9 @@
-"""Fixes the proposal's geographic partition; writes outputs/split.csv and split_summary.json."""
+"""Fixes the geographic partition; writes outputs/split.csv and split_summary.json."""
 
 import json
 import pathlib
 
-import geopandas as gpd
+import geopandas
 import numpy as np
 import pandas as pd
 
@@ -30,31 +30,31 @@ def assign_groups(artisanal: pd.DataFrame) -> dict[int, str]:
     return roles
 
 
-def main() -> None:
-    artisanal = pd.read_csv("outputs/tiles_artisanal.csv")
-    artisanal["role"] = artisanal.cluster_50km.map(assign_groups(artisanal))
-
-    tiles = gpd.read_file("data/zenodo/mining_area_data.gpkg", layer="tiles")
+def industrial_roles(artisanal: pd.DataFrame) -> pd.DataFrame:
+    """Industrial tiles too near a held-out tile drop out, so none leaks a neighborhood to train."""
+    tiles = geopandas.read_file("data/zenodo/mining_area_data.gpkg", layer="tiles")
     tiles = tiles[tiles.split.notna()].to_crs(6933)
     roles = artisanal.set_index("tile_id").role
     held_out = tiles[tiles.tile_id.map(roles).isin(["test", "calibration", "validation"])]
     industrial = tiles[tiles.minetype2 == "Industrial"].copy()
     distance = industrial.geometry.distance(held_out.geometry.union_all())
     industrial["role"] = np.where(distance < GUARD_M, "dropped", "train")
+    return pd.DataFrame(industrial[["tile_id", "role"]])
 
-    split = pd.concat(
-        [
-            artisanal[["tile_id", "region", "cluster_50km", "role"]].assign(scale="Artisanal"),
-            pd.DataFrame(industrial[["tile_id", "role"]]).assign(scale="Industrial"),
-        ]
-    )
-    assert split.tile_id.is_unique
-    assert (artisanal.groupby("cluster_50km").role.nunique() == 1).all()
+
+def check_partition(split: pd.DataFrame, artisanal: pd.DataFrame) -> None:
+    if not split.tile_id.is_unique:
+        raise ValueError("a tile_id appears more than once in the split")
+    if not (artisanal.groupby("cluster_50km").role.nunique() == 1).all():
+        raise ValueError("a 50 km group does not have exactly one role")
     train_groups = artisanal[artisanal.role == "train"].cluster_50km
     test_groups = artisanal[artisanal.role == "test"].cluster_50km
-    assert not set(train_groups) & set(test_groups)
+    if set(train_groups) & set(test_groups):
+        raise ValueError("a 50 km group is in both train and test")
 
-    summary = {
+
+def split_summary(split: pd.DataFrame, artisanal: pd.DataFrame) -> dict:
+    return {
         "seed": SEED,
         "tiles_by_scale_role": {
             f"{scale}/{role}": int(n)
@@ -63,6 +63,19 @@ def main() -> None:
         "groups_by_role": artisanal.groupby("role").cluster_50km.nunique().to_dict(),
         "train_chips": int((split.role == "train").sum() * 16),
     }
+
+
+def main() -> None:
+    artisanal = pd.read_csv("outputs/tiles_artisanal.csv")
+    artisanal["role"] = artisanal.cluster_50km.map(assign_groups(artisanal))
+    split = pd.concat(
+        [
+            artisanal[["tile_id", "region", "cluster_50km", "role"]].assign(scale="Artisanal"),
+            industrial_roles(artisanal).assign(scale="Industrial"),
+        ]
+    )
+    check_partition(split, artisanal)
+    summary = split_summary(split, artisanal)
     outputs = pathlib.Path("outputs")
     split.to_csv(outputs / "split.csv", index=False)
     text = json.dumps(summary, indent=2)

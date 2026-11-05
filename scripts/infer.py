@@ -8,6 +8,8 @@ Training cells keep only their columns: only the CQR regressors read them, and t
 import argparse
 import os
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import compass2d.metrics
@@ -25,6 +27,57 @@ PERSISTED_ROLES = ("validation", "calibration", "test")
 AREA_COLUMNS = ("v", "vhat", "p_sum", "pixel_var", "cell_ha")
 
 
+@contextmanager
+def probability_writer(
+    path: Path | None, n_cells: int
+) -> Iterator[Callable[[int, torch.Tensor], None]]:
+    """Yield a function that stores a batch at a position, as uint8, in a temporary file.
+
+    The file takes its pixel shape from the first batch and replaces `path` on a clean exit; with no
+    `path` the function stores nothing.
+    """
+    if path is None:
+        yield lambda _first, _probabilities: None
+        return
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    stored = None
+
+    def write(first: int, probabilities: torch.Tensor) -> None:
+        nonlocal stored
+        if stored is None:
+            shape = (n_cells, *probabilities.shape[-2:])
+            stored = np.lib.format.open_memmap(temporary, mode="w+", dtype=np.uint8, shape=shape)
+        scaled = probabilities[:, 0] * garimpo_uncertainty.evaluation.PROBABILITY_SCALE
+        stored[first : first + len(probabilities)] = scaled.round().to(torch.uint8).cpu().numpy()
+
+    try:
+        yield write
+        if stored is not None:
+            stored.flush()
+            del stored
+            temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def fill_area_columns(
+    columns: dict[str, np.ndarray],
+    positions: np.ndarray,
+    masks: torch.Tensor,
+    logits: torch.Tensor,
+    probabilities: torch.Tensor,
+) -> None:
+    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
+    height, width = logits.shape[-2:]
+    columns["v"][positions] = masks.to(torch.float64).flatten(1).sum(1).numpy() * pixel_ha
+    columns["vhat"][positions] = compass2d.metrics.hard_area(logits, pixel_ha).cpu().numpy()
+    columns["p_sum"][positions] = probabilities.flatten(1).sum(1).cpu().numpy() * pixel_ha
+    columns["pixel_var"][positions] = (
+        (probabilities * (1 - probabilities)).flatten(1).sum(1).cpu().numpy()
+    )
+    columns["cell_ha"][positions] = height * width * pixel_ha
+
+
 @torch.no_grad()
 def infer_role(
     model: torch.nn.Module,
@@ -32,54 +85,29 @@ def infer_role(
     root: Path,
     metadata: dict,
     args: argparse.Namespace,
+    *,
     device: str,
     columns: dict[str, np.ndarray],
     positions: np.ndarray,
     probabilities_path: Path | None,
 ) -> float:
     """Fill `columns` at `positions`, and return the seconds spent waiting for data."""
-    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-    stored = None
-    temporary = None
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, role_cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     first = 0
     data_wait = 0.0
-    ready = time.monotonic()
-    try:
+    with probability_writer(probabilities_path, len(role_cells)) as write_probabilities:
+        ready = time.monotonic()
         for images, masks, _ in loader:
             data_wait += time.monotonic() - ready
             logits = model(images.to(device))
             probabilities = torch.sigmoid(logits).to(torch.float64)
-            height, width = logits.shape[-2:]
             batch = positions[first : first + len(images)]
-            columns["v"][batch] = masks.to(torch.float64).flatten(1).sum(1).numpy() * pixel_ha
-            columns["vhat"][batch] = compass2d.metrics.hard_area(logits, pixel_ha).cpu().numpy()
-            columns["p_sum"][batch] = probabilities.flatten(1).sum(1).cpu().numpy() * pixel_ha
-            columns["pixel_var"][batch] = (
-                (probabilities * (1 - probabilities)).flatten(1).sum(1).cpu().numpy()
-            )
-            columns["cell_ha"][batch] = height * width * pixel_ha
-            if probabilities_path is not None:
-                if stored is None:
-                    temporary = probabilities_path.with_name(
-                        f"{probabilities_path.name}.{os.getpid()}.tmp"
-                    )
-                    stored = np.lib.format.open_memmap(
-                        temporary, mode="w+", dtype=np.uint8, shape=(len(role_cells), height, width)
-                    )
-                scaled = probabilities[:, 0] * garimpo_uncertainty.evaluation.PROBABILITY_SCALE
-                stored[first : first + len(images)] = scaled.round().to(torch.uint8).cpu().numpy()
+            fill_area_columns(columns, batch, masks, logits, probabilities)
+            write_probabilities(first, probabilities)
             first += len(images)
             ready = time.monotonic()
-        if stored is not None:
-            stored.flush()
-            del stored
-            temporary.replace(probabilities_path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
     return data_wait
 
 
@@ -92,6 +120,7 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
@@ -112,10 +141,10 @@ def main() -> None:
                     root,
                     metadata,
                     args,
-                    device,
-                    columns,
-                    np.flatnonzero(cells.role == role),
-                    arrays.get(role),
+                    device=device,
+                    columns=columns,
+                    positions=np.flatnonzero(cells.role == role),
+                    probabilities_path=arrays.get(role),
                 ),
                 3,
             )
@@ -134,13 +163,13 @@ def main() -> None:
         args.run_dir / "status",
         "infer",
         [cells_path, *arrays.values()],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args,
             [args.checkpoint],
             hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir),
         ),
         work,
+        force=args.force,
     )
 
 

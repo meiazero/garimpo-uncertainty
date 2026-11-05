@@ -9,6 +9,16 @@ import torch.utils.data
 
 import garimpo_uncertainty.data
 
+FLIP_PROBABILITY = 0.5
+
+
+def _random_flips(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if torch.rand(1).item() > FLIP_PROBABILITY:
+        image, mask = image[..., ::-1], mask[..., ::-1]
+    if torch.rand(1).item() > FLIP_PROBABILITY:
+        image, mask = image[..., ::-1, :], mask[..., ::-1, :]
+    return image, mask
+
 
 class CellDataset(torch.utils.data.Dataset):
     """Yields (image, mask, cell_index); image is BOA reflectance, z-scored when stats are given."""
@@ -18,6 +28,7 @@ class CellDataset(torch.utils.data.Dataset):
         root: Path,
         cells: pd.DataFrame,
         normalization: dict[str, list[float]] | None,
+        *,
         augment: bool = False,
     ) -> None:
         self.root = root
@@ -48,10 +59,7 @@ class CellDataset(torch.utils.data.Dataset):
             image = (image - self.mean) / self.std
         mask = (self.masks[cell_index][None] > 0).astype(np.float32)
         if self.augment:
-            if torch.rand(1).item() > 0.5:
-                image, mask = image[..., ::-1], mask[..., ::-1]
-            if torch.rand(1).item() > 0.5:
-                image, mask = image[..., ::-1, :], mask[..., ::-1, :]
+            image, mask = _random_flips(image, mask)
         return torch.from_numpy(image.copy()), torch.from_numpy(mask.copy()), cell_index
 
 
@@ -61,11 +69,12 @@ def loader(
     normalization: dict[str, list[float]] | None,
     batch_size: int,
     num_workers: int,
+    *,
     shuffle: bool = False,
     augment: bool = False,
 ) -> torch.utils.data.DataLoader:
     return torch.utils.data.DataLoader(
-        CellDataset(root, cells, normalization, augment),
+        CellDataset(root, cells, normalization, augment=augment),
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
