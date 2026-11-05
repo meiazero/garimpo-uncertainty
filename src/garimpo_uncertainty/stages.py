@@ -162,7 +162,8 @@ def _run_work(
         record = identity | {
             "status": "failed",
             "error": f"{type(error).__name__}: {error}",
-            "traceback": traceback.format_exc(limit=10),
+            # A failure in the U-Net's deepest layer sits about 31 frames below this `try`.
+            "traceback": traceback.format_exc(limit=32),
             "seconds": round(time.monotonic() - start, 1),
         }
         write_json(status_path, record | _peak_memory())
