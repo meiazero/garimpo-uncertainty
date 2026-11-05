@@ -116,7 +116,7 @@ def test_wider_tolerance_can_only_match_more_boundary(
 
 @pytest.fixture(scope="session")
 def saturated_run(convnet_run: support.FinishedRun, data_root: Path) -> Path:
-    """A beta_range too small to cover anything."""
+    """Build a run whose beta_range is too small to cover anything."""
     saturated = support.RUNS / "convnet_saturated"
 
     def build() -> None:

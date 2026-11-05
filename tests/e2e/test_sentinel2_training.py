@@ -50,7 +50,7 @@ def trained_sentinel2(data_root: Path) -> Sentinel2Run:
 
 @pytest.fixture
 def sentinel2(trained_sentinel2: Sentinel2Run) -> Iterator[Sentinel2Run]:
-    """The 0.5 GB checkpoints stay outside the restore, as nothing here may write them."""
+    """Leave the 0.5 GB checkpoints out of the restore, as nothing here may write them."""
     with (
         support.restored_after(trained_sentinel2.run_dir / "status"),
         support.restored_after(trained_sentinel2.weights.parent),

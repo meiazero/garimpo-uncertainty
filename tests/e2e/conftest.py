@@ -48,12 +48,18 @@ def finished_run(request: pytest.FixtureRequest) -> support.FinishedRun:
 
 @pytest.fixture
 def private_data_root(data_root: Path, tmp_path: Path) -> Path:
-    """A copy to damage. Stages recorded the original's path, so here they redo, never skip."""
+    """Copy the data root so a test can damage it.
+
+    Stages recorded the original's path, so here they redo, never skip.
+    """
     return Path(shutil.copytree(data_root, tmp_path / "data"))
 
 
 @pytest.fixture
 def private_convnet(convnet_run: support.FinishedRun, tmp_path: Path) -> support.FinishedRun:
-    """A copy to damage. Stages recorded the original's path, so here they need --force."""
+    """Copy the convnet run so a test can damage it.
+
+    Stages recorded the original's path, so here they need --force.
+    """
     run_dir = Path(shutil.copytree(convnet_run.run_dir, tmp_path / "convnet"))
     return convnet_run._replace(run_dir=run_dir)
