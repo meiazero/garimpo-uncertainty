@@ -18,6 +18,7 @@ class CellDataset(torch.utils.data.Dataset):
         root: Path,
         cells: pd.DataFrame,
         normalization: dict[str, list[float]] | None,
+        *,
         augment: bool = False,
     ) -> None:
         self.root = root
@@ -61,11 +62,12 @@ def loader(
     normalization: dict[str, list[float]] | None,
     batch_size: int,
     num_workers: int,
+    *,
     shuffle: bool = False,
     augment: bool = False,
 ) -> torch.utils.data.DataLoader:
     return torch.utils.data.DataLoader(
-        CellDataset(root, cells, normalization, augment),
+        CellDataset(root, cells, normalization, augment=augment),
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,

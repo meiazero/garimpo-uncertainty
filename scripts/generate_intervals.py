@@ -146,11 +146,11 @@ def main() -> None:
         run_dir / "status",
         "generate_intervals",
         [output],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
         ),
         lambda: generate(args, root, device, output),
+        force=args.force,
     )
 
 

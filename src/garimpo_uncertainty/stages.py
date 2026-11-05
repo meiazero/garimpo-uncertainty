@@ -113,9 +113,10 @@ def run_stage(
     status_dir: Path,
     name: str,
     outputs: list[Path],
-    force: bool,
     stage_fingerprint: dict,
     work: Callable[[], dict],
+    *,
+    force: bool,
 ) -> None:
     """Run `work` unless its outputs exist from the same inputs; `work` returns shapes to record.
 

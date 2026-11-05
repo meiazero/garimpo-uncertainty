@@ -165,7 +165,13 @@ def train(
 
     normalization = metadata["normalization"]
     train_loader = garimpo_uncertainty.cell_dataset.loader(
-        root, train_cells, normalization, args.batch_size, args.num_workers, True, True
+        root,
+        train_cells,
+        normalization,
+        args.batch_size,
+        args.num_workers,
+        shuffle=True,
+        augment=True,
     )
     validation_loader = garimpo_uncertainty.cell_dataset.loader(
         root, validation_cells, normalization, args.batch_size, args.num_workers
@@ -283,7 +289,6 @@ def main() -> None:
         args.run_dir / "status",
         "train",
         [args.run_dir / "best_model.pt", args.run_dir / "history.csv"],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args,
             [],
@@ -291,6 +296,7 @@ def main() -> None:
             hashed=garimpo_uncertainty.data.tiles_identity(root, split, tile_ids),
         ),
         lambda: train(args, root, device, split, tile_ids),
+        force=args.force,
     )
 
 

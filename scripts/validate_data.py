@@ -63,13 +63,13 @@ def main() -> None:
         root / "status" / selection,
         "validate_data",
         [args.report],
-        args.force or bool(store_changed),
         garimpo_uncertainty.stages.fingerprint(
             args,
             [],
             hashed=garimpo_uncertainty.data.tiles_identity(root, split, tile_ids),
         ),
         work,
+        force=args.force or bool(store_changed),
     )
 
 

@@ -112,11 +112,11 @@ def main() -> None:
         run_dir / "status",
         "compute_metrics",
         [cell_metrics_path, *outputs.values()],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
         ),
         work,
+        force=args.force,
     )
 
 

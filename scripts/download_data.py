@@ -113,7 +113,7 @@ def main() -> None:
             selected,
             args.workers,
             rasterio.enums.Resampling[args.resampling_20m],
-            args.force,
+            force=args.force,
         )
         statuses = garimpo_uncertainty.data.tile_records(
             root, split, selected.tile_id.tolist()
@@ -126,9 +126,9 @@ def main() -> None:
         root / "status",
         "download_scenes",
         [],
-        False,
         garimpo_uncertainty.stages.fingerprint(args, []),
         work,
+        force=False,
     )
 
 

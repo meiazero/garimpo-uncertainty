@@ -135,13 +135,13 @@ def main() -> None:
         args.run_dir / "status",
         "fit_directions",
         [diagnostics_path, *layer_paths.values()],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args,
             [args.checkpoint],
             hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir),
         ),
         work,
+        force=args.force,
     )
 
 

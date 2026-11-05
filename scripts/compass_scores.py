@@ -141,11 +141,11 @@ def main() -> None:
         args.run_dir / "status",
         "compass_scores",
         [scores_path],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),
         work,
+        force=args.force,
     )
 
 

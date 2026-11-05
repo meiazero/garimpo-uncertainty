@@ -145,11 +145,11 @@ def main() -> None:
         args.run_dir / "status",
         f"{args.use}_monotonicity",
         [output],
-        args.force,
         garimpo_uncertainty.stages.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),
         work,
+        force=args.force,
     )
 
 

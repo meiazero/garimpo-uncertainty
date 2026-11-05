@@ -62,7 +62,7 @@ def load_model(checkpoint: Path, cells: pd.DataFrame, device: str) -> tuple[torc
         channels=metadata["channels"],
     )
     model.load_state_dict(content["model"])
-    return model.eval().requires_grad_(False).to(device), metadata
+    return model.eval().requires_grad_(requires_grad=False).to(device), metadata
 
 
 def default_device() -> str:

@@ -340,6 +340,7 @@ def download_scenes(
     selected: pd.DataFrame,
     workers: int,
     resampling: rasterio.enums.Resampling,
+    *,
     force: bool = False,
 ) -> None:
     """Fetch pending tiles; `force` redoes every selected tile, so a cutting fix has a path."""
