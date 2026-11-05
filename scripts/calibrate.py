@@ -43,8 +43,8 @@ def quantile_per_cell(
 
 
 @dataclass(frozen=True)
-class Population:
-    """Calibration and test cells of one run, with what every row's quantile needs from them."""
+class CalibrationProblem:
+    """One run's conformal problem: both populations, the shift between them, the target level."""
 
     calibration: pd.DataFrame
     test: pd.DataFrame
@@ -103,13 +103,10 @@ class Rows:
 
 
 def read_scores(
-    run_dir: Path,
-    calibration_cells: pd.DataFrame,
-    test_cells: pd.DataFrame,
-    args: argparse.Namespace,
+    calibration_cells: pd.DataFrame, test_cells: pd.DataFrame, args: argparse.Namespace
 ) -> tuple[CompassScores, np.ndarray]:
     """Return the scores and the density ratio of test over calibration features."""
-    with np.load(run_dir / "scores" / "scores.npz") as stored:
+    with np.load(args.run_dir / "scores" / "scores.npz") as stored:
         calibration_at = garimpo_uncertainty.data.positions_of(
             stored["cell_index"], calibration_cells.cell_index.to_numpy()
         )
@@ -129,10 +126,16 @@ def read_scores(
 
 
 def fill_compass_row(
-    rows: Rows, k: int, method: str, calibration: str, *, scores: CompassScores, cells: Population
+    rows: Rows,
+    k: int,
+    method: str,
+    calibration: str,
+    *,
+    scores: CompassScores,
+    problem: CalibrationProblem,
 ) -> None:
     m = garimpo_uncertainty.intervals.COMPASS_METHODS.index(method)
-    rows.quantile[k] = cells.quantile(
+    rows.quantile[k] = problem.quantile(
         calibration, scores.score[m, scores.calibration_at], scores.score[m, scores.test_at]
     )
     rows.scale[k] = np.nan
@@ -149,26 +152,26 @@ def fill_output_space_row(
     method: str,
     calibration: str,
     *,
-    cells: Population,
+    problem: CalibrationProblem,
     score_floor_ha: float,
     cqr_models: tuple,
 ) -> None:
     rows.lower_term[k], rows.upper_term[k], rows.scale[k] = (
-        garimpo_uncertainty.intervals.method_terms(method, cells.test, score_floor_ha, cqr_models)
+        garimpo_uncertainty.intervals.method_terms(method, problem.test, score_floor_ha, cqr_models)
     )
     own_lower, own_upper, own_scale = garimpo_uncertainty.intervals.method_terms(
-        method, cells.calibration, score_floor_ha, cqr_models
+        method, problem.calibration, score_floor_ha, cqr_models
     )
-    rows.quantile[k] = cells.quantile(
+    rows.quantile[k] = problem.quantile(
         calibration,
         garimpo_uncertainty.intervals.scores(
-            cells.calibration.v.to_numpy(), own_lower, own_upper, own_scale
+            problem.calibration.v.to_numpy(), own_lower, own_upper, own_scale
         ),
         garimpo_uncertainty.intervals.scores(
-            cells.test.v.to_numpy(), rows.lower_term[k], rows.upper_term[k], rows.scale[k]
+            problem.test.v.to_numpy(), rows.lower_term[k], rows.upper_term[k], rows.scale[k]
         ),
     )
-    rows.n_scores[k] = len(cells.test if calibration == "own_region" else cells.calibration)
+    rows.n_scores[k] = len(problem.test if calibration == "own_region" else problem.calibration)
 
 
 def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dict:
@@ -177,8 +180,8 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
         cells = cells[cells.v > 0]
     calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
     test_cells = cells[cells.role == "test"].reset_index(drop=True)
-    scores, density_ratio = read_scores(args.run_dir, calibration_cells, test_cells, args)
-    population = Population(calibration_cells, test_cells, density_ratio, args.alpha)
+    scores, density_ratio = read_scores(calibration_cells, test_cells, args)
+    problem = CalibrationProblem(calibration_cells, test_cells, density_ratio, args.alpha)
     cqr_models = garimpo_uncertainty.intervals.fit_cqr(
         cells[cells.role == "train"], args.alpha, args.seed
     )
@@ -192,14 +195,14 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
             )
             rows.quantile[k], rows.scale[k] = 0.0, 1.0
         elif method in garimpo_uncertainty.intervals.COMPASS_METHODS:
-            fill_compass_row(rows, k, method, calibration, scores=scores, cells=population)
+            fill_compass_row(rows, k, method, calibration, scores=scores, problem=problem)
         else:
             fill_output_space_row(
                 rows,
                 k,
                 method,
                 calibration,
-                cells=population,
+                problem=problem,
                 score_floor_ha=args.score_floor_ha,
                 cqr_models=cqr_models,
             )

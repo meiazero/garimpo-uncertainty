@@ -126,7 +126,9 @@ def fail_stage(status_dir: Path, name: str, message: str) -> NoReturn:
 
 def _reusable(outputs: list[Path], completed: dict | None, *, force: bool) -> bool:
     """Tell whether finished outputs exist that this run must either skip over or refuse."""
-    return bool(outputs and completed) and all(p.exists() for p in outputs) and not force
+    if force or not outputs or not completed:
+        return False
+    return all(p.exists() for p in outputs)
 
 
 def _skip_or_refuse(status_path: Path, name: str, previous: dict, stage_fingerprint: dict) -> None:
@@ -160,7 +162,7 @@ def _run_work(
         record = identity | {
             "status": "failed",
             "error": f"{type(error).__name__}: {error}",
-            "traceback": traceback.format_exc(limit=8),
+            "traceback": traceback.format_exc(limit=10),
             "seconds": round(time.monotonic() - start, 1),
         }
         write_json(status_path, record | _peak_memory())

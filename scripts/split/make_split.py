@@ -75,9 +75,10 @@ def main() -> None:
         ]
     )
     check_partition(split, artisanal)
+    summary = split_summary(split, artisanal)
     outputs = pathlib.Path("outputs")
     split.to_csv(outputs / "split.csv", index=False)
-    text = json.dumps(split_summary(split, artisanal), indent=2)
+    text = json.dumps(summary, indent=2)
     (outputs / "split_summary.json").write_text(text + "\n")
     print(text)
 

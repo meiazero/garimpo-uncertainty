@@ -399,12 +399,12 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
             test,
             compass_inputs.jacobians,
             compass_inputs.fitted,
-            evaluation.data_root,
-            compass_inputs.metadata,
-            args,
-            "cpu",
-            lower,
-            upper,
+            root=evaluation.data_root,
+            metadata=compass_inputs.metadata,
+            args=args,
+            device="cpu",
+            lower=lower,
+            upper=upper,
         )
     handle.remove()
     assert sorted(reads) == list(range(len(test)))

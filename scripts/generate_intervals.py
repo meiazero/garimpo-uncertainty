@@ -5,7 +5,9 @@ and quantile as [K, N] arrays, K indexing COMBINATIONS and N the test cells.
 """
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import compass2d.compass
 import compass2d.directions
@@ -22,14 +24,26 @@ import garimpo_uncertainty.models
 import garimpo_uncertainty.stages
 
 
+class SearchSpace(NamedTuple):
+    """What one COMPASS method perturbs: the point, its direction, and how to read an area."""
+
+    decode: Callable[[torch.Tensor], torch.Tensor]
+    metric: Callable[[torch.Tensor], torch.Tensor]
+    z: torch.Tensor
+    delta: torch.Tensor
+
+    def endpoints(self, beta: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        return compass2d.compass.endpoints(self.decode, self.metric, self.z, self.delta, beta)
+
+
 def search_spaces(
     model: torch.nn.Module,
     features: list[torch.Tensor],
     jacobians: np.ndarray,
     fitted: compass2d.directions.Directions,
     args: argparse.Namespace,
-) -> dict[str, tuple]:
-    """Return, per COMPASS method, what compass2d.compass.endpoints perturbs on this batch."""
+) -> dict[str, SearchSpace]:
+    """Return each COMPASS method's search space on this batch."""
     pixel_ha = garimpo_uncertainty.data.PIXEL_HA
 
     def soft(logits: torch.Tensor) -> torch.Tensor:
@@ -40,7 +54,7 @@ def search_spaces(
     )
     z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
     spaces = {
-        "compass_l": (
+        "compass_l": SearchSpace(
             lambda zi: zi,
             lambda output: compass2d.metrics.hard_area(output, pixel_ha),
             logits,
@@ -49,7 +63,7 @@ def search_spaces(
     }
     for direction in ("pca", "svm"):
         delta = compass2d.directions.cell_deltas(direction, jacobians, fitted)
-        spaces[f"compass_j_{direction}"] = (
+        spaces[f"compass_j_{direction}"] = SearchSpace(
             decode,
             soft,
             z,
@@ -90,7 +104,7 @@ def compass_endpoints(
         spaces = search_spaces(model, features, batch_jacobians, fitted, args)
         for k, method in rows:
             beta = torch.as_tensor(quantile[k, first:last], device=device)
-            low, high = compass2d.compass.endpoints(*spaces[method], beta)
+            low, high = spaces[method].endpoints(beta)
             lower[k, first:last], upper[k, first:last] = low.cpu().numpy(), high.cpu().numpy()
         first = last
 

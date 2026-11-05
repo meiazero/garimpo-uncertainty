@@ -201,14 +201,13 @@ def report_slots(
 ) -> list[str]:
     # Last, and flushed first: this reads every slot of the run, and a job at its limit may not end.
     print("\n--- this run's slots against the hashes in their sidecars", flush=True)
-    problems = list(store_problems)
-    if tiles is not None and not problems:
-        problems += garimpo_uncertainty.validation.slot_mismatches(root, tiles, workers)
-    print("\n".join(problems) or "every slot matches")
-    return problems
+    if tiles is not None and not store_problems:
+        store_problems = garimpo_uncertainty.validation.slot_mismatches(root, tiles, workers)
+    print("\n".join(store_problems) or "every slot matches")
+    return store_problems
 
 
-def print_verdict(failed: list[dict]) -> None:
+def exit_with_verdict(failed: list[dict]) -> None:
     print("\n" + "=" * 78)
     if failed:
         print(f"PIPELINE CHECK: FAIL at {[r['stage'] for r in failed]}")
@@ -240,7 +239,7 @@ def main() -> None:
     failed += results_failures(args.run_dir / "metrics" / "results.csv")
     store_problems = report_slots(root, tiles, store_problems, args.workers)
     failed += [{"stage": problem} for problem in store_problems]
-    print_verdict(failed)
+    exit_with_verdict(failed)
 
 
 if __name__ == "__main__":

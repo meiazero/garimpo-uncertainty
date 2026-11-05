@@ -81,7 +81,7 @@ def validation_dice(
 
 @dataclass
 class TrainingState:
-    """What last.pt holds: everything a run needs to continue after a finished epoch."""
+    """What one epoch hands to the next, and what last.pt restores after an interruption."""
 
     model: torch.nn.Module
     optimizer: torch.optim.Optimizer
