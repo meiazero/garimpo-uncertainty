@@ -1,4 +1,4 @@
-"""Measures the proposal's available units; writes outputs/frame.json and tiles_artisanal.csv."""
+"""Measures the dataset's available units; writes outputs/frame.json and tiles_artisanal.csv."""
 
 import argparse
 import json

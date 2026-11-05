@@ -329,7 +329,7 @@ test cells make about 0.74 GB per model. Training cells keep their row in `predi
 
 ### Values to decide before the full run
 
-The proposal fixes none of these, so `slurm/full.sbatch` stops when one is missing. Pilot values
+Nothing fixes these yet, so `slurm/full.sbatch` stops when one is missing. Pilot values
 are not suggestions.
 
 | Value | Where |
@@ -350,33 +350,20 @@ are not suggestions.
 
 ## Numbers, scripts and outputs
 
-Run from the repository root. The proposal scripts need `data/zenodo`: link it with
-`mkdir -p data && ln -s "$GARIMPO_DATA_DIR/zenodo" data/zenodo`, or run
-`scripts/proposal/get_data.sh`.
+Run from the repository root. The split scripts read `data/zenodo`: after
+`download_data.py metadata`, link it with `mkdir -p data && ln -s "$GARIMPO_DATA_DIR/zenodo" data/zenodo`.
 
 ```bash
-scripts/proposal/get_biomes.sh                        # IBGE biomes into data/biomes, sha256 checked
-uv run python -I scripts/proposal/frame.py
-uv run python -I scripts/proposal/check_groups.py
-uv run python -I scripts/proposal/check_imagery.py    # one STAC request per artisanal tile
-uv run python -I scripts/proposal/coverage_precision.py
-uv run python -I scripts/proposal/make_split.py      # writes outputs/split.csv; a changed tile order or set then refuses the store
-uv run python -I scripts/proposal/check_labels.py     # agreement between the dataset's own masks
-uv run python -I scripts/proposal/make_examples.py    # reads 4 Sentinel-2 chips
-python3 -I scripts/proposal/get_papers.py             # open-access references into papers/
-cd proposta && "$(mise -C ../../dissertacao-v4 which latexmk)" -lualatex proposta_orientador.tex
+scripts/split/get_biomes.sh                 # IBGE biomes into data/biomes, sha256 checked
+uv run python -I scripts/split/frame.py
+uv run python -I scripts/split/make_split.py   # writes outputs/split.csv; a changed tile order or set then refuses the store
 ```
 
 | Number | Script | Output |
 |---|---|---|
-| Tiles by scale and region, chip areas, image years | `scripts/proposal/frame.py` | `outputs/frame.json`, `outputs/tiles_artisanal.csv` |
-| Groups at 50 km, cross-check in EPSG:5880 | `scripts/proposal/frame.py`, `check_groups.py` | `outputs/groups.json` |
-| Sentinel-2 items found (232 of 232 artisanal) | `scripts/proposal/check_imagery.py` | `outputs/imagery.csv` |
-| PICP confidence intervals, power, required M, realized coverage | `scripts/proposal/coverage_precision.py` | `outputs/coverage_precision.json` |
-| Geographic partition and training chips | `scripts/proposal/make_split.py` | `outputs/split.csv`, `outputs/split_summary.json` |
+| Tiles by scale and region, chip areas, image years | `scripts/split/frame.py` | `outputs/frame.json`, `outputs/tiles_artisanal.csv` |
+| Geographic partition and training chips | `scripts/split/make_split.py` | `outputs/split.csv`, `outputs/split_summary.json` |
 | Tiles and cells per training fraction | `scripts/download_data.py lists` | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
-| Agreement between dataset masks (not cited in the text yet) | `scripts/proposal/check_labels.py` | `outputs/label_agreement.json` |
-| Figure of dataset examples (`fig:exemplos`) | `scripts/proposal/make_examples.py` | `proposta/exemplos_dataset.pdf`, `outputs/exemplos_dataset.png`, `outputs/exemplos_dataset.csv` |
 | Data checks, scenes missing, clouds and nodata per role, per fraction | `scripts/validate_data.py` | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
 | PICP, MPIW, interval score, MAE, bias, relative error, Dice, boundary F1, with 95% group bootstrap, one row per model x fraction x method x calibration | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/results.csv` |
 | Paired width differences between methods | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/width_comparisons.csv` |
@@ -386,9 +373,7 @@ cd proposta && "$(mise -C ../../dissertacao-v4 which latexmk)" -lualatex propost
 | Monotonic fraction per layer and direction, validation role, for choosing the layer | `scripts/verify_monotonicity.py`, `merge_results.py` | `outputs/monotonicity_layer.csv` |
 | Monotonic fraction of the chosen layer, calibration and test roles | `scripts/verify_monotonicity.py`, `merge_results.py` | `outputs/monotonicity_endpoint.csv` |
 
-Claims outside these scripts map to their sources in `proposta/evidencias.csv`. Groups join tiles
-closer than 50 km, measured edge to edge. EPSG:6933 is the frame used (12 Amazon groups); EPSG:5880
-gives 14, within the distortion of a global projection.
+Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Amazon groups).
 
 ## Test
 

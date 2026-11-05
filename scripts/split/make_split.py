@@ -1,4 +1,4 @@
-"""Fixes the proposal's geographic partition; writes outputs/split.csv and split_summary.json."""
+"""Fixes the geographic partition; writes outputs/split.csv and split_summary.json."""
 
 import json
 import pathlib

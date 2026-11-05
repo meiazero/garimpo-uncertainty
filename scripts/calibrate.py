@@ -152,7 +152,7 @@ def main() -> None:
         required=True,
         help="denominator floor of the relative and local scores",
     )
-    parser.add_argument("--alpha", type=float, default=0.1, help="proposal: 90 percent coverage")
+    parser.add_argument("--alpha", type=float, default=0.1, help="0.1 is 90 percent coverage")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--lightgbm-jobs", type=int, default=1)
     parser.add_argument("--force", action="store_true")

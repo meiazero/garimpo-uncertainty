@@ -7,8 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "compass",
     "geopandas>=1.0",
-    "lightgbm>=4.0",
-    "matplotlib>=3.11.2",
     "numpy>=2.0",
     "pandas>=2.0",
     "pyogrio>=0.9",

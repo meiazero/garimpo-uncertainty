@@ -28,7 +28,7 @@ import garimpo_uncertainty.data
 import garimpo_uncertainty.stages
 
 ZENODO_URL = "https://zenodo.org/records/14195737/files/mining_area_data.zip?download=1"
-ZENODO_MD5 = "1259ad8045ae648c547ef3db1fccab3b"  # from scripts/proposal/get_data.sh
+ZENODO_MD5 = "1259ad8045ae648c547ef3db1fccab3b"
 GPKG_MEMBER = "mining_area_data.gpkg"
 STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-2-l2a/items/"
 TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"

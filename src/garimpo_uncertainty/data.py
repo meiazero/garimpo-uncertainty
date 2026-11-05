@@ -22,7 +22,7 @@ PIXEL_M = 10.0
 PIXEL_HA = 0.01  # 10 m x 10 m
 REFLECTANCE_SCALE = 10_000
 CLOUD_SCL_CLASSES = (3, 8, 9, 10)  # cloud shadow, medium and high cloud, thin cirrus
-HELD_OUT_REGIONS = {"Amazonia BR", "Americas, other"}  # same set as scripts/proposal/make_split.py
+HELD_OUT_REGIONS = {"Amazonia BR", "Americas, other"}  # same set as scripts/split/make_split.py
 ROLES = ("train", "validation", "calibration", "test")
 TRAIN_FRACTIONS = (0.01, 0.05, 0.10, 1.0)
 # vector_ha needs the polygon, so no array can recompute it; mask_ha is the writer's claim that

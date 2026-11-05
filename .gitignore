@@ -3,14 +3,6 @@ data/
 __pycache__/
 .ruff_cache/
 .pytest_cache/
-proposta/*.aux
-proposta/*.log
-proposta/*.out
-proposta/*.fls
-proposta/*.fdb_latexmk
-proposta/*.xdv
-# Re-downloadable with scripts/proposal/get_papers.py; papers/INDEX.tsv stays versioned.
-papers/*.pdf
 tests/artifacts/
 # The pilot debugs code; its numbers never enter the repository.
 runs/pilot/

@@ -1,6 +1,6 @@
 """Stage: trains one segmentation model. Writes artifacts only; every metric runs elsewhere.
 
-No hyperparameter has a default: the proposal fixes none of them.
+No hyperparameter has a default, so a run states every value it uses.
 """
 
 import argparse
@@ -65,7 +65,7 @@ def build_loss(name: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor
 def validation_dice(
     model: torch.nn.Module, loader: torch.utils.data.DataLoader, device: str
 ) -> float:
-    """Mean Dice over validation cells with mining; the proposal's first-training criterion."""
+    """Mean Dice over validation cells with mining; the criterion that picks the best checkpoint."""
     model.eval()
     scores = []
     for images, masks, _ in loader:

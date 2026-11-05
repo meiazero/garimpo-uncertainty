@@ -22,9 +22,11 @@ def main() -> None:
         "--boundary-tolerance-px",
         type=float,
         required=True,
-        help="undefined in the proposal; must be chosen, never defaulted",
+        help="must be chosen, never defaulted",
     )
-    parser.add_argument("--n-bootstrap", type=int, default=1000, help="proposal: 1,000 resamples")
+    parser.add_argument(
+        "--n-bootstrap", type=int, default=1000, help="resamples of the group bootstrap"
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()

@@ -45,7 +45,7 @@ def _conv_block(in_channels: int, out_channels: int) -> torch.nn.Sequential:
 
 
 class ConvNet(torch.nn.Module):
-    """Down and up convolutions with no skip connections, the proposal's simple model."""
+    """Down and up convolutions with no skip connections, the simple model compared."""
 
     def __init__(self, in_channels: int, channels: list[int]) -> None:
         super().__init__()
