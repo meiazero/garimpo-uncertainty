@@ -48,11 +48,14 @@ def main() -> None:
             pd.DataFrame(industrial[["tile_id", "role"]]).assign(scale="Industrial"),
         ]
     )
-    assert split.tile_id.is_unique
-    assert (artisanal.groupby("cluster_50km").role.nunique() == 1).all()
+    if not split.tile_id.is_unique:
+        raise ValueError("a tile_id appears more than once in the split")
+    if not (artisanal.groupby("cluster_50km").role.nunique() == 1).all():
+        raise ValueError("a 50 km group does not have exactly one role")
     train_groups = artisanal[artisanal.role == "train"].cluster_50km
     test_groups = artisanal[artisanal.role == "test"].cluster_50km
-    assert not set(train_groups) & set(test_groups)
+    if set(train_groups) & set(test_groups):
+        raise ValueError("a 50 km group is in both train and test")
 
     summary = {
         "seed": SEED,

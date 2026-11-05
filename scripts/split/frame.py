@@ -106,7 +106,10 @@ def main() -> None:
         "chip_ha_amazon_nonempty": quantiles(amazon_chips.ha[amazon_chips.ha > 0]),
         "chip_ha_artisanal_nonempty": quantiles(chips.ha[chips.ha > 0]),
     }
-    assert 20_000 < report["tile_side_m_median"] < 21_000, "tile is not 2048 px at 10 m"
+    if not 20_000 < report["tile_side_m_median"] < 21_000:
+        raise ValueError(
+            f"tile is not 2048 px at 10 m: median side is {report['tile_side_m_median']} m"
+        )
 
     outputs = pathlib.Path("outputs")
     outputs.mkdir(exist_ok=True)

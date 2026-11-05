@@ -222,7 +222,7 @@ def run(
 ) -> subprocess.CompletedProcess:
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
     command = [sys.executable, f"scripts/{script}", *args]
-    return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)
+    return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
 
 
 def train_args(
@@ -336,7 +336,7 @@ def compute_metrics(
         args.append("--force")
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
     command = [sys.executable, "-c", TORCH_FREE, "scripts/compute_metrics.py", *args]
-    return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)
+    return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
 
 
 def run_stages_after_training(

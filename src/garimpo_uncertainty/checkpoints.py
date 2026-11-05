@@ -15,7 +15,7 @@ import garimpo_uncertainty.stages
 def _git(directory: str, *args: str) -> str:
     try:
         command = ["git", "-C", directory, *args]
-        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()
+        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
 

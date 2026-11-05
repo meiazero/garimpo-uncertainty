@@ -31,7 +31,7 @@ ZENODO_URL = "https://zenodo.org/records/14195737/files/mining_area_data.zip?dow
 ZENODO_MD5 = "1259ad8045ae648c547ef3db1fccab3b"
 GPKG_MEMBER = "mining_area_data.gpkg"
 STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-2-l2a/items/"
-TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"
+TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"  # noqa: S105 - a URL, not a password
 TOKEN_REFRESH_S = 20 * 60
 SENTINEL2_MOCO_URL = (
     "https://hf.co/torchgeo/resnet50_sentinel2_all_moco/resolve/"
@@ -84,7 +84,7 @@ def download_weights(root: Path, encoder_weights: list[str]) -> None:
 
 
 def _md5(path: Path) -> str:
-    digest = hashlib.md5()
+    digest = hashlib.md5(usedforsecurity=False)
     with path.open("rb") as file:
         for block in iter(lambda: file.read(2**20), b""):
             digest.update(block)
@@ -94,7 +94,7 @@ def _md5(path: Path) -> str:
 def _get_json(url: str) -> dict:
     for attempt in range(8):
         try:
-            with urllib.request.urlopen(url, timeout=60) as response:
+            with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 - callers fix an https prefix
                 return json.load(response)
         except urllib.error.HTTPError as error:
             if error.code != 429:
