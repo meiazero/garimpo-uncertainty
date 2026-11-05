@@ -26,6 +26,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-xdist>=3.8",
     "ruff>=0.16.9",
 ]
 
@@ -49,6 +50,9 @@ packages = ["src/garimpo_uncertainty"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# loadfile keeps each module on one worker, so its fixtures and fixed paths need no marks; `-n 0`
+# runs serially. xdist 3.8 ignores xdist_group under pytest 9.2, so loadgroup is no alternative.
+addopts = "-n 4 --dist loadfile --basetemp=tests/artifacts/tmp"
 
 [tool.ruff]
 line-length = 100
