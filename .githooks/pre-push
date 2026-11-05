@@ -3,6 +3,6 @@
 # ponytail: checks the working tree, not the pushed commits; push from a clean tree.
 set -e
 cd "$(git rev-parse --show-toplevel)"
-uvx ruff format --check .
-uvx ruff check .
+uv run ruff format --check .
+uv run ruff check .
 uv run pytest

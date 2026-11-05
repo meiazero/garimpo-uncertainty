@@ -379,7 +379,7 @@ Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Ama
 
 ```bash
 slurm/submit.sh slurm/cpu.sbatch -m pytest -q
-uvx ruff format --check . && uvx ruff check .
+uv run ruff format --check . && uv run ruff check .
 ```
 
 The tests live in `tests/e2e/` and leave their artifacts in `tests/artifacts/`, reset when a session
