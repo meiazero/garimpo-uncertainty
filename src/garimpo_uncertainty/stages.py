@@ -162,7 +162,7 @@ def _run_work(
         record = identity | {
             "status": "failed",
             "error": f"{type(error).__name__}: {error}",
-            # A failure in the U-Net's deepest layer sits about 31 frames below this `try`.
+            # The U-Net's deepest layer fails 24 frames below this `try`; COMPASS adds more.
             "traceback": traceback.format_exc(limit=32),
             "seconds": round(time.monotonic() - start, 1),
         }
