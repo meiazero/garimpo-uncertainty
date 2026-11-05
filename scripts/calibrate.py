@@ -6,10 +6,13 @@ come from the decoder), and the score counts and saturation of each row as [K].
 """
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 import compass2d.calibration
 import numpy as np
+import pandas as pd
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
@@ -22,6 +25,7 @@ def quantile_per_cell(
     calibration_groups: np.ndarray,
     test_scores: np.ndarray,
     test_groups: np.ndarray,
+    *,
     density_ratio: np.ndarray,
     alpha: float,
 ) -> np.ndarray:
@@ -38,15 +42,73 @@ def quantile_per_cell(
     raise ValueError(f"unknown calibration: {calibration!r}")
 
 
-def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dict:
-    run_dir = args.run_dir
-    cells = garimpo_uncertainty.data.read_predictions(root, run_dir)
-    if args.cells == "nonempty":
-        cells = cells[cells.v > 0]
-    train = cells[cells.role == "train"]
-    calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
-    test_cells = cells[cells.role == "test"].reset_index(drop=True)
+@dataclass(frozen=True)
+class Population:
+    """Calibration and test cells of one run, with what every row's quantile needs from them."""
 
+    calibration: pd.DataFrame
+    test: pd.DataFrame
+    density_ratio: np.ndarray
+    alpha: float
+
+    def quantile(
+        self, calibration: str, calibration_scores: np.ndarray, test_scores: np.ndarray
+    ) -> np.ndarray:
+        return quantile_per_cell(
+            calibration,
+            calibration_scores,
+            self.calibration.group.to_numpy(),
+            test_scores,
+            self.test.group.to_numpy(),
+            density_ratio=self.density_ratio,
+            alpha=self.alpha,
+        )
+
+
+@dataclass(frozen=True)
+class CompassScores:
+    """Persisted COMPASS scores, one row per method, and where each population sits in them."""
+
+    score: np.ndarray
+    saturated: np.ndarray
+    beta_range: np.ndarray
+    calibration_at: np.ndarray
+    test_at: np.ndarray
+
+
+@dataclass(frozen=True)
+class Rows:
+    """The arrays of quantiles.npz filled here: [K, N] terms and [K] score counts."""
+
+    quantile: np.ndarray
+    lower_term: np.ndarray
+    upper_term: np.ndarray
+    scale: np.ndarray
+    n_scores: np.ndarray
+    n_saturated: np.ndarray
+    saturated_fraction: np.ndarray
+
+    @classmethod
+    def allocate(cls, n_rows: int, n_cells: int) -> Self:
+        shape = (n_rows, n_cells)
+        return cls(
+            quantile=np.empty(shape),
+            lower_term=np.full(shape, np.nan),
+            upper_term=np.full(shape, np.nan),
+            scale=np.empty(shape),
+            n_scores=np.zeros(n_rows, dtype=int),
+            n_saturated=np.full(n_rows, np.nan),
+            saturated_fraction=np.full(n_rows, np.nan),
+        )
+
+
+def read_scores(
+    run_dir: Path,
+    calibration_cells: pd.DataFrame,
+    test_cells: pd.DataFrame,
+    args: argparse.Namespace,
+) -> tuple[CompassScores, np.ndarray]:
+    """Return the scores and the density ratio of test over calibration features."""
     with np.load(run_dir / "scores" / "scores.npz") as stored:
         calibration_at = garimpo_uncertainty.data.positions_of(
             stored["cell_index"], calibration_cells.cell_index.to_numpy()
@@ -54,85 +116,110 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
         test_at = garimpo_uncertainty.data.positions_of(
             stored["cell_index"], test_cells.cell_index.to_numpy()
         )
-        score = stored["score"]
-        saturated = stored["saturated"]
-        beta_range = stored["beta_range"]
+        scores = CompassScores(
+            stored["score"], stored["saturated"], stored["beta_range"], calibration_at, test_at
+        )
         density_ratio = compass2d.calibration.density_ratio(
             stored["feature_sums"][calibration_at],
             stored["feature_sums"][test_at],
             args.seed,
             args.lightgbm_jobs,
         )
+    return scores, density_ratio
 
-    cqr_models = garimpo_uncertainty.intervals.fit_cqr(train, args.alpha, args.seed)
-    calibration_groups = calibration_cells.group.to_numpy()
-    test_groups = test_cells.group.to_numpy()
 
-    shape = (len(garimpo_uncertainty.intervals.COMBINATIONS), len(test_cells))
-    quantile = np.empty(shape)
-    lower_term, upper_term, scale = np.full(shape, np.nan), np.full(shape, np.nan), np.empty(shape)
-    n_scores = np.zeros(shape[0], dtype=int)
-    n_saturated, saturated_fraction = np.full(shape[0], np.nan), np.full(shape[0], np.nan)
-    for k, (method, calibration) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS):
+def fill_compass_row(
+    rows: Rows, k: int, method: str, calibration: str, *, scores: CompassScores, cells: Population
+) -> None:
+    m = garimpo_uncertainty.intervals.COMPASS_METHODS.index(method)
+    rows.quantile[k] = cells.quantile(
+        calibration, scores.score[m, scores.calibration_at], scores.score[m, scores.test_at]
+    )
+    rows.scale[k] = np.nan
+    at = scores.test_at if calibration == "own_region" else scores.calibration_at
+    flags = scores.saturated[m, at]
+    rows.n_scores[k] = len(flags)
+    rows.n_saturated[k] = flags.sum()
+    rows.saturated_fraction[k] = np.mean(rows.quantile[k] >= scores.beta_range[m])
+
+
+def fill_output_space_row(
+    rows: Rows,
+    k: int,
+    method: str,
+    calibration: str,
+    *,
+    cells: Population,
+    score_floor_ha: float,
+    cqr_models: tuple,
+) -> None:
+    rows.lower_term[k], rows.upper_term[k], rows.scale[k] = (
+        garimpo_uncertainty.intervals.method_terms(method, cells.test, score_floor_ha, cqr_models)
+    )
+    own_lower, own_upper, own_scale = garimpo_uncertainty.intervals.method_terms(
+        method, cells.calibration, score_floor_ha, cqr_models
+    )
+    rows.quantile[k] = cells.quantile(
+        calibration,
+        garimpo_uncertainty.intervals.scores(
+            cells.calibration.v.to_numpy(), own_lower, own_upper, own_scale
+        ),
+        garimpo_uncertainty.intervals.scores(
+            cells.test.v.to_numpy(), rows.lower_term[k], rows.upper_term[k], rows.scale[k]
+        ),
+    )
+    rows.n_scores[k] = len(cells.test if calibration == "own_region" else cells.calibration)
+
+
+def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dict:
+    cells = garimpo_uncertainty.data.read_predictions(root, args.run_dir)
+    if args.cells == "nonempty":
+        cells = cells[cells.v > 0]
+    calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
+    test_cells = cells[cells.role == "test"].reset_index(drop=True)
+    scores, density_ratio = read_scores(args.run_dir, calibration_cells, test_cells, args)
+    population = Population(calibration_cells, test_cells, density_ratio, args.alpha)
+    cqr_models = garimpo_uncertainty.intervals.fit_cqr(
+        cells[cells.role == "train"], args.alpha, args.seed
+    )
+
+    combinations = garimpo_uncertainty.intervals.COMBINATIONS
+    rows = Rows.allocate(len(combinations), len(test_cells))
+    for k, (method, calibration) in enumerate(combinations):
         if method == "independent_pixels":
-            lower_term[k], upper_term[k] = garimpo_uncertainty.intervals.independent_pixel_terms(
-                test_cells, args.alpha
+            rows.lower_term[k], rows.upper_term[k] = (
+                garimpo_uncertainty.intervals.independent_pixel_terms(test_cells, args.alpha)
             )
-            quantile[k], scale[k] = 0.0, 1.0
+            rows.quantile[k], rows.scale[k] = 0.0, 1.0
         elif method in garimpo_uncertainty.intervals.COMPASS_METHODS:
-            m = garimpo_uncertainty.intervals.COMPASS_METHODS.index(method)
-            quantile[k] = quantile_per_cell(
-                calibration,
-                score[m, calibration_at],
-                calibration_groups,
-                score[m, test_at],
-                test_groups,
-                density_ratio,
-                args.alpha,
-            )
-            scale[k] = np.nan
-            flags = saturated[m, test_at if calibration == "own_region" else calibration_at]
-            n_scores[k] = len(flags)
-            n_saturated[k] = flags.sum()
-            saturated_fraction[k] = np.mean(quantile[k] >= beta_range[m])
+            fill_compass_row(rows, k, method, calibration, scores=scores, cells=population)
         else:
-            lower_term[k], upper_term[k], scale[k] = garimpo_uncertainty.intervals.method_terms(
-                method, test_cells, args.score_floor_ha, cqr_models
-            )
-            own_lower, own_upper, own_scale = garimpo_uncertainty.intervals.method_terms(
-                method, calibration_cells, args.score_floor_ha, cqr_models
-            )
-            quantile[k] = quantile_per_cell(
+            fill_output_space_row(
+                rows,
+                k,
+                method,
                 calibration,
-                garimpo_uncertainty.intervals.scores(
-                    calibration_cells.v.to_numpy(), own_lower, own_upper, own_scale
-                ),
-                calibration_groups,
-                garimpo_uncertainty.intervals.scores(
-                    test_cells.v.to_numpy(), lower_term[k], upper_term[k], scale[k]
-                ),
-                test_groups,
-                density_ratio,
-                args.alpha,
+                cells=population,
+                score_floor_ha=args.score_floor_ha,
+                cqr_models=cqr_models,
             )
-            n_scores[k] = len(test_cells if calibration == "own_region" else calibration_cells)
 
     garimpo_uncertainty.stages.write_arrays(
         quantiles_path,
         cell_index=test_cells.cell_index.to_numpy(),
-        quantile=quantile,
-        lower_term=lower_term,
-        upper_term=upper_term,
-        scale=scale,
+        quantile=rows.quantile,
+        lower_term=rows.lower_term,
+        upper_term=rows.upper_term,
+        scale=rows.scale,
         alpha=np.array(args.alpha),
-        n_calibration_scores=n_scores,
-        n_saturated_calibration=n_saturated,
-        quantile_saturated_fraction=saturated_fraction,
+        n_calibration_scores=rows.n_scores,
+        n_saturated_calibration=rows.n_saturated,
+        quantile_saturated_fraction=rows.saturated_fraction,
     )
     return {
         "calibration_cells": len(calibration_cells),
         "test_cells": len(test_cells),
-        "rows": shape[0],
+        "rows": len(combinations),
         "density_ratio_max": float(density_ratio.max()),
     }
 

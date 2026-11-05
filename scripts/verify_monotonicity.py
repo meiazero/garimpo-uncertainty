@@ -43,23 +43,47 @@ def summarize(
     }
 
 
+def hard_area(logits: torch.Tensor) -> torch.Tensor:
+    return compass2d.metrics.hard_area(logits, garimpo_uncertainty.data.PIXEL_HA)
+
+
+def sweep_layer(
+    model: torch.nn.Module,
+    layer: str,
+    features: list[torch.Tensor],
+    fitted: compass2d.directions.Directions,
+    args: argparse.Namespace,
+) -> dict[str, compass2d.compass.Monotonicity]:
+    """Sweep one batch through one layer, one result per direction."""
+
+    def soft(logits: torch.Tensor) -> torch.Tensor:
+        pixel_ha = garimpo_uncertainty.data.PIXEL_HA
+        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
+
+    z, decode = garimpo_uncertainty.models.split_at(model, layer, features)
+    jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
+    swept = {}
+    for direction in ("pca", "svm"):
+        delta = compass2d.directions.cell_deltas(
+            direction, np.asarray(jacobian, dtype=np.float64), fitted
+        )
+        channel_delta = compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z))
+        swept[direction] = compass2d.compass.verify_monotonicity(
+            decode, soft, z, channel_delta, args.beta_max_features, args.steps
+        )
+    return swept
+
+
 def sweep_role(
     model: torch.nn.Module,
     role: str,
     cells: pd.DataFrame,
     root: Path,
     metadata: dict,
+    *,
     args: argparse.Namespace,
     device: str,
 ) -> list[dict]:
-    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-
-    def hard(logits: torch.Tensor) -> torch.Tensor:
-        return compass2d.metrics.hard_area(logits, pixel_ha)
-
-    def soft(logits: torch.Tensor) -> torch.Tensor:
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
-
     fitted = {
         layer: compass2d.directions.Directions.load(args.run_dir / "directions" / f"{layer}.npz")
         for layer in args.layers
@@ -70,31 +94,24 @@ def sweep_role(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     for images, _, _ in loader:
-        x = images.to(device)
-        features = garimpo_uncertainty.models.encode(model, x)
+        features = garimpo_uncertainty.models.encode(model, images.to(device))
         logits, _ = garimpo_uncertainty.models.split_at(
             model, garimpo_uncertainty.models.LOGITS, features
         )
         uniform.append(
             compass2d.compass.verify_monotonicity(
-                lambda z: z, hard, logits, torch.ones_like(logits), args.beta_max_logits, args.steps
+                lambda z: z,
+                hard_area,
+                logits,
+                torch.ones_like(logits),
+                args.beta_max_logits,
+                args.steps,
             )
         )
         for layer in args.layers:
-            z, decode = garimpo_uncertainty.models.split_at(model, layer, features)
-            jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
-            for direction in ("pca", "svm"):
-                delta = compass2d.directions.cell_deltas(
-                    direction, np.asarray(jacobian, dtype=np.float64), fitted[layer]
-                )
-                channel_delta = compass2d.compass.channel_delta(
-                    torch.from_numpy(delta.copy()).to(z)
-                )
-                per_direction.setdefault((layer, direction), []).append(
-                    compass2d.compass.verify_monotonicity(
-                        decode, soft, z, channel_delta, args.beta_max_features, args.steps
-                    )
-                )
+            swept = sweep_layer(model, layer, features, fitted[layer], args)
+            for direction, flags in swept.items():
+                per_direction.setdefault((layer, direction), []).append(flags)
     rows = [summarize(uniform, garimpo_uncertainty.models.LOGITS, "uniform", role)]
     rows += [
         summarize(flags, layer, direction, role)
@@ -137,7 +154,7 @@ def main() -> None:
             subset = role_cells.sample(
                 min(args.cells_per_role, len(role_cells)), random_state=args.seed
             )
-            rows += sweep_role(model, role, subset, root, metadata, args, device)
+            rows += sweep_role(model, role, subset, root, metadata, args=args, device=device)
         with garimpo_uncertainty.stages.atomic(output) as temporary:
             pd.DataFrame(rows).to_csv(temporary, index=False)
         return {"rows": len(rows), "cells_per_role": args.cells_per_role}
