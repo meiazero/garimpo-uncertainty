@@ -46,7 +46,7 @@ def main() -> None:
                 json.loads(args.split_summary.read_text()), args.train_fraction
             )
         report, cells = garimpo_uncertainty.validation.validate(
-            root, split, tile_ids, args.cell_px, summary, args.workers
+            root, split, tile_ids, args.cell_px, summary, workers=args.workers
         )
         garimpo_uncertainty.stages.write_json(args.report, report)
         print(json.dumps(report, indent=2))

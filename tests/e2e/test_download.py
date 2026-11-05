@@ -228,7 +228,7 @@ def test_real_offset_and_missing_industrial_tile_pass_validation(downloaded: Pat
     assert written.cell_index.tolist() == list(range(16))
     assert np.isclose(store.stats["mask_ha"][:16].sum(), MASK.area / 1e4, rtol=0.01)
     report, _ = garimpo_uncertainty.validation.validate(
-        downloaded, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, 2
+        downloaded, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, workers=2
     )
     assert report["problems"] == []
     assert report["industrial_tiles_excluded"] == 1
@@ -251,7 +251,7 @@ def test_outage_is_not_a_missing_tile(scratch_download: Path) -> None:
     industrial = scratch_download / "tiles" / "1.json"
     industrial.write_text(json.dumps(json.loads(industrial.read_text()) | {"status": "http_503"}))
     report, _ = garimpo_uncertainty.validation.validate(
-        scratch_download, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, 2
+        scratch_download, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, workers=2
     )
     assert "industrial_download_errors" in " ".join(report["problems"])
     assert "split_counts" in " ".join(report["problems"])
@@ -323,7 +323,7 @@ def test_missing_artisanal_tile_and_off_scene_window_fail_validation(
     assert json.loads((root / "tiles" / "2.json").read_text())["status"] == "missing_item"
     assert json.loads((root / "tiles" / "3.json").read_text())["status"] == "error_ValueError"
     report, _ = garimpo_uncertainty.validation.validate(
-        root, SPLIT, SPLIT.tile_id.tolist(), CELL_PX, None, 2
+        root, SPLIT, SPLIT.tile_id.tolist(), CELL_PX, None, workers=2
     )
     problems = " ".join(report["problems"])
     assert "missing_scenes: 2 cases" in problems, problems

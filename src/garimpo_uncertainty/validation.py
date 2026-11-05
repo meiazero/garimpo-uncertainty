@@ -173,12 +173,54 @@ def _quantiles(values: pd.Series) -> dict[str, float]:
     return {f"q{int(q * 100)}": round(float(values.quantile(q)), 4) for q in QUANTILES}
 
 
+def _with_recomputed_values(
+    store: garimpo_uncertainty.data.CellStore,
+    cells: pd.DataFrame,
+    ok_tiles: pd.DataFrame,
+    workers: int,
+) -> pd.DataFrame:
+    """Add what the arrays say to each cell, beside what the writer stored; no tile, no column."""
+    n_per_tile = len(cells) // max(len(ok_tiles), 1)
+    tile_chunks = [
+        (slice(tile.tile_index * n_per_tile, (tile.tile_index + 1) * n_per_tile), tile.boa_offset)
+        for tile in ok_tiles.itertuples()
+    ]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        chunks = list(pool.map(lambda chunk: inspect_tile(store, *chunk), tile_chunks))
+    if not chunks:
+        return cells
+    columns = {name: np.concatenate([c[name] for c in chunks]) for name in chunks[0]}
+    stats = store.stats[cells.cell_index.to_numpy()]
+    return cells.assign(**columns, **{name: stats[name] for name in stats.dtype.names})
+
+
+def _diagnostics_by_role(cells: pd.DataFrame, ok_tiles: pd.DataFrame) -> dict[str, dict]:
+    by_role = {}
+    for role, rows in cells.groupby("role"):
+        role_tiles = ok_tiles[ok_tiles.role == role]
+        by_role[role] = {
+            "cells": len(rows),
+            "groups": int(rows[rows.group >= 0].group.nunique()),
+            "cells_100_percent_nodata": int((rows.nodata_fraction == 1).sum()),
+            "cells_100_percent_cloud": int((rows.cloud_fraction == 1).sum()),
+            "cloud_fraction": _quantiles(rows.cloud_fraction),
+            "nodata_fraction": _quantiles(rows.nodata_fraction),
+            "abs_mask_minus_vector_ha": _quantiles((rows.mask_ha - rows.vector_ha).abs()),
+            "tile_box_excess_m": _quantiles(role_tiles.tile_box_excess_m),
+            "ndvi_mask_minus_outside_median": round(
+                float(rows.ndvi_mask_minus_outside.median()), 4
+            ),
+        }
+    return by_role
+
+
 def validate(
     root: Path,
     split: pd.DataFrame,
     tile_ids: list[int],
     cell_px: int,
     summary: dict | None,
+    *,
     workers: int,
 ) -> tuple[dict, pd.DataFrame]:
     """Return the report and per-cell findings on the selected tiles; the store may hold more.
@@ -192,10 +234,9 @@ def validate(
         return {"problems": unusable}, pd.DataFrame()
     tiles = garimpo_uncertainty.data.tile_records(root, split, tile_ids)
     failed = tiles[tiles.status != "ok"]
-    artisanal_failed = failed[failed.scale == "Artisanal"]
     industrial_failed = failed[failed.scale == "Industrial"]
     excludable = industrial_failed.status.isin(EXCLUDABLE_INDUSTRIAL_STATUSES)
-    problems = _problem("missing_scenes", artisanal_failed.tile_id.tolist())
+    problems = _problem("missing_scenes", failed[failed.scale == "Artisanal"].tile_id.tolist())
     problems += _problem(
         "industrial_download_errors", industrial_failed[~excludable].tile_id.tolist()
     )
@@ -208,38 +249,14 @@ def validate(
     ok_tiles = tiles[tiles.status == "ok"].reset_index(drop=True)
     problems += check_tiles(ok_tiles)
     problems += slot_mismatches(root, ok_tiles, workers)
-    cells = garimpo_uncertainty.data.cell_table(root, split, tile_ids)
-    n_per_tile = len(cells) // max(len(ok_tiles), 1)
-    tile_chunks = [
-        (slice(tile.tile_index * n_per_tile, (tile.tile_index + 1) * n_per_tile), tile.boa_offset)
-        for tile in ok_tiles.itertuples()
-    ]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        chunks = list(pool.map(lambda chunk: inspect_tile(store, *chunk), tile_chunks))
-    if chunks:
-        columns = {name: np.concatenate([c[name] for c in chunks]) for name in chunks[0]}
-        stats = store.stats[cells.cell_index.to_numpy()]
-        cells = cells.assign(**columns, **{name: stats[name] for name in stats.dtype.names})
-        problems += check_cells(cells)
-
+    cells = _with_recomputed_values(
+        store, garimpo_uncertainty.data.cell_table(root, split, tile_ids), ok_tiles, workers
+    )
     by_role = {}
-    if chunks:
-        for role, rows in cells.groupby("role"):
-            role_tiles = ok_tiles[ok_tiles.role == role]
-            by_role[role] = {
-                "cells": len(rows),
-                "groups": int(rows[rows.group >= 0].group.nunique()),
-                "cells_100_percent_nodata": int((rows.nodata_fraction == 1).sum()),
-                "cells_100_percent_cloud": int((rows.cloud_fraction == 1).sum()),
-                "cloud_fraction": _quantiles(rows.cloud_fraction),
-                "nodata_fraction": _quantiles(rows.nodata_fraction),
-                "abs_mask_minus_vector_ha": _quantiles((rows.mask_ha - rows.vector_ha).abs()),
-                "tile_box_excess_m": _quantiles(role_tiles.tile_box_excess_m),
-                "ndvi_mask_minus_outside_median": round(
-                    float(rows.ndvi_mask_minus_outside.median()), 4
-                ),
-            }
-    report = {
+    if not ok_tiles.empty:
+        problems += check_cells(cells)
+        by_role = _diagnostics_by_role(cells, ok_tiles)
+    return {
         "problems": problems,
         "tiles_not_ok": json.loads(
             failed[["tile_id", "scale", "role", "group", "item", "status"]].to_json(
@@ -248,5 +265,4 @@ def validate(
         ),
         "industrial_tiles_excluded": int(excludable.sum()),
         "diagnostics": {"note": DIAGNOSTICS_NOTE, "by_role": by_role},
-    }
-    return report, cells
+    }, cells
