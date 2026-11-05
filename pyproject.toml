@@ -135,8 +135,6 @@ ignore = [
     # The raise message belongs at the raise; tests and users read it there.
     "TRY003",
     # Ratchet: rules the code still breaks, so `main` stays green; each lint PR deletes its block.
-    # Security.
-    "S101", "S105", "S310", "S324", "S603",
     # Positional booleans.
     "FBT001", "FBT002", "FBT003",
     # Assorted.
