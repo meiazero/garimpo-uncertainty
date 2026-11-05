@@ -1,6 +1,7 @@
 """Checkpoint metadata: enough to rebuild the exact model and to refuse mismatched data."""
 
 import hashlib
+import logging
 import subprocess
 from pathlib import Path
 
@@ -10,6 +11,8 @@ import torch
 import garimpo_uncertainty.data
 import garimpo_uncertainty.models
 import garimpo_uncertainty.stages
+
+logger = logging.getLogger(__name__)
 
 
 def _git(directory: str, *args: str) -> str:
@@ -42,7 +45,9 @@ def warn_on_code_change(metadata: dict) -> None:
     current = code_versions()
     for key in ("root_commit", "compass_commit"):
         if metadata[key] != current[key]:
-            print(f"warning: {key} is {current[key]}, the checkpoint came from {metadata[key]}")
+            logger.warning(
+                "warning: %s is %s, the checkpoint came from %s", key, current[key], metadata[key]
+            )
 
 
 def save(path: Path, content: dict) -> None:

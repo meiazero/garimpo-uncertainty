@@ -94,7 +94,8 @@ def restored_after(directory: Path) -> Iterator[Path]:
 def build_once(name: str, build: Callable[[], object]) -> None:
     """Run `build` in the first worker to ask; the others wait here, then share what it wrote.
 
-    A failed build is final: retrying over its partial files would hide the error or resume from them.
+    A failed build is final: retrying over its partial files would hide the error or resume from
+    them.
     """
     built = ARTIFACTS / "built"
     built.mkdir(parents=True, exist_ok=True)

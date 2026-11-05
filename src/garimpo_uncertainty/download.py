@@ -6,7 +6,9 @@ flushed. Tiles that fail keep their reason in the sidecar; nothing is dropped si
 
 import concurrent.futures
 import hashlib
+import http
 import json
+import logging
 import threading
 import time
 import urllib.error
@@ -14,7 +16,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-import geopandas as gpd
+import geopandas
 import numpy as np
 import pandas as pd
 import rasterio
@@ -26,6 +28,8 @@ import shapely
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.stages
+
+logger = logging.getLogger(__name__)
 
 ZENODO_URL = "https://zenodo.org/records/14195737/files/mining_area_data.zip?download=1"
 ZENODO_MD5 = "1259ad8045ae648c547ef3db1fccab3b"
@@ -69,7 +73,7 @@ def download_metadata(root: Path) -> None:
 
 def download_weights(root: Path, encoder_weights: list[str]) -> None:
     """Fetch the chosen starting weights under the data root, for offline training."""
-    import torch.hub
+    import torch.hub  # noqa: PLC0415 - only this command needs torch; the others run without it
 
     sources = {
         "imagenet": (IMAGENET_URL, IMAGENET_HASH),
@@ -97,7 +101,7 @@ def _get_json(url: str) -> dict:
             with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 - callers fix an https prefix
                 return json.load(response)
         except urllib.error.HTTPError as error:
-            if error.code != 429:
+            if error.code != http.HTTPStatus.TOO_MANY_REQUESTS:
                 raise
             time.sleep(int(error.headers.get("Retry-After") or 2**attempt))
     raise TimeoutError(f"still rate limited: {url}")
@@ -253,6 +257,16 @@ def _boa_offset(item: dict) -> int:
     return BOA_OFFSET_DN if float(baseline) >= BASELINE_WITH_OFFSET else 0
 
 
+def _check_inside_scene(
+    col: int, row: int, tile_px: int, scene_width: int, scene_height: int
+) -> None:
+    inside = (
+        col >= 0 and row >= 0 and col + tile_px <= scene_width and row + tile_px <= scene_height
+    )
+    if not inside:
+        raise ValueError(f"tile window ({col}, {row}) leaves the scene")
+
+
 def process_tile(
     root: Path,
     store: garimpo_uncertainty.data.CellStore,
@@ -282,16 +296,9 @@ def process_tile(
                     reference.width,
                     reference.height,
                 )
-            bounds_utm = gpd.GeoSeries([tile_geometry], crs=4326).to_crs(epsg).iloc[0].bounds
+            bounds_utm = geopandas.GeoSeries([tile_geometry], crs=4326).to_crs(epsg).iloc[0].bounds
             col, row, offset, excess = tile_origin(grid, bounds_utm, tile_px)
-            inside = (
-                col >= 0
-                and row >= 0
-                and col + tile_px <= scene_width
-                and row + tile_px <= scene_height
-            )
-            if not inside:
-                raise ValueError(f"tile window ({col}, {row}) leaves the scene")
+            _check_inside_scene(col, row, tile_px, scene_width, scene_height)
             transform = grid * rasterio.Affine.translation(col, row)
             bounds = rasterio.transform.array_bounds(tile_px, tile_px, transform)
             image = np.stack(
@@ -311,7 +318,7 @@ def process_tile(
                 tile_px,
                 rasterio.enums.Resampling.nearest,
             )
-        mask_utm = gpd.GeoSeries([mask_geometry], crs=4326).to_crs(epsg).iloc[0]
+        mask_utm = geopandas.GeoSeries([mask_geometry], crs=4326).to_crs(epsg).iloc[0]
         # A forced re-cut overwrites slots in place: a crash midway must leave no `ok` vouching.
         (root / "tiles" / f"{tile_id}.json").unlink(missing_ok=True)
         bound = write_cells(
@@ -325,10 +332,10 @@ def process_tile(
             "tile_box_excess_m": excess,
         }
     except urllib.error.HTTPError as error:
-        status = "missing_item" if error.code == 404 else f"http_{error.code}"
+        status = "missing_item" if error.code == http.HTTPStatus.NOT_FOUND else f"http_{error.code}"
         record |= {"status": status, "detail": str(error)}
     # Thread boundary: one bad tile must end in the report, not abort the other tiles.
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - the thread boundary stated above
         record |= {"status": f"error_{type(error).__name__}", "detail": str(error)}
     write_sidecar(root, tile_id, record)
     return record["status"]
@@ -344,8 +351,12 @@ def download_scenes(
     force: bool = False,
 ) -> None:
     """Fetch pending tiles; `force` redoes every selected tile, so a cutting fix has a path."""
-    tiles = gpd.read_file(gpkg_path(root), layer="tiles").set_index("tile_id")
-    masks = gpd.read_file(gpkg_path(root), layer="preferred_polygons").set_index("tile_id").geometry
+    tiles = geopandas.read_file(gpkg_path(root), layer="tiles").set_index("tile_id")
+    masks = (
+        geopandas.read_file(gpkg_path(root), layer="preferred_polygons")
+        .set_index("tile_id")
+        .geometry
+    )
     if not masks.index.is_unique:
         raise ValueError("preferred_polygons has more than one row for a tile")
     token = _Token()
@@ -394,7 +405,7 @@ def download_scenes(
         return tile_id, status
 
     pending = [int(t) for t in selected.tile_id if force or int(t) not in finished]
-    print(f"{len(selected) - len(pending)} tiles already done, {len(pending)} pending")
+    logger.info("%s tiles already done, %s pending", len(selected) - len(pending), len(pending))
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         for count, (tile_id, status) in enumerate(pool.map(one, pending), start=1):
-            print(f"[{count}/{len(pending)}] tile {tile_id}: {status}", flush=True)
+            logger.info("[%s/%s] tile %s: %s", count, len(pending), tile_id, status)

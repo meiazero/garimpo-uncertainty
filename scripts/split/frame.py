@@ -5,16 +5,21 @@ import json
 import pathlib
 import re
 
-import geopandas as gpd
+import geopandas
 import numpy as np
 import pandas as pd
+import pyproj
 import shapely
 
 CHIPS_PER_SIDE = 4  # 2048 px tile into 512 px chips, the chip size of the dataset's own code
 SEPARATIONS_KM = (25, 50, 100)
+AMERICAS_MAX_LON = -30
+AFRICA_EUROPE_MAX_LON = 60
+TILE_SIDE_MIN_M = 20_000
+TILE_SIDE_MAX_M = 21_000
 
 
-def cluster_labels(tiles: gpd.GeoDataFrame, separation_km: float) -> np.ndarray:
+def cluster_labels(tiles: geopandas.GeoDataFrame, separation_km: float) -> np.ndarray:
     """Tiles closer than the separation share a label, so a split never divides a neighborhood."""
     merged = tiles.geometry.buffer(separation_km * 500).union_all()
     parts = list(getattr(merged, "geoms", [merged]))
@@ -22,9 +27,11 @@ def cluster_labels(tiles: gpd.GeoDataFrame, separation_km: float) -> np.ndarray:
     return np.array([tree.query(p, predicate="intersects")[0] for p in tiles.geometry])
 
 
-def chip_areas_ha(tile: shapely.Polygon, mask: shapely.Geometry, crs) -> tuple[list[float], float]:
+def chip_areas_ha(
+    tile: shapely.Polygon, mask: shapely.Geometry, crs: pyproj.CRS
+) -> tuple[list[float], float]:
     """Mining area per chip in the tile's UTM zone, where metric areas are valid."""
-    series = gpd.GeoSeries([tile, mask], crs=4326).to_crs(crs)
+    series = geopandas.GeoSeries([tile, mask], crs=4326).to_crs(crs)
     x0, y0, x1, y1 = series.iloc[0].bounds
     mask_utm = shapely.make_valid(series.iloc[1])
     xs, ys = np.linspace(x0, x1, CHIPS_PER_SIDE + 1), np.linspace(y0, y1, CHIPS_PER_SIDE + 1)
@@ -47,15 +54,15 @@ def main() -> None:
     parser.add_argument("--biomes", type=pathlib.Path, default="data/biomes/lm_bioma_250.shp")
     args = parser.parse_args()
 
-    tiles = gpd.read_file(args.gpkg, layer="tiles")
+    tiles = geopandas.read_file(args.gpkg, layer="tiles")
     tiles = tiles[tiles.split.notna()].copy()
-    masks = gpd.read_file(args.gpkg, layer="preferred_polygons").set_index("tile_id").geometry
-    biomes = gpd.read_file(args.biomes).to_crs(4326)
+    masks = geopandas.read_file(args.gpkg, layer="preferred_polygons").set_index("tile_id").geometry
+    biomes = geopandas.read_file(args.biomes).to_crs(4326)
 
     centers = tiles.geometry.representative_point()
     tiles["lon"], tiles["lat"] = centers.x, centers.y
-    tiles["biome"] = gpd.sjoin(
-        gpd.GeoDataFrame(geometry=centers, crs=4326),
+    tiles["biome"] = geopandas.sjoin(
+        geopandas.GeoDataFrame(geometry=centers, crs=4326),
         biomes[["Bioma", "geometry"]],
         predicate="within",
         how="left",
@@ -66,7 +73,11 @@ def main() -> None:
 
     artisanal = tiles[tiles.minetype2 == "Artisanal"].copy()
     artisanal["region"] = np.select(
-        [artisanal.biome == "Amazônia", artisanal.lon < -30, artisanal.lon < 60],
+        [
+            artisanal.biome == "Amazônia",
+            artisanal.lon < AMERICAS_MAX_LON,
+            artisanal.lon < AFRICA_EUROPE_MAX_LON,
+        ],
         ["Amazonia BR", "Americas, other", "Africa/Europe"],
         "Asia/Oceania",
     )
@@ -80,7 +91,7 @@ def main() -> None:
 
     rows = []
     for tile in artisanal.itertuples():
-        crs = gpd.GeoSeries([tile.geometry], crs=4326).estimate_utm_crs()
+        crs = geopandas.GeoSeries([tile.geometry], crs=4326).estimate_utm_crs()
         areas, side_m = chip_areas_ha(tile.geometry, masks.loc[tile.tile_id], crs)
         rows += [(tile.tile_id, tile.region, area, side_m) for area in areas]
     chips = pd.DataFrame(rows, columns=["tile_id", "region", "ha", "side_m"])
@@ -106,7 +117,7 @@ def main() -> None:
         "chip_ha_amazon_nonempty": quantiles(amazon_chips.ha[amazon_chips.ha > 0]),
         "chip_ha_artisanal_nonempty": quantiles(chips.ha[chips.ha > 0]),
     }
-    if not 20_000 < report["tile_side_m_median"] < 21_000:
+    if not TILE_SIDE_MIN_M < report["tile_side_m_median"] < TILE_SIDE_MAX_M:
         raise ValueError(
             f"tile is not 2048 px at 10 m: median side is {report['tile_side_m_median']} m"
         )

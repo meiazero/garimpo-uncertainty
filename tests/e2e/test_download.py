@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-import geopandas as gpd
+import geopandas
 import numpy as np
 import pandas as pd
 import pytest
@@ -100,14 +100,14 @@ def write_local_scene(directory: Path) -> tuple[dict, np.ndarray]:
 
 
 def to_wgs84(geometry: shapely.Geometry) -> shapely.Geometry:
-    return gpd.GeoSeries([geometry], crs=EPSG).to_crs(4326).iloc[0]
+    return geopandas.GeoSeries([geometry], crs=EPSG).to_crs(4326).iloc[0]
 
 
 def write_local_gpkg(
     root: Path, items: list[str], geometries: list[shapely.Geometry], masks: list[shapely.Geometry]
 ) -> None:
     download.gpkg_path(root).parent.mkdir(parents=True)
-    gpd.GeoDataFrame(
+    geopandas.GeoDataFrame(
         {
             "tile_id": range(len(items)),
             "s2_tile_id": items,
@@ -115,7 +115,7 @@ def write_local_gpkg(
         },
         crs=4326,
     ).to_file(download.gpkg_path(root), layer="tiles", driver="GPKG")
-    gpd.GeoDataFrame(
+    geopandas.GeoDataFrame(
         {"tile_id": range(len(masks)), "geometry": [to_wgs84(m) for m in masks]}, crs=4326
     ).to_file(download.gpkg_path(root), layer="preferred_polygons", driver="GPKG")
 

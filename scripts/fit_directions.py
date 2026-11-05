@@ -105,6 +105,7 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()

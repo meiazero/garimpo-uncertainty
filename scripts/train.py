@@ -90,7 +90,6 @@ def train(
     weights_file = garimpo_uncertainty.data.starting_weights_path(root, args.encoder_weights)
 
     torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
     arguments = result_arguments(args)
     resume = None
     if last_path.exists() and not args.force:
@@ -271,6 +270,7 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--force", action="store_true", help="restart, ignoring last.pt")
     args = parser.parse_args()
+    garimpo_uncertainty.stages.log_to_stdout()
     try:
         garimpo_uncertainty.models.check_encoder_weights(args.arch, args.encoder_weights)
     except ValueError as error:

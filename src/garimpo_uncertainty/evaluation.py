@@ -18,6 +18,7 @@ import garimpo_uncertainty.intervals
 PROBABILITY_SCALE = 255
 HARD_THRESHOLD_U8 = 128  # round(0.5 * 255), so u8 >= 128 is p >= 0.5
 CONFIDENCE = (2.5, 97.5)
+MIN_PAIRS_FOR_CORRELATION = 2
 
 
 def dice(prediction: np.ndarray, reference: np.ndarray) -> float:
@@ -99,7 +100,7 @@ def _paired_differences(
 
 def _spearman(pairs: np.ndarray) -> float:
     kept = pairs[~np.isnan(pairs).any(axis=1)]
-    if len(kept) < 2:
+    if len(kept) < MIN_PAIRS_FOR_CORRELATION:
         return float("nan")
     return float(scipy.stats.spearmanr(kept[:, 0], kept[:, 1]).statistic)
 

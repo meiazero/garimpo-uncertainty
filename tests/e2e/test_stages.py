@@ -314,7 +314,8 @@ def test_absent_cell_index_is_named(
     result = support.run(script, *args, data_root=data_root, check=False)
     assert result.returncode != 0, (script, absent)
     error = json.loads((run_dir / "status" / f"{stage}.json").read_text())["error"]
-    assert "cell_index" in error and str(absent) in error, error
+    assert "cell_index" in error, error
+    assert str(absent) in error, error
 
 
 def test_metrics_stage_names_an_absent_cell_index(
@@ -328,4 +329,5 @@ def test_metrics_stage_names_an_absent_cell_index(
     )
     assert result.returncode != 0
     error = json.loads((run_dir / "status" / "compute_metrics.json").read_text())["error"]
-    assert "cell_index" in error and str(beyond) in error, error
+    assert "cell_index" in error, error
+    assert str(beyond) in error, error

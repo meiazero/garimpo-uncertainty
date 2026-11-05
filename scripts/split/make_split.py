@@ -3,7 +3,7 @@
 import json
 import pathlib
 
-import geopandas as gpd
+import geopandas
 import numpy as np
 import pandas as pd
 
@@ -34,7 +34,7 @@ def main() -> None:
     artisanal = pd.read_csv("outputs/tiles_artisanal.csv")
     artisanal["role"] = artisanal.cluster_50km.map(assign_groups(artisanal))
 
-    tiles = gpd.read_file("data/zenodo/mining_area_data.gpkg", layer="tiles")
+    tiles = geopandas.read_file("data/zenodo/mining_area_data.gpkg", layer="tiles")
     tiles = tiles[tiles.split.notna()].to_crs(6933)
     roles = artisanal.set_index("tile_id").role
     held_out = tiles[tiles.tile_id.map(roles).isin(["test", "calibration", "validation"])]

@@ -9,6 +9,8 @@ import torch.utils.data
 
 import garimpo_uncertainty.data
 
+FLIP_PROBABILITY = 0.5
+
 
 class CellDataset(torch.utils.data.Dataset):
     """Yields (image, mask, cell_index); image is BOA reflectance, z-scored when stats are given."""
@@ -49,9 +51,9 @@ class CellDataset(torch.utils.data.Dataset):
             image = (image - self.mean) / self.std
         mask = (self.masks[cell_index][None] > 0).astype(np.float32)
         if self.augment:
-            if torch.rand(1).item() > 0.5:
+            if torch.rand(1).item() > FLIP_PROBABILITY:
                 image, mask = image[..., ::-1], mask[..., ::-1]
-            if torch.rand(1).item() > 0.5:
+            if torch.rand(1).item() > FLIP_PROBABILITY:
                 image, mask = image[..., ::-1, :], mask[..., ::-1, :]
         return torch.from_numpy(image.copy()), torch.from_numpy(mask.copy()), cell_index
 

@@ -4,6 +4,7 @@ No torch import here, so CPU-only stages stay free of it.
 """
 
 import json
+import logging
 import os
 import resource
 import socket
@@ -18,6 +19,8 @@ from typing import NoReturn
 
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
 # `report` names an output: another job's path for the same selection must redo it, not refuse.
 IGNORED_ARGUMENTS = {
     "force",
@@ -29,6 +32,18 @@ IGNORED_ARGUMENTS = {
     "report",
 }
 MISSING_INPUT = "missing"
+
+
+def log_to_stdout() -> None:
+    """Show this package's messages as bare stdout lines, in order with what a script prints.
+
+    Only this package: INFO on the root logger would add the dependencies' messages to the job log.
+    Handlers are replaced, not added, so a main run twice in one process does not double each line.
+    """
+    package = logging.getLogger("garimpo_uncertainty")
+    package.handlers = [logging.StreamHandler(sys.stdout)]
+    package.setLevel(logging.INFO)
+    package.propagate = False
 
 
 def fingerprint(
@@ -140,7 +155,7 @@ def run_stage(
             if previous["status"] != "ok":
                 restored = {k: v for k, v in previous.items() if k != "error"}
                 write_json(status_path, restored | {"status": "ok"})
-            print(f"{name}: outputs exist, skipping (use --force to redo)")
+            logger.info("%s: outputs exist, skipping (use --force to redo)", name)
             return
         # The validation sits outside STAGE_ORDER in slurm/stages.sh.
         redo = (
@@ -172,4 +187,4 @@ def run_stage(
         "seconds": round(time.monotonic() - start, 1),
     }
     write_json(status_path, record | _peak_memory())
-    print(f"{name}: ok in {record['seconds']} s, {shapes}")
+    logger.info("%s: ok in %s s, %s", name, record["seconds"], shapes)
