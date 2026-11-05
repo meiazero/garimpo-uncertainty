@@ -7,12 +7,116 @@ q1_spearman}.csv.
 
 import argparse
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
+import pandas as pd
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
 import garimpo_uncertainty.stages
+
+
+class Intervals(NamedTuple):
+    cell_index: np.ndarray
+    lower: np.ndarray
+    upper: np.ndarray
+    layer: str
+    alpha: float
+
+
+def read_intervals(run_dir: Path) -> Intervals:
+    with np.load(run_dir / "intervals" / "intervals.npz") as stored:
+        return Intervals(
+            stored["cell_index"],
+            stored["lower"],
+            stored["upper"],
+            str(stored["layer"]),
+            float(stored["alpha"]),
+        )
+
+
+def read_saturation(run_dir: Path) -> dict[str, np.ndarray]:
+    with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
+        return {
+            name: stored[name]
+            for name in (
+                "n_calibration_scores",
+                "n_saturated_calibration",
+                "quantile_saturated_fraction",
+            )
+        }
+
+
+def aligned_cells(
+    test_cells: pd.DataFrame, segmentation: dict[str, np.ndarray], cell_index: np.ndarray
+) -> garimpo_uncertainty.evaluation.EvaluatedCells:
+    """Reorder the test cells and their segmentation metrics as the intervals' cell index."""
+    at = garimpo_uncertainty.data.positions_of(test_cells.cell_index.to_numpy(), cell_index)
+    evaluated = test_cells.iloc[at]
+    return garimpo_uncertainty.evaluation.EvaluatedCells(
+        evaluated.v.to_numpy(),
+        evaluated.vhat.to_numpy(),
+        evaluated.group.to_numpy(),
+        {name: values[at] for name, values in segmentation.items()},
+    )
+
+
+def metric_tables(
+    args: argparse.Namespace,
+    metadata: dict,
+    test_cells: pd.DataFrame,
+    segmentation: dict[str, np.ndarray],
+) -> dict[str, pd.DataFrame]:
+    intervals = read_intervals(args.run_dir)
+    saturation = read_saturation(args.run_dir)
+    cells = aligned_cells(test_cells, segmentation, intervals.cell_index)
+    identity = {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]}
+    results, widths, coverages = garimpo_uncertainty.evaluation.summarize(
+        intervals.lower,
+        intervals.upper,
+        cells,
+        saturation=saturation,
+        identity=identity,
+        layer=intervals.layer,
+        alpha=intervals.alpha,
+        n_bootstrap=args.n_bootstrap,
+        seed=args.seed,
+    )
+    spearman = garimpo_uncertainty.evaluation.spearman_by_model(
+        cells, identity=identity, n_bootstrap=args.n_bootstrap, seed=args.seed
+    )
+    results.insert(5, "boundary_tolerance_px", args.boundary_tolerance_px)
+    spearman.insert(2, "boundary_tolerance_px", args.boundary_tolerance_px)
+    return {
+        "results": results,
+        "width_comparisons": widths,
+        "coverage_comparisons": coverages,
+        "q1_spearman": spearman,
+    }
+
+
+def compute(
+    args: argparse.Namespace, root: Path, cell_metrics_path: Path, outputs: dict[str, Path]
+) -> dict:
+    cells = garimpo_uncertainty.data.read_predictions(root, args.run_dir)
+    metadata = garimpo_uncertainty.data.read_run_metadata(args.run_dir)
+    garimpo_uncertainty.data.check_split(metadata, cells)
+    test_cells = cells[cells.role == "test"]
+    segmentation = garimpo_uncertainty.evaluation.segmentation_metrics(
+        root,
+        test_cells.cell_index.to_numpy(),
+        args.run_dir / "predictions",
+        args.boundary_tolerance_px,
+    )
+    frames = metric_tables(args, metadata, test_cells, segmentation)
+    garimpo_uncertainty.stages.write_arrays(
+        cell_metrics_path, cell_index=test_cells.cell_index.to_numpy(), **segmentation
+    )
+    for name, frame in frames.items():
+        with garimpo_uncertainty.stages.atomic(outputs[name]) as temporary:
+            frame.to_csv(temporary, index=False)
+    return {name: list(frame.shape) for name, frame in frames.items()}
 
 
 def main() -> None:
@@ -45,70 +149,6 @@ def main() -> None:
         run_dir / "calibration" / "quantiles.npz",
     ]
 
-    def work() -> dict:
-        cells = garimpo_uncertainty.data.read_predictions(root, run_dir)
-        metadata = garimpo_uncertainty.data.read_run_metadata(run_dir)
-        garimpo_uncertainty.data.check_split(metadata, cells)
-        test_cells = cells[cells.role == "test"]
-        segmentation = garimpo_uncertainty.evaluation.segmentation_metrics(
-            root,
-            test_cells.cell_index.to_numpy(),
-            run_dir / "predictions",
-            args.boundary_tolerance_px,
-        )
-        with np.load(run_dir / "intervals" / "intervals.npz") as stored:
-            cell_index, lower, upper = stored["cell_index"], stored["lower"], stored["upper"]
-            layer, alpha = str(stored["layer"]), float(stored["alpha"])
-        with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
-            saturation = {
-                name: stored[name]
-                for name in (
-                    "n_calibration_scores",
-                    "n_saturated_calibration",
-                    "quantile_saturated_fraction",
-                )
-            }
-        at = garimpo_uncertainty.data.positions_of(test_cells.cell_index.to_numpy(), cell_index)
-        evaluated = test_cells.iloc[at]
-        results, widths, coverages = garimpo_uncertainty.evaluation.summarize(
-            lower,
-            upper,
-            evaluated.v.to_numpy(),
-            evaluated.vhat.to_numpy(),
-            evaluated.group.to_numpy(),
-            {name: values[at] for name, values in segmentation.items()},
-            saturation,
-            {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]},
-            layer,
-            alpha,
-            args.n_bootstrap,
-            args.seed,
-        )
-        spearman = garimpo_uncertainty.evaluation.spearman_by_model(
-            evaluated.v.to_numpy(),
-            evaluated.vhat.to_numpy(),
-            evaluated.group.to_numpy(),
-            {name: values[at] for name, values in segmentation.items()},
-            {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]},
-            args.n_bootstrap,
-            args.seed,
-        )
-        results.insert(5, "boundary_tolerance_px", args.boundary_tolerance_px)
-        spearman.insert(2, "boundary_tolerance_px", args.boundary_tolerance_px)
-        frames = {
-            "results": results,
-            "width_comparisons": widths,
-            "coverage_comparisons": coverages,
-            "q1_spearman": spearman,
-        }
-        garimpo_uncertainty.stages.write_arrays(
-            cell_metrics_path, cell_index=test_cells.cell_index.to_numpy(), **segmentation
-        )
-        for name, frame in frames.items():
-            with garimpo_uncertainty.stages.atomic(outputs[name]) as temporary:
-                frame.to_csv(temporary, index=False)
-        return {name: list(frame.shape) for name, frame in frames.items()}
-
     garimpo_uncertainty.stages.run_stage(
         run_dir / "status",
         "compute_metrics",
@@ -116,7 +156,7 @@ def main() -> None:
         garimpo_uncertainty.stages.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
         ),
-        work,
+        lambda: compute(args, root, cell_metrics_path, outputs),
         force=args.force,
     )
 
