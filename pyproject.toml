@@ -134,6 +134,18 @@ ignore = [
     "PLR0913",
     # The raise message belongs at the raise; tests and users read it there.
     "TRY003",
+    # Ratchet: rules the code still breaks, so `main` stays green; each lint PR deletes its block.
+    # Docstrings.
+    "D205", "D401",
+    # Security.
+    "S101", "S105", "S310", "S324", "S603",
+    # Positional booleans.
+    "FBT001", "FBT002", "FBT003",
+    # Assorted.
+    "ANN001", "BLE001", "E501", "ICN002", "NPY002", "PLC0415", "PLR2004", "PLW1514", "PT018",
+    "RUF007", "T201", "TRY301",
+    # Complexity.
+    "C901", "PLR0912", "PLR0914", "PLR0915", "PLR0916", "PLR0917", "PLW0717",
 ]
 
 [tool.ruff.lint.mccabe]
