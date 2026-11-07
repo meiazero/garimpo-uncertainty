@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pilot: the real pipeline at the 1% training fraction, to adjust code on the cluster. Validation,
 # calibration and test stay whole: 186 tiles, 2,976 cells, 10.9 GB written where the filesystem
-# keeps holes, 69.2 GB allocated at the first download where it does not (README, data layout).
+# keeps holes, 69.2 GB allocated at the first download where it does not (docs/data-layout.md).
 #
 #   bash slurm/pilot.sbatch download        # on the login node, once, resumable
 #   ENCODER_WEIGHTS=imagenet bash slurm/pilot.sbatch download   # adds that variant's weights

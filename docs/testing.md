@@ -1,0 +1,89 @@
+# Testing
+
+```bash
+slurm/submit.sh slurm/cpu.sbatch -m pytest -q
+uv run ruff format --check . && uv run ruff check .
+```
+
+The tests live in `tests/e2e/` and leave their artifacts in `tests/artifacts/`, reset when a session
+starts. They run on 4 workers by default; `pytest -n <N>` changes that and `pytest -n 0` runs serially.
+Each module has one subject and runs whole on one worker (`--dist loadfile`).
+`tests/e2e/conftest.py` builds the shared dataset and the finished runs once, under a file lock, and
+every worker reads them. A scenario that damages data works on a private copy under `tmp_path`, or on
+data of its own in a module fixture when it must still skip, since fingerprints record paths. Each
+process runs with `OMP_NUM_THREADS=1`: the thread count changes the trained weights, and the one-tile
+run of `test_fractions.py` fails `fit_directions.py` at 2 threads.
+
+| Module | Subject |
+|---|---|
+| `test_models.py` | f/g decomposition of each architecture; ImageNet and Sentinel-2 starting weights |
+| `test_tile_lists.py` | Counts and nesting on the real `outputs/split.csv`; the versioned lists regenerated and compared by bytes, tiles and `select_tiles` |
+| `test_store.py` | The store's tiles written in shuffled order and compared by bytes; the dataset reading slots |
+| `test_download.py` | The download code on local rasters, including `lists` and `scenes --tiles` from a small list to a larger one and the refusals of a list |
+| `test_validation.py` | Defects in the store and the split against the validation |
+| `test_damaged_store.py` | A store damaged under a finished run: stages may skip, the validation and the report may not |
+| `test_training.py` | What training writes and every refusal |
+| `test_sentinel2_training.py` | The identity of the Sentinel-2 weights file, present, absent and replaced |
+| `test_results.py` | PICP, MPIW, interval score and Dice recomputed one cell at a time against `results.csv`; every COMPASS row with its own loader against the one pass in `generate_intervals.py`, with no tolerance |
+| `test_stages.py` | Reruns, refusals, saturation, absent cells, merge and `pipeline_check.py` |
+| `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
+
+Not covered: `--cells nonempty`, real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real
+Sentinel-2 scenes, the shell scripts in `slurm/` including `FORCE_FROM` and the EXIT trap,
+`download_data.py metadata` and `weights`, a resume that actually continues training, cleanup
+of the temporary file in `infer.py`, GPU, the real ImageNet weights (a synthetic file covers the load), and the real
+Sentinel-2 MoCo file: a synthetic 13-band file stands in, with the variant trained for one epoch and
+only inference after it. The boundary F1 assertion in `test_wider_tolerance_can_only_match_more_boundary` depends on the
+short synthetic training not being degenerate; it held on the suite's fixed seeds.
+
+## Ways the pipeline can fail
+
+Written before the pipeline, and the origin of the test.
+
+| # | Failure | Caught by |
+|---|---|---|
+| 1 | A Sentinel-2 scene is missing and the tile disappears silently | `validate_data.py` (artisanal: `missing_scenes`; industrial with `missing_item` or `no_mask_polygon`: `tiles_not_ok`, excluded from the counts), E2E |
+| 2 | Only part of a group's selected tiles is downloaded, so a group's coverage is computed on a biased subset | `validate_data.py` (`partial_group`), E2E |
+| 3 | A group spans two split roles (leakage) | `validate_data.py` (`group_leakage`), E2E |
+| 4 | An interrupted download leaves half-written slots that a resume trusts | slots flushed before the sidecar says `ok`; a forced re-cut removes the sidecar first, E2E |
+| 5 | The SAS token expires during a long download | token refresh in `download.py` (cluster only) |
+| 6 | Arithmetic on `uint16` DN overflows or goes negative | cast to float before the offset in `CellDataset` |
+| 7 | Processing baseline 04.00 adds a radiometric offset, so scenes across 2022 differ by construction | `boa_offset` in the sidecar of each tile, applied by `CellDataset`, E2E |
+| 8 | The mask is rasterized on a grid other than the image's | Not checked automatically: raster versus vector area and NDVI contrast are diagnostics, with no threshold, to read in the report |
+| 9 | Cell size is not what the area metric assumes | `validate_data.py` (`store_layout`, `pixel_size`) |
+| 10 | `g(f(x))` differs from `model(x)`: wrong layer, skip connection lost, batch norm in train mode | E2E |
+| 11 | A library upgrade renames the U-Net decoder modules | `models.feature_layers` raises, E2E |
+| 12 | Empty cells have zero Jacobians and normalization gives NaN | `directions._scale` raises; mean term in the PCA direction, E2E |
+| 13 | The SVM normal points to less area | orientation against the mean Jacobian, E2E |
+| 14 | SVM or PCA see calibration or test cells | training-role pass only, `n_train_cells` checked in E2E |
+| 15 | Non-monotonic response makes endpoint intervals non-nested | Algorithm 2 sweep over the search range, `monotonicity_endpoint.csv`; sampled cells and grid points only, so a turn between two points passes |
+| 16 | The search stops at `beta_range` and a width comparison is meaningless | `saturated` flag reported per row, E2E forces it |
+| 17 | A group with many cells dominates the quantile | group-weighted quantile checked by brute force in E2E |
+| 18 | Own-region calibration uses the held-out group | leave-one-group-out quantile checked by brute force in E2E |
+| 19 | Relative or local score divides by zero on empty cells | required `--score-floor-ha` |
+| 20 | Bootstrap resamples cells instead of groups, or method pairs use different resamples | shared group index matrix in `evaluation.summarize`; the E2E checks the paired point differences, not the resamples |
+| 21 | A method x calibration row is missing from the results | exact row set checked in E2E |
+| 22 | Compute node tries to reach the network | `uv run --no-sync` in every job, download on the login node |
+| 23 | SLURM fails because the log directory does not exist | `slurm/submit.sh` |
+| 24 | A metric change forces a retrain | stages read persisted files; E2E hashes everything around a metrics rerun |
+| 25 | A changed argument silently reuses an old output | stage fingerprint refuses and fails the pipeline check, E2E; a code change is redone by name with `FORCE_FROM` |
+| 26 | A later stage rebuilds the model on another split | split hash in the checkpoint |
+| 27 | An import, syntax or `argparse` error, a bad `FORCE_FROM` or a failed `merge_results` leaves every status `ok` and the check prints PASS | `--job-exit-code` from the EXIT trap; E2E covers the script, not the trap |
+| 28 | An outage removes hundreds of industrial training tiles | any other industrial status is `industrial_download_errors`, E2E |
+| 29 | An OOM after training forces a lower batch size and a retrain | `EVAL_BATCH_SIZE` apart from `BATCH_SIZE` |
+| 30 | A mask filling the cell has no boundary, so its boundary F1 leaves the means | F1 is 1 for identical masks and 0 otherwise, `n_cells_boundary_by_rule` in `results.csv`, E2E |
+| 31 | Band columns of the 13-band `conv1` land out of order | literal column positions checked in E2E |
+| 32 | A weights file with missing or extra keys loads partially | strict load after dropping `fc.*`, E2E |
+| 33 | Runs merge under one model and fraction | `variant` and `train_fraction` in the metadata and the tables; `merge_results.py` refuses a repeated pair, E2E |
+| 34 | A compute node tries to fetch weights | Nothing in training can: `models.build` reads the two weight files from the data root only |
+| 35 | Pretrained weights resume or skip under another identity | `encoder_weights` and the file hash in the fingerprint and `last.pt`, E2E |
+| 36 | A larger fraction's download refuses every finished smaller run, or moves its slots | hash of the run's index set and sidecars in the fingerprint; slots fixed by `cell_index`; E2E checks earlier slots stay byte-identical |
+| 37 | Tiles written in another order land in other slots | `cell_index` comes from the split alone, E2E writes in a shuffled order and compares bytes |
+| 38 | A run trains or evaluates on tiles outside its selection, or a fraction changes under one `RUN_DIR` | `tile_ids` in `run_meta.json`, `train_fraction` and `subset_seed` in the fingerprint and `last.pt`, E2E |
+| 39 | A fraction is run with tiles still missing, so it silently trains on fewer | `validate_data.py` (`not_downloaded`, `split_counts`), E2E; it runs before `train` in `slurm/stages.sh`, while `train.py` alone does not check this |
+| 40 | A model that predicts nothing has logits far from zero, so at temperature 10,000 every Jacobian is exactly zero | `fit_svm` raises `mean Jacobian is orthogonal to w`, which stops `fit_directions`; seen in the E2E with 4 training cells and 3 epochs. `n_zero_jacobians` in `directions/diagnostics.csv` counts the cells |
+| 41 | The one-pass interval stage computes something other than each combination alone | E2E recomputes every COMPASS row with its own loader and encoder pass, exact equality, and counts one read per cell and one encoder pass per batch |
+| 42 | An array is lost and comes back as zeros under `ok` sidecars | `create_store` refuses, E2E |
+| 43 | The store changes under finished stages, which skip on sidecars alone | `slots_sha256` recomputed by `validate_data.py` and `pipeline_check.py`, E2E zeroes and deletes on the real stages |
+| 44 | A changed split reads another tile's slots | `tile_index` in the sidecar and `N == n_tiles * cells_per_tile`, E2E reorders, drops and adds tiles |
+| 45 | A lookup of an absent cell returns a neighbor | `data.positions_of` raises naming the `cell_index`, E2E on calibrate, generate_intervals and compute_metrics |
