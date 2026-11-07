@@ -6,7 +6,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 |---|---|---|
 | 1 | login | `git clone --recurse-submodules <ROOT_REPO_URL> garimpo-uncertainty && cd garimpo-uncertainty && uv sync` |
 | 2 | login | `uv run --no-sync python scripts/download_data.py metadata` |
-| 3 | login | `uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m <nearest\|bilinear>` (from the versioned list, so `lists` need not run first; resumable; contains every smaller fraction of that list's seed; sizes in [runs.md](runs.md#training-fractions); another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar, so later stages refuse until redone; a re-cut with identical content changes nothing) |
+| 3 | login | `uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m bilinear` (from the versioned list, so `lists` need not run first; resumable; contains every smaller fraction of that list's seed; sizes in [runs.md](runs.md#training-fractions); another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar, so later stages refuse until redone; a re-cut with identical content changes nothing) |
 | 4 | login | `uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco` |
 | 5 | login | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, then fill in every value (see [decisions.md](decisions.md)) except `LAYER`, with `STOP_AFTER_DIAGNOSTICS=1` |
 | 6 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env` (stops after the layer diagnostics) |
@@ -30,8 +30,8 @@ uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/ti
 
 ## Regenerate the tile lists
 
-The versioned lists use subset seed 0, the value `slurm/pilot.sbatch` labels pilot-only. `lists`
-regenerates all four, and is needed only after `outputs/split.csv` changes or to use another seed:
+The versioned lists use subset seed 0, the decided `SUBSET_SEED`. `lists` regenerates all four, and
+is needed only after `outputs/split.csv` changes or to use another seed:
 
 ```bash
 uv run --no-sync python scripts/download_data.py lists --subset-seed <SUBSET_SEED>

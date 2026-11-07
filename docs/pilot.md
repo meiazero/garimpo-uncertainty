@@ -6,7 +6,7 @@ The pilot is the 1% training fraction, run through the same scripts as the full 
 2,976 cells, since validation, calibration and test stay whole. It downloads the versioned list
 `outputs/tiles/tiles_1pct.json`. It exists to debug the
 implementation, and its numbers say nothing about any method. Its values are in `slurm/pilot.sbatch`,
-labeled pilot-only. Results go to `runs/pilot/`, never to `outputs/`.
+the decided ones from [decisions.md](decisions.md) and the rest labeled pilot-only. Results go to `runs/pilot/`, never to `outputs/`.
 
 On the login node:
 
