@@ -48,11 +48,14 @@ Results go to `runs/pilot/`, never to `outputs/`. How a run goes and how to resu
 | Document | Covers |
 |---|---|
 | [docs/pilot.md](docs/pilot.md) | The pilot run, its check report, resubmitting with `FORCE_FROM` |
-| [docs/full-run.md](docs/full-run.md) | The full run step by step, training fractions, tile lists, model variants and weights, values to decide |
+| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading a larger fraction, regenerating tile lists, running outside the cluster, rerunning one stage |
+| [docs/runs.md](docs/runs.md) | Training fractions, tile lists, model variants, starting weights and their limits |
+| [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, and where each is set |
 | [docs/stages.md](docs/stages.md) | Every stage's node, inputs and outputs; skips, refusals and the data validation |
 | [docs/data-layout.md](docs/data-layout.md) | The store, slot hashes, sparse files, run artifacts, resource measurements |
 | [docs/outputs.md](docs/outputs.md) | Which script produces each number and table in `outputs/` |
-| [docs/testing.md](docs/testing.md) | The E2E suite, what it does not cover, and the ways the pipeline can fail |
+| [docs/testing.md](docs/testing.md) | Running the E2E suite, its modules, what it does not cover |
+| [docs/failure-modes.md](docs/failure-modes.md) | The 45 ways the pipeline can fail and what catches each |
 
 ## Development
 

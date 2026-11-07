@@ -1,5 +1,7 @@
 # Numbers, scripts and outputs
 
+Read to trace a number in the dissertation back to its script.
+
 Run from the repository root. The split scripts read `data/zenodo`: after
 `download_data.py metadata`, link it with `mkdir -p data && ln -s "$GARIMPO_DATA_DIR/zenodo" data/zenodo`.
 

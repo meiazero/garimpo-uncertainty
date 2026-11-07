@@ -1,6 +1,6 @@
 #!/bin/bash
 # Full run of one model, every value required from a file written by you:
-#   cp slurm/full.env.example slurm/unet_scratch-f1.0.env    # fill in; see docs/full-run.md, values to decide
+#   cp slurm/full.env.example slurm/unet_scratch-f1.0.env    # fill in; see docs/decisions.md
 #   slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env
 #
 # Choosing the layer: set STOP_AFTER_DIAGNOSTICS=1 and leave LAYER empty, read

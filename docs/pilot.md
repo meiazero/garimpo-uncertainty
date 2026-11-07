@@ -1,5 +1,7 @@
 # Pilot: adjust the code on the cluster
 
+Read before the first job on the cluster.
+
 The pilot is the 1% training fraction, run through the same scripts as the full run: 186 tiles and
 2,976 cells, since validation, calibration and test stay whole. It downloads the versioned list
 `outputs/tiles/tiles_1pct.json`. It exists to debug the

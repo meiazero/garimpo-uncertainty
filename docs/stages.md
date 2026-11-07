@@ -1,5 +1,7 @@
 # Stages
 
+Read when a stage fails, skips or refuses.
+
 | Stage | Node | Input | Output |
 |---|---|---|---|
 | `download_data.py metadata` | login | Zenodo 14195737 | `$DATA/zenodo/mining_area_data.gpkg` |

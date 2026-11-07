@@ -1,5 +1,7 @@
 # Data layout
 
+Read when inspecting the store or a run's artifacts by hand.
+
 One authoritative store, arrays indexed by integer, nothing stored twice. Under `$GARIMPO_DATA_DIR`:
 
 | Path | Shape, type | Holds | Apparent size |
