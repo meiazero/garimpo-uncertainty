@@ -233,6 +233,37 @@ def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice:
     )
 
 
+def run_epoch(
+    state: TrainingState,
+    train_loader: torch.utils.data.DataLoader,
+    validation_loader: torch.utils.data.DataLoader,
+    device: str,
+    epoch: int,
+) -> tuple[dict, list[int] | None]:
+    """Train and validate once; return the epoch's raw record and the last batch's shape."""
+    garimpo_uncertainty.stages.take_gpu_peak_bytes()
+    state.model.train()
+    epoch_start = time.monotonic()
+    train_loss, data_wait, batch_shape = fit_epoch(state, train_loader, device, epoch_start)
+    train_end = time.monotonic()
+    train_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
+    validation_start = time.monotonic()
+    dice = validation_dice(state.model, validation_loader, device)
+    validation_end = time.monotonic()
+    record = {
+        "epoch": epoch,
+        "train_loss": train_loss,
+        "val_dice": dice,
+        "train_data_wait_seconds": round(data_wait, 3),
+        "seconds": round(validation_end - epoch_start, 3),
+        "train_seconds": train_end - epoch_start,
+        "validation_seconds": validation_end - validation_start,
+        "train_peak_gpu_bytes": train_peak,
+        "validation_peak_gpu_bytes": garimpo_uncertainty.stages.take_gpu_peak_bytes(),
+    }
+    return record, batch_shape
+
+
 def run_epochs(
     args: argparse.Namespace,
     state: TrainingState,
@@ -243,21 +274,10 @@ def run_epochs(
     """Train up to args.epochs; return the shape of the last batch, None if no epoch ran."""
     batch_shape = None
     for epoch in range(state.first_epoch, args.epochs):
-        state.model.train()
-        epoch_start = time.monotonic()
-        train_loss, data_wait, batch_shape = fit_epoch(state, train_loader, device, epoch_start)
-        dice = validation_dice(state.model, validation_loader, device)
-        state.history.append(
-            {
-                "epoch": epoch,
-                "train_loss": train_loss,
-                "val_dice": dice,
-                "train_data_wait_seconds": round(data_wait, 3),
-                "seconds": round(time.monotonic() - epoch_start, 3),
-            }
-        )
-        print(state.history[-1], flush=True)
-        save_epoch(args, state, epoch, dice)
+        record, batch_shape = run_epoch(state, train_loader, validation_loader, device, epoch)
+        state.history.append(record)
+        print(record, flush=True)
+        save_epoch(args, state, epoch, record["val_dice"])
     return batch_shape
 
 

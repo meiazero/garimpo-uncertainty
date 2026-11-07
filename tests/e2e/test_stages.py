@@ -2,8 +2,10 @@
 
 import json
 import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import NamedTuple
 
 import numpy as np
@@ -11,7 +13,47 @@ import pandas as pd
 import pytest
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.stages
 from tests.e2e import support
+
+
+def test_stage_peak_survives_per_section_restarts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Restarting the GPU count per section must not shrink the peak the stage reports."""
+    gib = 1024**3
+    counter = {"peak": 3 * gib}
+
+    def restart() -> None:
+        counter["peak"] = gib
+
+    cuda = SimpleNamespace(
+        is_available=lambda: True,
+        is_initialized=lambda: True,
+        max_memory_allocated=lambda: counter["peak"],
+        reset_peak_memory_stats=restart,
+    )
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=cuda))
+    monkeypatch.setitem(garimpo_uncertainty.stages.GPU_PEAK, "highest_bytes", 0)
+    sections = []
+
+    def work() -> dict:
+        sections.append(garimpo_uncertainty.stages.take_gpu_peak_bytes())
+        sections.append(garimpo_uncertainty.stages.take_gpu_peak_bytes())
+        return {}
+
+    fingerprint = {"arguments": {}, "inputs": {}}
+    garimpo_uncertainty.stages.run_stage(tmp_path, "probe", [], fingerprint, work, force=True)
+    status = json.loads((tmp_path / "probe.json").read_text(encoding="utf-8"))
+    assert sections == [3 * gib, gib]
+    assert status["peak_gpu_gb"] == 3.0
+
+
+def test_a_cpu_run_on_a_gpu_host_records_no_gpu_peak(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A GPU the run never touched must read as absent, not as a peak of zero bytes."""
+    cuda = SimpleNamespace(is_available=lambda: True, is_initialized=lambda: False)
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=cuda))
+    assert garimpo_uncertainty.stages.take_gpu_peak_bytes() is None
 
 
 def test_metrics_stage_requires_a_tolerance(
