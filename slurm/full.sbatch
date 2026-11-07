@@ -22,7 +22,7 @@ cd "${SLURM_SUBMIT_DIR:?}"
 source "${1:?usage: slurm/submit.sh slurm/full.sbatch <values.env>}"
 
 : "${ARCH:?}" "${RUN_DIR:?}" "${TRAIN_FRACTION:?}" "${SUBSET_SEED:?}"
-: "${EPOCHS:?}" "${BATCH_SIZE:?}" "${LR:?}" "${WEIGHT_DECAY:?}"
+: "${EPOCHS:?}" "${STEPS_PER_EPOCH:?}" "${BATCH_SIZE:?}" "${LR:?}" "${WEIGHT_DECAY:?}"
 : "${EVAL_BATCH_SIZE:?}" "${LOSS:?}" "${SEED:?}" "${SVM_C:?}" "${SVM_CLASS_WEIGHT:?}" "${SVM_PIXELS_PER_CELL:?}"
 : "${SWEEP_STEPS:?}" "${SWEEP_CELLS:?}" "${BETA_RANGE_LOGITS:?}" "${BETA_RANGE_FEATURES:?}"
 [ "$ARCH" != unet ] || : "${ENCODER_WEIGHTS:?}"
