@@ -71,6 +71,7 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 | Where | Field | Meaning |
 |---|---|---|
 | `history.csv`, per epoch | `train_seconds`, `validation_seconds` | Unrounded time of each part of the epoch |
+| `history.csv`, per epoch | `updates` | Optimizer steps the epoch made, which is `STEPS_PER_EPOCH` |
 | `history.csv`, per epoch | `train_peak_gpu_bytes`, `validation_peak_gpu_bytes` | GPU peak of each part, empty if no GPU is in use |
 | `status/infer.json`, `shapes` | `seconds_per_role` | Unrounded time per role, including writing its probabilities |
 | `status/infer.json`, `shapes` | `peak_gpu_bytes_per_role` | GPU peak per role, `null` if no GPU is in use |

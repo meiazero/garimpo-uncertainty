@@ -56,6 +56,7 @@ run_diagnostics() {
     [ -z "${ENCODER_WEIGHTS:-}" ] || encoder_weights=(--encoder-weights "$ENCODER_WEIGHTS")
     run_stage train train --arch "$ARCH" "${ARCH_ARGS[@]}" "${encoder_weights[@]}" --run-dir "$RUN_DIR" \
         --train-fraction "$TRAIN_FRACTION" --subset-seed "$SUBSET_SEED" --epochs "$EPOCHS" \
+        --steps-per-epoch "$STEPS_PER_EPOCH" \
         --batch-size "$BATCH_SIZE" --lr "$LR" --weight-decay "$WEIGHT_DECAY" \
         --loss "$LOSS" --seed "$SEED" --num-workers "$NUM_WORKERS"
     run_stage infer infer "${COMMON[@]}"
