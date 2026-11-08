@@ -248,3 +248,93 @@ def summarize(
         _paired_differences(_group_means(columns["mpiw"], membership), indices, identity),
         _paired_differences(_group_means(columns["picp"], membership), indices, identity),
     )
+
+
+AREA_QUANTILES = (0.2, 0.4, 0.6, 0.8)
+
+
+def area_bins(v: np.ndarray) -> np.ndarray:
+    """0 for cells without mining, 1 to 5 by quintile of the reference area of those with it."""
+    if not (v > 0).any():
+        return np.zeros(len(v), dtype=int)
+    edges = np.quantile(v[v > 0], AREA_QUANTILES)
+    return np.where(v > 0, 1 + np.searchsorted(edges, v, side="left"), 0)
+
+
+def strata(cells: EvaluatedCells) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Each partition's stratum per cell, and the area that defines it."""
+    return {
+        "reference_area": (area_bins(cells.v), cells.v),
+        "predicted_mining": ((cells.vhat > 0).astype(int), cells.vhat),
+    }
+
+
+def coverage_by_stratum(
+    lower: np.ndarray,
+    upper: np.ndarray,
+    cells: EvaluatedCells,
+    *,
+    identity: dict[str, object],
+    n_bootstrap: int,
+    seed: int,
+) -> pd.DataFrame:
+    """PICP and MPIW per stratum, group-weighted, from intervals calibrated once on every cell.
+
+    By reference area, adapted from Cheung et al. (2026), Figure 7, whose bins it does not
+    define; by predicted mining, the only stratum known when an interval is used. The guarantee is
+    marginal, so a stratum may fall short.
+    """
+    combos = garimpo_uncertainty.intervals.COMBINATIONS
+    covered = ((cells.v >= lower) & (cells.v <= upper)).astype(float)
+    frames = []
+    for partition, (labels, by) in strata(cells).items():
+        for stratum in np.unique(labels):
+            inside = labels == stratum
+            groups = np.unique(cells.group[inside])
+            membership = (cells.group[inside][None, :] == groups[:, None]).astype(float)
+            indices = np.random.default_rng(seed).integers(
+                0, len(groups), (n_bootstrap, len(groups))
+            )
+            columns = {"picp": covered[:, inside], "mpiw": (upper - lower)[:, inside]}
+            table = {
+                **identity,
+                "method": [method for method, _ in combos],
+                "calibration": [calibration for _, calibration in combos],
+                "partition": partition,
+                "stratum": int(stratum),
+                "low_ha": float(by[inside].min()),
+                "high_ha": float(by[inside].max()),
+                "n_cells": int(inside.sum()),
+                "n_groups": len(groups),
+            }
+            means = _means_and_intervals(columns, membership, indices)
+            frames.append(pd.DataFrame(table | means))
+    return pd.concat(frames, ignore_index=True)
+
+
+def score_relation(
+    split_scores: np.ndarray, compass_scores: np.ndarray, saturated: np.ndarray
+) -> pd.DataFrame:
+    """Cheung et al. (2026), Figure 4: log-log fit of COMPASS scores on split-conformal scores.
+
+    A slope below 1 compresses the tail of the scores, which is why their quantile is smaller. Zero
+    scores have no logarithm, and saturated ones are censored at beta_range, so both are left out.
+    """
+    rows = []
+    for m, method in enumerate(garimpo_uncertainty.intervals.COMPASS_METHODS):
+        kept = (split_scores > 0) & (compass_scores[m] > 0) & ~saturated[m]
+        x, y = np.log(split_scores[kept]), np.log(compass_scores[m][kept])
+        # Every score saturated leaves nothing to fit; NaN says so instead of failing the stage.
+        fitted = len(x) >= MIN_PAIRS_FOR_CORRELATION
+        slope, intercept = np.polyfit(x, y, 1) if fitted else (np.nan, np.nan)
+        rows.append(
+            {
+                "method": method,
+                "slope": float(slope),
+                "intercept": float(intercept),
+                "spearman": _spearman(np.column_stack([x, y])),
+                "n_cells": int(kept.sum()),
+                "n_saturated": int(saturated[m].sum()),
+            }
+        )
+    return pd.DataFrame(rows)

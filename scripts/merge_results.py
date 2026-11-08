@@ -12,6 +12,8 @@ TABLES = {
     "width_comparisons.csv": "metrics/width_comparisons.csv",
     "coverage_comparisons.csv": "metrics/coverage_comparisons.csv",
     "q1_spearman.csv": "metrics/q1_spearman.csv",
+    "coverage_by_stratum.csv": "metrics/coverage_by_stratum.csv",
+    "score_relation.csv": "metrics/score_relation.csv",
     "layer_diagnostics.csv": "directions/diagnostics.csv",
     "monotonicity_layer.csv": "monotonicity_layer.csv",
     "monotonicity_endpoint.csv": "monotonicity_endpoint.csv",

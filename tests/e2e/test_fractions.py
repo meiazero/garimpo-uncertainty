@@ -277,20 +277,27 @@ def merged_fractions(full_run: Path) -> Path:
 def test_merge_keeps_the_fractions_apart(merged_fractions: Path) -> None:
     results = pd.read_csv(merged_fractions / "results.csv")
     assert results.groupby(["model", "train_fraction"]).size().to_dict() == {
-        ("convnet", 0.01): len(support.EXPECTED_ROWS),
-        ("convnet", 1.0): len(support.EXPECTED_ROWS),
+        ("convnet", 0.01): len(support.ALPHAS) * len(support.EXPECTED_ROWS),
+        ("convnet", 1.0): len(support.ALPHAS) * len(support.EXPECTED_ROWS),
     }
 
 
 @pytest.mark.parametrize("table", ["width_comparisons.csv", "coverage_comparisons.csv"])
 def test_merge_never_compares_across_fractions(merged_fractions: Path, table: str) -> None:
-    pairs = len(list(combinations(support.EXPECTED_ROWS, 2)))
+    pairs = len(support.ALPHAS) * len(list(combinations(support.EXPECTED_ROWS, 2)))
     sizes = pd.read_csv(merged_fractions / table).groupby("train_fraction").size()
     assert sizes.to_dict() == {0.01: pairs, 1.0: pairs}, table
 
 
 @pytest.mark.parametrize(
-    "table", ["q1_spearman.csv", "layer_diagnostics.csv", "monotonicity_endpoint.csv"]
+    "table",
+    [
+        "q1_spearman.csv",
+        "layer_diagnostics.csv",
+        "monotonicity_endpoint.csv",
+        "coverage_by_stratum.csv",
+        "score_relation.csv",
+    ],
 )
 def test_merged_tables_cover_both_fractions(merged_fractions: Path, table: str) -> None:
     assert set(pd.read_csv(merged_fractions / table).train_fraction) == {0.01, 1.0}, table

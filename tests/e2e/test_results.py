@@ -24,6 +24,7 @@ import garimpo_uncertainty.models
 from tests.e2e import support
 
 ALPHA = 0.1
+ALPHAS = support.ALPHAS
 SUBSAMPLES = garimpo_uncertainty.intervals.SUBSAMPLES
 # calibrate.py's default, which the shared runs keep.
 CALIBRATE_SEED = 0
@@ -36,12 +37,29 @@ class Evaluation:
     layer: str
     data_root: Path
     cells: pd.DataFrame
-    results: pd.DataFrame
+    all_results: pd.DataFrame
     test: pd.DataFrame
     interval_index: np.ndarray
-    lower: np.ndarray
-    upper: np.ndarray
-    quantile: np.ndarray
+    all_lower: np.ndarray
+    all_upper: np.ndarray
+    all_quantile: np.ndarray
+
+    # The scenarios below read the paper's main level; the alpha tests read every level.
+    @property
+    def results(self) -> pd.DataFrame:
+        return self.all_results[self.all_results.alpha == ALPHA].reset_index(drop=True)
+
+    @property
+    def lower(self) -> np.ndarray:
+        return self.all_lower[ALPHAS.index(ALPHA)]
+
+    @property
+    def upper(self) -> np.ndarray:
+        return self.all_upper[ALPHAS.index(ALPHA)]
+
+    @property
+    def quantile(self) -> np.ndarray:
+        return self.all_quantile[ALPHAS.index(ALPHA)]
 
     @property
     def v(self) -> np.ndarray:
@@ -66,6 +84,7 @@ def evaluation(finished_run: support.FinishedRun, data_root: Path) -> Evaluation
     with np.load(run_dir / "intervals" / "intervals.npz") as stored:
         interval_index, lower, upper = stored["cell_index"], stored["lower"], stored["upper"]
         quantile = stored["quantile"]
+        assert tuple(stored["alpha"]) == ALPHAS
     return Evaluation(
         arch,
         run_dir,
@@ -146,24 +165,86 @@ def test_intervals_stay_inside_the_cell(evaluation: Evaluation) -> None:
     assert (evaluation.upper <= evaluation.test.cell_ha.to_numpy() + 1e-6).all()
 
 
+def test_every_alpha_has_every_row(evaluation: Evaluation) -> None:
+    results = evaluation.all_results
+    assert tuple(results.alpha.unique()) == ALPHAS
+    for alpha in ALPHAS:
+        at = results[results.alpha == alpha]
+        assert list(zip(at.method, at.calibration, strict=True)) == list(
+            garimpo_uncertainty.intervals.COMBINATIONS
+        ), alpha
+    assert evaluation.all_lower.shape[0] == len(ALPHAS)
+
+
 def test_array_metrics_match_one_computation_per_cell(evaluation: Evaluation) -> None:
-    """Array metrics in results.csv against one Python computation per cell, by group means."""
-    v, groups, lower, upper = evaluation.v, evaluation.groups, evaluation.lower, evaluation.upper
+    """Array metrics in results.csv against one Python computation per cell, by group means.
+
+    Every level, so an interval built at one alpha and scored at another shows.
+    """
+    v, groups = evaluation.v, evaluation.groups
     dice_by_cell = brute_force_dice(
         evaluation.data_root, evaluation.run_dir, evaluation.interval_index
     )
-    for k, row in enumerate(evaluation.results.itertuples()):
-        per_cell = [
-            brute_force_metrics(float(lower[k, i]), float(upper[k, i]), float(v[i]), ALPHA)
-            for i in range(len(v))
-        ]
-        covered, width, score = zip(*per_cell, strict=True)
-        assert np.isclose(row.picp, mean_of_group_means(list(covered), groups)), k
-        assert np.isclose(row.mpiw, mean_of_group_means(list(width), groups)), k
-        assert np.isclose(row.interval_score, mean_of_group_means(list(score), groups)), k
-        assert np.isclose(row.dice, mean_of_group_means(dice_by_cell, groups)), k
-        assert row.picp_ci_low <= row.picp_ci_high
-        assert row.n_groups == len(np.unique(groups))
+    for a, alpha in enumerate(ALPHAS):
+        lower, upper = evaluation.all_lower[a], evaluation.all_upper[a]
+        at = evaluation.all_results[evaluation.all_results.alpha == alpha]
+        for k, row in enumerate(at.itertuples()):
+            per_cell = [
+                brute_force_metrics(float(lower[k, i]), float(upper[k, i]), float(v[i]), alpha)
+                for i in range(len(v))
+            ]
+            covered, width, score = zip(*per_cell, strict=True)
+            assert np.isclose(row.picp, mean_of_group_means(list(covered), groups)), (alpha, k)
+            assert np.isclose(row.mpiw, mean_of_group_means(list(width), groups)), (alpha, k)
+            assert np.isclose(row.interval_score, mean_of_group_means(list(score), groups))
+            assert np.isclose(row.dice, mean_of_group_means(dice_by_cell, groups)), (alpha, k)
+            assert row.picp_ci_low <= row.picp_ci_high
+            assert row.n_groups == len(np.unique(groups))
+
+
+def test_quantiles_grow_as_alpha_shrinks(evaluation: Evaluation) -> None:
+    """A higher level can only raise a quantile of the same scores.
+
+    CQR is left out: each level fits its own quantile regressors, so its scores differ.
+    """
+    order = np.argsort(ALPHAS)
+    for k, (method, calibration) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS):
+        if method == "cqr":
+            continue
+        by_level = evaluation.all_quantile[order, k]
+        assert (np.diff(by_level, axis=0) <= 1e-9).all(), (method, calibration)
+    simple = evaluation.row("conformal_simple", "external")
+    assert (
+        evaluation.all_quantile[order[0], simple][0] > evaluation.all_quantile[order[-1], simple][0]
+    )
+
+
+@pytest.mark.parametrize("alpha", support.ALPHAS)
+def test_every_level_is_calibrated_at_its_own_alpha(evaluation: Evaluation, alpha: float) -> None:
+    """Pooled quantile, CQR regressors and the control, each recomputed at this level."""
+    level = ALPHAS.index(alpha)
+    intervals = garimpo_uncertainty.intervals
+    calibration = evaluation.cells[evaluation.cells.role == "calibration"]
+    groups = calibration.group.to_numpy()
+    simple = evaluation.row("conformal_simple", "external")
+    scores = np.abs(calibration.v - calibration.vhat).to_numpy()
+    assert np.allclose(
+        evaluation.all_quantile[level, simple], pooled_quantile(scores, groups, 1 - alpha)
+    )
+    models = intervals.fit_cqr(evaluation.cells[evaluation.cells.role == "train"], alpha, 0)
+    low, high, _ = intervals.method_terms("cqr", calibration, 0.01, models)
+    cqr_scores = np.maximum(low - calibration.v.to_numpy(), calibration.v.to_numpy() - high)
+    cqr = evaluation.row("cqr", "external")
+    assert np.allclose(
+        evaluation.all_quantile[level, cqr], pooled_quantile(cqr_scores, groups, 1 - alpha)
+    )
+    control = evaluation.row("independent_pixels", "none")
+    lower, upper = intervals.clip_to_cell(
+        *intervals.independent_pixel_terms(evaluation.test, alpha),
+        evaluation.test.cell_ha.to_numpy(),
+    )
+    assert np.allclose(evaluation.all_lower[level, control], lower)
+    assert np.allclose(evaluation.all_upper[level, control], upper)
 
 
 def test_quantile_weighs_groups_equally(evaluation: Evaluation) -> None:
@@ -249,8 +330,20 @@ def test_direction_diagnostics(evaluation: Evaluation) -> None:
         assert np.isclose(fitted["svm_w"].std(ddof=1), 1.0)
 
 
+def comparisons_at(run_dir: Path, name: str) -> pd.DataFrame:
+    table = pd.read_csv(run_dir / "metrics" / f"{name}.csv")
+    return table[table.alpha == ALPHA]
+
+
+def test_comparisons_never_cross_levels(evaluation: Evaluation) -> None:
+    for name in ("width_comparisons", "coverage_comparisons"):
+        table = pd.read_csv(evaluation.run_dir / "metrics" / f"{name}.csv")
+        pairs = len(list(combinations(support.EXPECTED_ROWS, 2)))
+        assert table.groupby("alpha").size().to_dict() == dict.fromkeys(ALPHAS, pairs), name
+
+
 def test_width_comparisons_subtract_the_results(evaluation: Evaluation) -> None:
-    comparisons = pd.read_csv(evaluation.run_dir / "metrics" / "width_comparisons.csv")
+    comparisons = comparisons_at(evaluation.run_dir, "width_comparisons")
     assert len(comparisons) == len(list(combinations(support.EXPECTED_ROWS, 2)))
     rows = evaluation.results.set_index(["method", "calibration"]).mpiw
     for pair in comparisons.itertuples():
@@ -261,8 +354,8 @@ def test_width_comparisons_subtract_the_results(evaluation: Evaluation) -> None:
 
 
 def test_coverage_comparisons_subtract_the_results(evaluation: Evaluation) -> None:
-    comparisons = pd.read_csv(evaluation.run_dir / "metrics" / "width_comparisons.csv")
-    coverage = pd.read_csv(evaluation.run_dir / "metrics" / "coverage_comparisons.csv")
+    comparisons = comparisons_at(evaluation.run_dir, "width_comparisons")
+    coverage = comparisons_at(evaluation.run_dir, "coverage_comparisons")
     assert len(coverage) == len(comparisons)
     picp = evaluation.results.set_index(["method", "calibration"]).picp
     for pair in coverage.itertuples():
@@ -290,6 +383,78 @@ def test_q1_spearman_on_cells_with_mining(evaluation: Evaluation) -> None:
     assert np.isclose(row.spearman, expected, equal_nan=True)
     boundary_cells = segmentation["boundary_by_rule"].sum()
     assert (evaluation.results.n_cells_boundary_by_rule == boundary_cells).all()
+
+
+def area_bin(v: float, edges: list[float]) -> int:
+    """0 for a cell without mining, else 1 to 5 by the quintile edges of the cells with mining."""
+    if v == 0:
+        return 0
+    return 1 + sum(v > edge for edge in edges)
+
+
+def test_coverage_by_stratum_matches_one_computation_per_cell(evaluation: Evaluation) -> None:
+    """Coverage and width per stratum, never recalibrated.
+
+    By reference area, adapted from Cheung et al. (2026), Figure 7, whose bins the paper does not
+    define, with the cells without mining apart; and by
+    what the model predicts, the only stratum known when an interval is used.
+    """
+    table = pd.read_csv(evaluation.run_dir / "metrics" / "coverage_by_stratum.csv")
+    v, vhat, groups = evaluation.v, evaluation.vhat, evaluation.groups
+    lower, upper = evaluation.lower, evaluation.upper
+    edges = np.quantile(v[v > 0], [0.2, 0.4, 0.6, 0.8]).tolist()
+    strata = {
+        "reference_area": (np.array([area_bin(float(value), edges) for value in v]), v),
+        "predicted_mining": ((vhat > 0).astype(int), vhat),
+    }
+    assert (v[strata["reference_area"][0] == 0] == 0).all()
+    at = table[table.alpha == ALPHA]
+    assert set(at.partition) == set(strata)
+    for k, (method, calibration) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS):
+        for partition, (labels, by) in strata.items():
+            rows = at[
+                (at.method == method)
+                & (at.calibration == calibration)
+                & (at.partition == partition)
+            ]
+            assert rows.n_cells.sum() == len(v), (method, calibration, partition)
+            for row in rows.itertuples():
+                inside = np.flatnonzero(labels == row.stratum)
+                covered = [float(lower[k, i] <= v[i] <= upper[k, i]) for i in inside]
+                width = [float(upper[k, i] - lower[k, i]) for i in inside]
+                assert row.n_cells == len(inside)
+                assert row.n_groups == len(np.unique(groups[inside]))
+                assert np.isclose(row.picp, mean_of_group_means(covered, groups[inside]))
+                assert np.isclose(row.mpiw, mean_of_group_means(width, groups[inside]))
+                assert row.low_ha == by[inside].min()
+                assert row.high_ha == by[inside].max()
+    assert set(table.alpha) == set(ALPHAS)
+
+
+def test_score_relation_is_a_log_log_fit_on_calibration(evaluation: Evaluation) -> None:
+    """Cheung et al. (2026), Figure 4: COMPASS scores against split-conformal scores.
+
+    Zero scores have no logarithm and saturated ones are censored at beta_range, so both leave.
+    """
+    table = pd.read_csv(evaluation.run_dir / "metrics" / "score_relation.csv").set_index("method")
+    calibration = evaluation.cells[evaluation.cells.role == "calibration"]
+    with np.load(evaluation.run_dir / "scores" / "scores.npz") as stored:
+        at = garimpo_uncertainty.data.positions_of(
+            stored["cell_index"], calibration.cell_index.to_numpy()
+        )
+        compass_scores, saturated = stored["score"][:, at], stored["saturated"][:, at]
+    split_scores = np.abs(calibration.v - calibration.vhat).to_numpy()
+    assert set(table.index) == set(garimpo_uncertainty.intervals.COMPASS_METHODS)
+    for m, method in enumerate(garimpo_uncertainty.intervals.COMPASS_METHODS):
+        kept = (split_scores > 0) & (compass_scores[m] > 0) & ~saturated[m]
+        row = table.loc[method]
+        assert row.n_cells == kept.sum(), method
+        assert row.n_saturated == saturated[m].sum(), method
+        slope, intercept = np.polyfit(
+            np.log(split_scores[kept]), np.log(compass_scores[m][kept]), 1
+        )
+        assert np.isclose(row.slope, slope), method
+        assert np.isclose(row.intercept, intercept), method
 
 
 @dataclass(frozen=True)
@@ -332,8 +497,9 @@ def compass_inputs(evaluation: Evaluation) -> CompassInputs:
     return CompassInputs(model, metadata, test, jacobians, fitted, compass_rows)
 
 
+@pytest.mark.parametrize("alpha", support.ALPHAS)
 def test_each_compass_row_alone_matches_the_one_pass(
-    evaluation: Evaluation, compass_inputs: CompassInputs
+    evaluation: Evaluation, compass_inputs: CompassInputs, alpha: float
 ) -> None:
     """Evaluate each COMPASS row with its own loader against the stage's one pass.
 
@@ -345,6 +511,7 @@ def test_each_compass_row_alone_matches_the_one_pass(
     model, test = compass_inputs.model, compass_inputs.test
     compass_rows = compass_inputs.compass_rows
     assert len(compass_rows) == 13
+    level = ALPHAS.index(alpha)
 
     def soft(logits: torch.Tensor) -> torch.Tensor:
         return compass2d.metrics.soft_area(logits, pixel_ha, compass2d.metrics.UPSTREAM_TEMPERATURE)
@@ -362,7 +529,7 @@ def test_each_compass_row_alone_matches_the_one_pass(
             ):
                 last = first + len(images)
                 features = garimpo_uncertainty.models.encode(model, images)
-                beta = torch.as_tensor(evaluation.quantile[k, first:last])
+                beta = torch.as_tensor(evaluation.all_quantile[level, k, first:last])
                 if method == "compass_l":
                     logits, _ = garimpo_uncertainty.models.split_at(
                         model, garimpo_uncertainty.models.LOGITS, features
@@ -388,8 +555,8 @@ def test_each_compass_row_alone_matches_the_one_pass(
     alone_lower, alone_upper = intervals.clip_to_cell(
         alone_lower, alone_upper, test.cell_ha.to_numpy()
     )
-    assert np.array_equal(alone_lower, evaluation.lower[compass_inputs.rows])
-    assert np.array_equal(alone_upper, evaluation.upper[compass_inputs.rows])
+    assert np.array_equal(alone_lower, evaluation.all_lower[level, compass_inputs.rows])
+    assert np.array_equal(alone_upper, evaluation.all_upper[level, compass_inputs.rows])
 
 
 def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
@@ -414,13 +581,13 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
         num_workers=0,
         layer=evaluation.layer,
     )
-    lower = np.full_like(evaluation.lower, np.nan)
-    upper = np.full_like(evaluation.upper, np.nan)
+    lower = np.full_like(evaluation.all_lower, np.nan)
+    upper = np.full_like(evaluation.all_upper, np.nan)
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(garimpo_uncertainty.cell_dataset.CellDataset, "__getitem__", counted_read)
         stage["compass_endpoints"](
             model,
-            evaluation.quantile,
+            evaluation.all_quantile,
             test,
             compass_inputs.jacobians,
             compass_inputs.fitted,
@@ -436,10 +603,10 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     assert len(encoder_passes) == int(np.ceil(len(test) / 8))
     rows = compass_inputs.rows
     clipped_lower, clipped_upper = garimpo_uncertainty.intervals.clip_to_cell(
-        lower[rows], upper[rows], test.cell_ha.to_numpy()
+        lower[:, rows], upper[:, rows], test.cell_ha.to_numpy()
     )
-    assert np.array_equal(clipped_lower, evaluation.lower[rows])
-    assert np.array_equal(clipped_upper, evaluation.upper[rows])
+    assert np.array_equal(clipped_lower, evaluation.all_lower[:, rows])
+    assert np.array_equal(clipped_upper, evaluation.all_upper[:, rows])
 
 
 def test_boundary_f1_without_a_boundary() -> None:

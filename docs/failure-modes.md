@@ -54,3 +54,7 @@ Written before the pipeline, and the origin of the test.
 | 46 | Repeated subsampling draws per cell, so a large group dominates as under no group weighting | one 30-cell group among 24 single-cell groups, E2E |
 | 47 | Too few groups give an unbounded subsampled quantile that reads as the largest score | `subsampled_quantile` refuses at k ≤ 1/α - 1, E2E at k = 9 and 10 |
 | 48 | The subsampled rule loses the finite-sample +1 or reads the global RNG | one cell per group must equal split conformal's ⌈(k+1)(1-α)⌉-th score; the seed alone fixes the draws, E2E |
+| 49 | An interval built at one alpha is scored or reported at another | every level's metrics recomputed per cell with its own alpha; quantiles must grow as alpha shrinks, E2E |
+| 50 | Comparisons pair rows of different levels | `alpha` in every comparison row, pair counts per level, E2E |
+| 51 | Cells without mining hide a shortfall in the cells with it | `coverage_by_stratum.csv`, by reference area with cells without mining apart and by predicted mining, recomputed per cell in E2E |
+| 52 | Zero or saturated scores enter the log-log fit | both left out, `n_saturated` reported, fit recomputed in E2E |

@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.intervals
 import garimpo_uncertainty.stages
 from tests.e2e import support
 
@@ -178,10 +179,25 @@ def saturated_run(convnet_run: support.FinishedRun, data_root: Path) -> Path:
     return saturated
 
 
-def test_saturation_is_reported_not_hidden(saturated_run: Path) -> None:
+def test_saturation_is_reported_not_hidden(saturated_run: Path, data_root: Path) -> None:
     table = pd.read_csv(saturated_run / "metrics" / "results.csv")
     j_rows = table[table.method.str.startswith("compass_j")]
     assert (j_rows.n_saturated_calibration > 0).all()
+    relation = pd.read_csv(saturated_run / "metrics" / "score_relation.csv").set_index("method")
+    cells = garimpo_uncertainty.data.read_predictions(data_root, saturated_run)
+    calibration = cells[cells.role == "calibration"]
+    with np.load(saturated_run / "scores" / "scores.npz") as stored:
+        at = garimpo_uncertainty.data.positions_of(
+            stored["cell_index"], calibration.cell_index.to_numpy()
+        )
+        score, saturated = stored["score"][:, at], stored["saturated"][:, at]
+    split = np.abs(calibration.v - calibration.vhat).to_numpy()
+    for m, method in enumerate(garimpo_uncertainty.intervals.COMPASS_METHODS):
+        kept = (split > 0) & (score[m] > 0) & ~saturated[m]
+        assert relation.n_cells[method] == kept.sum(), method
+        assert relation.n_saturated[method] == saturated[m].sum(), method
+    assert relation.n_saturated.sum() > 0
+    assert relation.slope[relation.n_cells < 2].isna().all()
 
 
 def test_missing_input_is_recorded(saturated_run: Path, data_root: Path, tmp_path: Path) -> None:
@@ -223,7 +239,7 @@ def merged_results(
 
 def test_merge_keeps_every_row_of_each_model(merged_results: pd.DataFrame) -> None:
     assert set(merged_results.model) == {"convnet", "unet_scratch"}
-    assert len(merged_results) == 2 * len(support.EXPECTED_ROWS)
+    assert len(merged_results) == 2 * len(support.ALPHAS) * len(support.EXPECTED_ROWS)
 
 
 def test_merge_refuses_two_runs_of_one_variant(

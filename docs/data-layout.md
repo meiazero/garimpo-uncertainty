@@ -54,8 +54,8 @@ Artifacts inside a run align by position with its cell table or carry `cell_inde
 | `predictions/cells.npz` | `cell_index`, `v`, `vhat`, `p_sum`, `pixel_var`, `cell_ha`, one row per cell of the run's table |
 | `predictions/{validation,calibration,test}.npy` | `uint8` probabilities, `[N, 512, 512]`, by role |
 | `scores/scores.npz` | `cell_index`; `score[M, N]`, `saturated[M, N]` and `beta_range[M]`, `M` indexing `intervals.COMPASS_METHODS`; `jacobians`, `feature_sums` |
-| `calibration/quantiles.npz` | `cell_index`, and `quantile`, `lower_term`, `upper_term`, `scale` as `[K, N]`, `K` indexing `intervals.COMBINATIONS`, `N` the test cells |
-| `intervals/intervals.npz` | `cell_index`, and `lower`, `upper`, `quantile` as `[K, N]`, plus `alpha` and `layer` |
+| `calibration/quantiles.npz` | `cell_index`, and `quantile`, `lower_term`, `upper_term`, `scale` as `[A, K, N]`, `A` indexing `intervals.ALPHAS`, `K` `intervals.COMBINATIONS`, `N` the test cells; `alpha` |
+| `intervals/intervals.npz` | `cell_index`, and `lower`, `upper`, `quantile` as `[A, K, N]`, plus `alpha` and `layer` |
 | `metrics/cell_metrics.npz` | `cell_index`, `dice`, `boundary_f1`, `boundary_by_rule`, one row per test cell |
 
 CSV is left to human tables: `history.csv`, `directions/diagnostics.csv`, the two monotonicity tables,

@@ -1,7 +1,7 @@
 """Stage: intervals of every combination on test cells; COMPASS rows run the decoder, never train.
 
 Output-space rows are arithmetic on persisted terms. Writes intervals/intervals.npz: lower, upper
-and quantile as [K, N] arrays, K indexing COMBINATIONS and N the test cells.
+and quantile as [A, K, N] arrays, A indexing ALPHAS, K COMBINATIONS and N the test cells.
 """
 
 import argparse
@@ -87,7 +87,10 @@ def compass_endpoints(
     lower: np.ndarray,
     upper: np.ndarray,
 ) -> None:
-    """Fill the COMPASS rows of lower and upper in one pass: one read and one encoder per batch."""
+    """Fill the COMPASS rows of [A, K, N] lower and upper in one pass.
+
+    One read and one encoder per batch, whatever the number of levels.
+    """
     rows = [
         (k, method)
         for k, (method, _) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS)
@@ -102,10 +105,12 @@ def compass_endpoints(
         features = garimpo_uncertainty.models.encode(model, images.to(device))
         batch_jacobians = jacobians[first:last].astype(np.float64)
         spaces = search_spaces(model, features, batch_jacobians, fitted, args)
-        for k, method in rows:
-            beta = torch.as_tensor(quantile[k, first:last], device=device)
-            low, high = spaces[method].endpoints(beta)
-            lower[k, first:last], upper[k, first:last] = low.cpu().numpy(), high.cpu().numpy()
+        for a in range(len(quantile)):
+            for k, method in rows:
+                beta = torch.as_tensor(quantile[a, k, first:last], device=device)
+                low, high = spaces[method].endpoints(beta)
+                lower[a, k, first:last] = low.cpu().numpy()
+                upper[a, k, first:last] = high.cpu().numpy()
         first = last
 
 
