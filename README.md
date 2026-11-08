@@ -81,7 +81,7 @@ Results go to `runs/pilot/`, never to `outputs/`. How a run goes and how to rest
 | Document | Covers |
 |---|---|
 | [docs/pilot.md](docs/pilot.md) | The pilot run, its check report, resubmitting with `FORCE_FROM` |
-| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading a larger fraction, regenerating tile lists, the run cell for Colab, rerunning one stage |
+| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading on your own machine, regenerating tile lists, the run cell for Colab, rerunning one stage |
 | [docs/runs.md](docs/runs.md) | Dataset size by role, training fractions, tile lists, model variants, starting weights and their limits |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, and where each is set |
 | [docs/stages.md](docs/stages.md) | Every stage's node, inputs and outputs; skips, refusals and the data validation |
