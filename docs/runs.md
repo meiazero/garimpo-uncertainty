@@ -119,8 +119,8 @@ run's paired comparisons stay inside that run, so no comparison crosses fraction
 
 | Weights | Source | License |
 |---|---|---|
-| `sentinel2_moco` | `torchgeo/resnet50_sentinel2_all_moco` on Hugging Face, revision `da4f3c9`, the file `ResNet50_Weights.SENTINEL2_ALL_MOCO` of torchgeo, trained on SSL4EO-S12; URL and hash from torchgeo's `models/resnet.py`; sha256 prefix `df8b932e` checked on download, full hash kept in the checkpoint | `cc-by-4.0` (Hugging Face API metadata) |
-| `imagenet` | `smp-hub/resnet50.imagenet` on Hugging Face, from `encoders/resnet.py` of segmentation-models-pytorch 0.6.0, revision `00cb74e`, file `model.safetensors`, sha256 prefix `df1aad85` from the Hugging Face API, checked on download | `other` (Hugging Face API metadata): read the model card before citing it |
+| `sentinel2_moco` | `torchgeo/resnet18_sentinel2_all_moco` on Hugging Face, revision `5b8cddc`, the file `ResNet18_Weights.SENTINEL2_ALL_MOCO` of torchgeo, trained on SSL4EO-S12; URL and hash from torchgeo's `models/resnet.py`; sha256 prefix `59bfdff9` checked on download, full hash kept in the checkpoint | `cc-by-4.0` (Hugging Face API metadata) |
+| `imagenet` | `smp-hub/resnet18.imagenet` on Hugging Face, from `encoders/resnet.py` of segmentation-models-pytorch 0.6.0, revision `2342da2`, file `model.safetensors`, sha256 prefix `b1d1d36f` from the Hugging Face API, checked on download | `other` (Hugging Face API metadata): read the model card before citing it |
 
 Limits of these weights:
 
@@ -143,7 +143,7 @@ compares each such file's path, size and mtime: a `best_model.pt` with a new mti
 after training refuse. Both weights are plain files
 under `$GARIMPO_DATA_DIR/weights/`, so training never reaches a network or a library cache.
 
-Every U-Net uses a ResNet-50 encoder, fixed in `models.UNET_ENCODER`, so `LAYERS` carries over between
+Every U-Net uses a ResNet-18 encoder, fixed in `models.UNET_ENCODER`, the smallest ResNet with both ImageNet and SSL4EO-S12 MoCo weights (a U-Net of 14.3 M parameters, against 32.5 M with ResNet-50), so `LAYERS` carries over between
 them and no run can mix encoders. `choose_layer.py` chooses the layer per run. The names `decoder.blocks.N` come
 from smp's decoder (`decoders/unet/decoder.py` of the pinned 0.6.0), which keeps one block per
 `decoder_channels` entry and takes its input widths from the encoder. `fit_directions.py` checks each name against

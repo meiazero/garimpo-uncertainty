@@ -28,7 +28,7 @@ ARTIFACTS = ROOT / "tests" / "artifacts" / "e2e"
 RUNS = ARTIFACTS / "runs"
 SPLIT_PATH = ARTIFACTS / "split.csv"
 CLEAN_REPORT = ARTIFACTS / "validation_clean.json"
-# The smallest cell a depth-5 encoder accepts, to offset the cost of ResNet-50 on CPU.
+# The smallest cell a depth-5 encoder accepts, to offset the cost of the encoder on CPU.
 TILE_PX = 64
 CELL_PX = 32
 CELLS_PER_TILE = (TILE_PX // CELL_PX) ** 2
@@ -495,13 +495,13 @@ def write_changed_split(name: str, directory: Path) -> tuple[Path, str]:
 
 
 def write_synthetic_sentinel2_weights(path: Path, seed: int = 0) -> dict[str, torch.Tensor]:
-    """Write a file shaped as the MoCo checkpoint: 13-band ResNet-50 keys plus fc."""
+    """Write a file shaped as the MoCo checkpoint: 13-band ResNet-18 keys plus fc."""
     torch.manual_seed(seed)
     encoder = garimpo_uncertainty.models.build("unet", 13).encoder
     state = {key: value.clone() for key, value in encoder.state_dict().items()}
     for column in range(13):
         state["conv1.weight"][:, column] += column / 100
-    state["fc.weight"] = torch.zeros(1000, 2048)
+    state["fc.weight"] = torch.zeros(1000, 512)
     state["fc.bias"] = torch.zeros(1000)
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(state, path)

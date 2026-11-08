@@ -66,8 +66,8 @@ def data_root() -> Path:
 def starting_weights_path(root: Path, encoder_weights: str | None) -> Path | None:
     """Return the file holding the chosen starting weights, or None when none are chosen."""
     names = {
-        "imagenet": "resnet50_imagenet-df1aad85.safetensors",
-        "sentinel2_moco": "resnet50_sentinel2_all_moco-df8b932e.pth",
+        "imagenet": "resnet18_imagenet-b1d1d36f.safetensors",
+        "sentinel2_moco": "resnet18_sentinel2_all_moco-59bfdff9.pth",
     }
     return root / "weights" / names[encoder_weights] if encoder_weights in names else None
 
