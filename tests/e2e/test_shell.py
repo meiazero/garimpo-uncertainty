@@ -25,7 +25,13 @@ from tests.e2e import support
 SHELL_ROOT = support.ROOT / "tests" / "artifacts" / "shell"
 DATA = SHELL_ROOT / "data"
 EXAMPLE = support.ROOT / "slurm" / "full.env.example"
-LAYERS = ["decoder.blocks.4", "decoder.blocks.3"]
+# Ordered so the chosen layer is not the first: passing LAYERS[0] for it must show in the trace.
+LAYERS = ["decoder.blocks.3", "decoder.blocks.4"]
+STAGES = support.ROOT / "slurm" / "stages.sh"
+FLAG_VARIABLE = re.compile(r'(--[a-z0-9-]+) "\$([A-Z_]+)"')
+ASSIGNMENT = re.compile(r"^\++ ([A-Z_]+)=(\S*)$", flags=re.MULTILINE)
+# Equal in full.env.example too, so swapping them changes no run.
+EQUAL_BY_DESIGN = {"SEED", "SUBSET_SEED"}
 # full.env.example's values stay unless filled or shrunk here, so the example itself is under test.
 FILLED = {
     "ARCH": "unet",
@@ -37,7 +43,8 @@ FILLED = {
     "STEPS_PER_EPOCH": support.STEPS_PER_EPOCH,
     "BATCH_SIZE": "8",
     "LR": "1e-3",
-    "WEIGHT_DECAY": "0",
+    # Not 0, which SEED and SUBSET_SEED hold, so a swap with either shows in the trace.
+    "WEIGHT_DECAY": "1e-6",
     # Apart from BATCH_SIZE and NUM_WORKERS, so a swapped variable shows in the trace.
     "EVAL_BATCH_SIZE": "5",
     "LAYERS": f"({' '.join(LAYERS)})",
@@ -89,10 +96,12 @@ def write_env(name: str, **changes: str) -> Path:
 
 def run_job(*command: str, timeout: float = 600, **variables: str) -> subprocess.CompletedProcess:
     """Run a job script from SHELL_ROOT on CPU, with the data root and any job variables."""
+    # A FORCE_FROM exported in the developer's shell would turn every job into a forced rerun.
+    inherited = {k: v for k, v in os.environ.items() if k not in ("FORCE_FROM", "FORCE_VALIDATE")}
     env = {
-        **os.environ,
+        **inherited,
         "GARIMPO_DATA_DIR": str(DATA),
-        "CELL_PX": str(support.CELL_PX),
+        "GARIMPO_TEST_CELL_PX": str(support.CELL_PX),
         "CUDA_VISIBLE_DEVICES": "",
         # bash words its own errors in the locale; the tests match the English ones.
         "LC_ALL": "C",
@@ -118,7 +127,8 @@ def traced_commands(stderr: str) -> dict[str, list[list[str]]]:
     commands: dict[str, list[list[str]]] = {}
     for line in stderr.splitlines():
         words = line.split()
-        if line.startswith("+") and "python" in words:
+        # A `trap` line shows the handler's command unexpanded; its call is traced when it runs.
+        if line.startswith("+") and "python" in words and words[1] != "trap":
             scripts = [w for w in words if w.startswith("scripts/") and w.endswith(".py")]
             if scripts:
                 commands.setdefault(Path(scripts[0]).stem, []).append(words)
@@ -129,9 +139,15 @@ def value_of(words: list[str], flag: str) -> str:
     return words[words.index(flag) + 1]
 
 
-def values_of(words: list[str], flag: str, count: int) -> list[str]:
+def values_of(words: list[str], flag: str) -> list[str]:
+    """Every word after `flag` up to the next flag, so an extra value shows too."""
     start = words.index(flag) + 1
-    return words[start : start + count]
+    end = next((i for i in range(start, len(words)) if words[i].startswith("--")), len(words))
+    return words[start:end]
+
+
+def commands_of(job: "PassedJob", script: str) -> list[list[str]]:
+    return traced_commands(job.result.stderr)[script]
 
 
 @pytest.fixture(scope="module")
@@ -175,25 +191,39 @@ def test_full_job_runs_every_stage_and_passes_the_check(passed_job: PassedJob) -
 
 
 def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
-    """A swapped variable runs fine and is wrong, so only the arguments themselves show it."""
-    commands = traced_commands(passed_job.result.stderr)
-    (train,) = commands["train"]
-    assert value_of(train, "--batch-size") == FILLED["BATCH_SIZE"]
-    assert value_of(train, "--encoder-weights") == FILLED["ENCODER_WEIGHTS"]
-    for script in EVALUATION_SCRIPTS:
-        for words in commands[script]:
-            assert value_of(words, "--batch-size") == FILLED["EVAL_BATCH_SIZE"], script
-            assert value_of(words, "--num-workers") == FILLED["NUM_WORKERS"], script
-    (calibrate,) = commands["calibrate"]
-    assert value_of(calibrate, "--lightgbm-jobs") == FILLED["NUM_WORKERS"]
+    """Every `--flag "$NAME"` in stages.sh reaches its script with the value NAME holds.
+
+    A swapped variable runs fine and is wrong, so only the arguments themselves show it; the values
+    sharing a command are distinct, so a swap between two of them shows too.
+    """
+    pairs = set(FLAG_VARIABLE.findall(STAGES.read_text()))
+    # --batch-size is the one flag fed by two variables: training's and evaluation's.
+    variable_of = {flag: name for flag, name in pairs if flag != "--batch-size"}
+    assert len(variable_of) == len(pairs) - 2, sorted(pairs)
+    values = dict(ASSIGNMENT.findall(passed_job.result.stderr))
+    values["GARIMPO_TEST_CELL_PX"] = str(support.CELL_PX)
+    checked = set()
+    for script, runs in traced_commands(passed_job.result.stderr).items():
+        expected = variable_of | {
+            "--batch-size": "BATCH_SIZE" if script == "train" else "EVAL_BATCH_SIZE"
+        }
+        for words in runs:
+            present = {flag: name for flag, name in expected.items() if flag in words}
+            for flag, name in present.items():
+                assert value_of(words, flag) == values[name], (script, flag, name)
+            shared = [values[n] for n in present.values() if n not in EQUAL_BY_DESIGN]
+            assert len(set(shared)) == len(shared), (script, present)
+            checked |= set(present)
+    assert checked == set(variable_of) | {"--batch-size"}, "a flag of stages.sh never ran"
 
     layer = support.chosen_layer(passed_job.run_dir)
-    layer_sweep, endpoint_sweep = commands["verify_monotonicity"]
-    assert values_of(commands["fit_directions"][0], "--layers", len(LAYERS)) == LAYERS
-    assert values_of(layer_sweep, "--layers", len(LAYERS)) == LAYERS
-    assert value_of(endpoint_sweep, "--layers") == layer
-    assert value_of(commands["compass_scores"][0], "--layer") == layer
-    assert value_of(commands["generate_intervals"][0], "--layer") == layer
+    assert layer != LAYERS[0], "the run must choose a layer other than the first"
+    layer_sweep, endpoint_sweep = commands_of(passed_job, "verify_monotonicity")
+    assert values_of(commands_of(passed_job, "fit_directions")[0], "--layers") == LAYERS
+    assert values_of(layer_sweep, "--layers") == LAYERS
+    assert values_of(endpoint_sweep, "--layers") == [layer]
+    assert values_of(commands_of(passed_job, "compass_scores")[0], "--layer") == [layer]
+    assert values_of(commands_of(passed_job, "generate_intervals")[0], "--layer") == [layer]
 
 
 def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:

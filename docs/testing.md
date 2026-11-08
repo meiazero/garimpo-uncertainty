@@ -20,8 +20,8 @@ uv run ruff format --check . && uv run ruff check .
 - Each process runs with `OMP_NUM_THREADS=1`, because the thread count changes the trained weights.
   `tests/conftest.py` records that the one-tile run of `test_fractions.py` failed
   `fit_directions.py` at 2 threads; that run now passes `--direction-temperature 1`.
-- `test_shell.py` sets `CELL_PX`, which `slurm/stages.sh` passes to `validate_data.py` as
-  `--cell-px`, because the synthetic cells are 32 pixels, not 512.
+- `test_shell.py` sets `GARIMPO_TEST_CELL_PX`, which `slurm/stages.sh` passes to
+  `validate_data.py` as `--cell-px`, because the synthetic cells are 32 pixels, not 512.
 - CI runs the same `uv run --no-sync pytest -q` after `uv sync --locked`, with a 45-minute limit.
 
 ## Modules
@@ -41,7 +41,7 @@ uv run ruff format --check . && uv run ruff check .
 | `test_calibration_rules.py` | Repeated subsampling reduced to split conformal at one cell per group, its draws within and across groups, its seed, its refusal, and simulated coverage at k = 25 in `tests/artifacts/calibration_rules/coverage_k25.json` |
 | `test_stages.py` | Reruns, refusals, saturation, absent cells, merge, peak memory records and `pipeline_check.py` |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
-| `test_shell.py` | `slurm/full.sbatch` and `slurm/pilot.sbatch` run as a job runs them, from a root linking the real `slurm/` and `scripts/`: a full job to PASS, each value reaching its flag in the `bash -x` trace, `FORCE_FROM` and `FORCE_VALIDATE`, an unknown `FORCE_FROM`, a failed stage stopping both jobs, every value of `full.env.example` left empty |
+| `test_shell.py` | `slurm/full.sbatch` and `slurm/pilot.sbatch` run as a job runs them, from a root linking the real `slurm/` and `scripts/`: a full job to PASS, every `--flag "$NAME"` of `stages.sh` receiving NAME's value in the `bash -x` trace, with no two values of one command equal, and the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `FORCE_FROM` and `FORCE_VALIDATE`, an unknown `FORCE_FROM`, a failed stage stopping both jobs, every value of `full.env.example` left empty |
 
 ## Not covered
 
