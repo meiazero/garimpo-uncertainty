@@ -319,6 +319,33 @@ def test_mondrian_rows_calibrate_each_predicted_stratum_alone(evaluation: Evalua
     assert set(test_strata.tolist()) == {0, 1}, "the fixture needs both strata"
 
 
+def test_asymmetric_rows_calibrate_one_joint_score(evaluation: Evaluation) -> None:
+    """Recompute the side ratio on validation and the joint quantile on calibration.
+
+    Ratio: one-sided quantiles at 1 - alpha / 2; then max(lower, upper / ratio) at 1 - alpha.
+    """
+    cells = evaluation.cells
+    validation, calibration = cells[cells.role == "validation"], cells[cells.role == "calibration"]
+    with np.load(evaluation.run_dir / "scores" / "scores.npz") as stored:
+        index = stored["cell_index"].tolist()
+        lower, upper = stored["lower"][0], stored["upper"][0]
+    at_validation = [index.index(i) for i in validation.cell_index]
+    at_calibration = [index.index(i) for i in calibration.cell_index]
+    with np.load(evaluation.run_dir / "calibration" / "quantiles.npz") as stored:
+        ratio = stored["side_ratio"][ALPHAS.index(ALPHA)]
+    k = evaluation.row("a_compass_l", "external")
+    level = 1 - ALPHA / 2
+    groups = validation.group.to_numpy()
+    expected_ratio = pooled_quantile(upper[at_validation], groups, level) / pooled_quantile(
+        lower[at_validation], groups, level
+    )
+    assert np.isclose(ratio[k], expected_ratio)
+    joint = np.maximum(lower[at_calibration], upper[at_calibration] / expected_ratio)
+    expected = pooled_quantile(joint, calibration.group.to_numpy(), 1 - ALPHA)
+    assert np.allclose(evaluation.quantile[k], expected)
+    assert np.isnan(ratio[evaluation.row("compass_l", "external")])
+
+
 def test_own_region_calibration_excludes_the_evaluated_group(evaluation: Evaluation) -> None:
     groups = evaluation.groups
     own = evaluation.quantile[evaluation.row("conformal_simple", "own_region")]
@@ -556,7 +583,7 @@ def compass_inputs(evaluation: Evaluation) -> CompassInputs:
     compass_rows = [
         (k, method)
         for k, (method, _) in enumerate(intervals.COMBINATIONS)
-        if method in intervals.COMPASS_METHODS
+        if method in intervals.COMPASS_METHODS + intervals.ASYMMETRIC_METHODS
     ]
     return CompassInputs(model, metadata, test, jacobians, fitted, compass_rows)
 
@@ -574,7 +601,7 @@ def test_each_compass_row_alone_matches_the_one_pass(
     pixel_ha = garimpo_uncertainty.data.PIXEL_HA
     model, test = compass_inputs.model, compass_inputs.test
     compass_rows = compass_inputs.compass_rows
-    assert len(compass_rows) == 19
+    assert len(compass_rows) == 31
     level = ALPHAS.index(alpha)
 
     def soft(logits: torch.Tensor) -> torch.Tensor:
@@ -587,6 +614,8 @@ def test_each_compass_row_alone_matches_the_one_pass(
     alone_upper = np.empty((len(compass_rows), len(test)))
     with np.load(evaluation.run_dir / "scores" / "scores.npz") as stored:
         beta_range = dict(zip(intervals.COMPASS_METHODS, stored["beta_range"], strict=True))
+    with np.load(evaluation.run_dir / "calibration" / "quantiles.npz") as stored:
+        side_ratio = stored["side_ratio"][level]
     whole_cell = np.zeros((len(compass_rows), len(test)), dtype=bool)
     with torch.no_grad():
         for row, (k, method) in enumerate(compass_rows):
@@ -597,28 +626,36 @@ def test_each_compass_row_alone_matches_the_one_pass(
                 last = first + len(images)
                 features = garimpo_uncertainty.models.encode(model, images)
                 quantile = evaluation.all_quantile[level, k, first:last]
-                # A quantile censored at beta_range gives the whole cell, inf included.
-                whole_cell[row, first:last] = quantile >= beta_range[method]
+                base = method.removeprefix("a_")
+                asymmetric = base != method
+                ratio = float(side_ratio[k])
+                # Censored quantiles give the whole cell, inf included; an asymmetric row's upper
+                # side is censored at beta_range / ratio.
+                censor = min(beta_range[base], beta_range[base] / ratio) if asymmetric else None
+                whole_cell[row, first:last] = quantile >= (censor or beta_range[base])
                 beta = torch.as_tensor(np.where(whole_cell[row, first:last], 0.0, quantile))
-                if method == "compass_l":
+                if base == "compass_l":
                     logits, _ = garimpo_uncertainty.models.split_at(
                         model, garimpo_uncertainty.models.LOGITS, features
                     )
-                    low, high = compass2d.compass.endpoints(
-                        lambda zi: zi, hard, logits, torch.ones_like(logits), beta
-                    )
+                    space = (lambda zi: zi, hard, logits, torch.ones_like(logits))
                 else:
                     z, decode = garimpo_uncertainty.models.split_at(
                         model, evaluation.layer, features
                     )
-                    direction = method.removeprefix("compass_j_")
+                    direction = base.removeprefix("compass_j_")
                     deltas = compass2d.directions.cell_deltas(
                         direction,
                         compass_inputs.jacobians[first:last].astype(np.float64),
                         compass_inputs.fitted,
                     )
                     delta = compass2d.compass.channel_delta(torch.from_numpy(deltas.copy()).to(z))
-                    low, high = compass2d.compass.endpoints(decode, soft, z, delta, beta)
+                    space = (decode, soft, z, delta)
+                if asymmetric:
+                    low = compass2d.compass.shifted(*space, -beta)
+                    high = compass2d.compass.shifted(*space, ratio * beta)
+                else:
+                    low, high = compass2d.compass.endpoints(*space, beta)
                 alone_lower[row, first:last] = low.numpy()
                 alone_upper[row, first:last] = high.numpy()
                 first = last
@@ -657,9 +694,10 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     upper = np.full_like(evaluation.all_upper, np.nan)
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(garimpo_uncertainty.cell_dataset.CellDataset, "__getitem__", counted_read)
+        calibrated = stage["Calibrated"].read(evaluation.run_dir)
         stage["compass_endpoints"](
             model,
-            evaluation.all_quantile,
+            calibrated,
             test,
             compass_inputs.jacobians,
             compass_inputs.fitted,
@@ -667,7 +705,6 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
             metadata=compass_inputs.metadata,
             args=args,
             device="cpu",
-            beta_range=stage["read_beta_range"](evaluation.run_dir),
             lower=lower,
             upper=upper,
         )
@@ -675,13 +712,7 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     assert sorted(reads) == list(range(len(test)))
     assert len(encoder_passes) == int(np.ceil(len(test) / 8))
     rows = compass_inputs.rows
-    stage["widen_saturated"](
-        evaluation.all_quantile,
-        stage["read_beta_range"](evaluation.run_dir),
-        test.cell_ha.to_numpy(),
-        lower,
-        upper,
-    )
+    stage["widen_saturated"](calibrated, test.cell_ha.to_numpy(), lower, upper)
     clipped_lower, clipped_upper = garimpo_uncertainty.intervals.clip_to_cell(
         lower[:, rows], upper[:, rows], test.cell_ha.to_numpy()
     )

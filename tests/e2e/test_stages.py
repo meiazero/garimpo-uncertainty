@@ -201,15 +201,16 @@ def test_saturation_is_reported_not_hidden(saturated_run: Path, data_root: Path)
 
 
 def test_saturated_quantiles_give_the_whole_cell(saturated_run: Path, data_root: Path) -> None:
-    """A quantile censored at beta_range supports no interval narrower than the cell."""
+    """Give the whole cell wherever a COMPASS quantile is censored.
+
+    Censored means at beta_range, or at beta_range / ratio on an asymmetric row's upper side.
+    """
     cells = garimpo_uncertainty.data.read_predictions(data_root, saturated_run)
     with np.load(saturated_run / "intervals" / "intervals.npz") as stored:
-        cell_index, lower, upper, quantile = (
-            stored["cell_index"],
-            stored["lower"],
-            stored["upper"],
-            stored["quantile"],
-        )
+        cell_index, lower, upper = stored["cell_index"], stored["lower"], stored["upper"]
+        quantile = stored["quantile"]
+    with np.load(saturated_run / "calibration" / "quantiles.npz") as stored:
+        side_ratio = stored["side_ratio"]
     with np.load(saturated_run / "scores" / "scores.npz") as stored:
         beta_range = dict(
             zip(garimpo_uncertainty.intervals.COMPASS_METHODS, stored["beta_range"], strict=True)
@@ -217,13 +218,17 @@ def test_saturated_quantiles_give_the_whole_cell(saturated_run: Path, data_root:
     cell_ha = cells.set_index("cell_index").cell_ha.loc[cell_index].to_numpy()
     checked = 0
     for k, (method, _) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS):
-        if method in beta_range:
-            trivial = quantile[:, k] >= beta_range[method]
-            checked += int(trivial.sum())
-            assert (lower[:, k][trivial] == 0).all(), method
-            assert np.array_equal(
-                upper[:, k][trivial], np.broadcast_to(cell_ha, trivial.shape)[trivial]
-            )
+        base = method.removeprefix("a_")
+        if base not in beta_range:
+            continue
+        censor = np.full(len(quantile), beta_range[base])
+        if base != method:
+            censor = np.minimum(censor, beta_range[base] / side_ratio[:, k])
+        trivial = quantile[:, k] >= censor[:, None]
+        checked += int(trivial.sum())
+        assert (lower[:, k][trivial] == 0).all(), method
+        whole = np.broadcast_to(cell_ha, trivial.shape)[trivial]
+        assert np.array_equal(upper[:, k][trivial], whole), method
     assert checked > 0
 
 

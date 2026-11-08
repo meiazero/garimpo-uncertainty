@@ -15,7 +15,7 @@ Read when a stage fails, skips or refuses.
 | `verify_monotonicity.py --use layer` | GPU | checkpoint, directions, validation slots | `monotonicity_layer.csv` |
 | `choose_layer.py` | CPU | `directions/diagnostics.csv`, validation rows of `monotonicity_layer.csv` | `chosen_layer.json` (the layer, the threshold, each candidate's explained variance and fractions) |
 | `verify_monotonicity.py --use endpoint` | GPU | checkpoint, direction of the layer, calibration and test slots | `monotonicity_endpoint.csv` |
-| `compass_scores.py` | GPU | checkpoint, direction of the layer, calibration and test slots | `scores/scores.npz` |
+| `compass_scores.py` | GPU | checkpoint, direction of the layer, validation, calibration and test slots | `scores/scores.npz` |
 | `calibrate.py` | CPU | `predictions/cells.npz`, `scores/scores.npz` | `calibration/quantiles.npz` (`quantile`, the `beta_hat` of each row and cell) |
 | `generate_intervals.py` | GPU | checkpoint, `calibration/quantiles.npz`, directions, `scores/scores.npz`, test slots; one pass, one encoder per batch | `intervals/intervals.npz` |
 | `compute_metrics.py` | CPU | `intervals/intervals.npz`, `predictions/`, `masks.npy`, `calibration/quantiles.npz`, `scores/scores.npz` | `metrics/cell_metrics.npz`, `metrics/results.csv`, `metrics/width_comparisons.csv`, `metrics/coverage_comparisons.csv`, `metrics/q1_spearman.csv`, `metrics/coverage_by_stratum.csv`, `metrics/score_relation.csv` |

@@ -53,8 +53,8 @@ Artifacts inside a run align by position with its cell table or carry `cell_inde
 |---|---|
 | `predictions/cells.npz` | `cell_index`, `v`, `vhat`, `p_sum`, `pixel_var`, `cell_ha`, one row per cell of the run's table |
 | `predictions/{validation,calibration,test}.npy` | `uint8` probabilities, `[N, 512, 512]`, by role |
-| `scores/scores.npz` | `cell_index`; `score[M, N]`, `saturated[M, N]` and `beta_range[M]`, `M` indexing `intervals.COMPASS_METHODS`; `jacobians`, `feature_sums` |
-| `calibration/quantiles.npz` | `cell_index`, and `quantile`, `lower_term`, `upper_term`, `scale` as `[A, K, N]`, `A` indexing `intervals.ALPHAS`, `K` `intervals.COMBINATIONS`, `N` the test cells; `alpha`; per `[A, K]`, score counts, saturation and `infinite_quantile_fraction`; `density_ratio_calibration`, `density_ratio_test` (cross-fitted odds) |
+| `scores/scores.npz` | `cell_index` of validation, calibration and test cells; `score[M, N]`, `saturated[M, N]`, the one-sided `lower`, `lower_saturated`, `upper`, `upper_saturated` (Algorithm 6) and `beta_range[M]`, `M` indexing `intervals.COMPASS_METHODS`; `jacobians`, `feature_sums` |
+| `calibration/quantiles.npz` | `cell_index`, and `quantile`, `lower_term`, `upper_term`, `scale` as `[A, K, N]`, `A` indexing `intervals.ALPHAS`, `K` `intervals.COMBINATIONS`, `N` the test cells; `alpha`; per `[A, K]`, score counts, saturation and `infinite_quantile_fraction`; `density_ratio_calibration`, `density_ratio_test` (cross-fitted odds); per `[A, K]`, `side_ratio` of the `a_` rows and `censor_at`, the quantile from which a COMPASS row is the whole cell |
 | `intervals/intervals.npz` | `cell_index`, and `lower`, `upper`, `quantile` as `[A, K, N]`, plus `alpha` and `layer` |
 | `metrics/cell_metrics.npz` | `cell_index`, `dice`, `boundary_f1`, `boundary_by_rule`, one row per test cell |
 

@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import Self
 
 import compass2d.calibration
+import compass2d.compass
 import numpy as np
 import pandas as pd
+import torch
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
@@ -123,15 +125,33 @@ class CalibrationProblem:
         return quantiles
 
 
+# A scores.npz from before the one-sided scores fails here by name, not by position.
+STORED_SCORES = (
+    "score",
+    "saturated",
+    "lower",
+    "lower_saturated",
+    "upper",
+    "upper_saturated",
+    "beta_range",
+)
+
+
 @dataclass(frozen=True)
 class CompassScores:
     """Persisted COMPASS scores, one row per method, and where each population sits in them."""
 
     score: np.ndarray
     saturated: np.ndarray
+    lower: np.ndarray
+    lower_saturated: np.ndarray
+    upper: np.ndarray
+    upper_saturated: np.ndarray
     beta_range: np.ndarray
     calibration_at: np.ndarray
     test_at: np.ndarray
+    validation_at: np.ndarray
+    validation_groups: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -146,6 +166,8 @@ class Rows:
     n_saturated: np.ndarray
     saturated_fraction: np.ndarray
     infinite_fraction: np.ndarray
+    side_ratio: np.ndarray
+    censor_at: np.ndarray
 
     @classmethod
     def allocate(cls, n_rows: int, n_cells: int) -> Self:
@@ -159,22 +181,31 @@ class Rows:
             n_saturated=np.full(n_rows, np.nan),
             saturated_fraction=np.full(n_rows, np.nan),
             infinite_fraction=np.zeros(n_rows),
+            side_ratio=np.full(n_rows, np.nan),
+            censor_at=np.full(n_rows, np.nan),
         )
 
 
 def read_scores(
-    calibration_cells: pd.DataFrame, test_cells: pd.DataFrame, args: argparse.Namespace
+    cells: pd.DataFrame, args: argparse.Namespace
 ) -> tuple[CompassScores, np.ndarray, np.ndarray]:
     """Return the scores and the density ratio of test over calibration features at both."""
+    by_role = {role: cells[cells.role == role] for role in ("validation", "calibration", "test")}
+    calibration_cells, test_cells = by_role["calibration"], by_role["test"]
     with np.load(args.run_dir / "scores" / "scores.npz") as stored:
-        calibration_at = garimpo_uncertainty.data.positions_of(
-            stored["cell_index"], calibration_cells.cell_index.to_numpy()
-        )
-        test_at = garimpo_uncertainty.data.positions_of(
-            stored["cell_index"], test_cells.cell_index.to_numpy()
-        )
+        at = {
+            role: garimpo_uncertainty.data.positions_of(
+                stored["cell_index"], frame.cell_index.to_numpy()
+            )
+            for role, frame in by_role.items()
+        }
+        calibration_at, test_at = at["calibration"], at["test"]
         scores = CompassScores(
-            stored["score"], stored["saturated"], stored["beta_range"], calibration_at, test_at
+            **{name: stored[name] for name in STORED_SCORES},
+            calibration_at=calibration_at,
+            test_at=test_at,
+            validation_at=at["validation"],
+            validation_groups=by_role["validation"].group.to_numpy(),
         )
         calibration_ratio, test_ratio = compass2d.calibration.density_ratio(
             stored["feature_sums"][calibration_at],
@@ -206,7 +237,51 @@ def fill_compass_row(
     flags = scores.saturated[m, at]
     rows.n_scores[k] = len(flags)
     rows.n_saturated[k] = flags.sum()
-    rows.saturated_fraction[k] = np.mean(rows.quantile[k] >= scores.beta_range[m])
+    rows.censor_at[k] = scores.beta_range[m]
+    rows.saturated_fraction[k] = np.mean(rows.quantile[k] >= rows.censor_at[k])
+
+
+def side_ratio(scores: CompassScores, m: int, alpha: float) -> float:
+    """Upper over lower one-sided quantile at 1 - alpha / 2, pooled over validation groups.
+
+    Validation cells keep the ratio apart from calibration, as joint_score requires.
+    """
+    at, groups = scores.validation_at, scores.validation_groups
+    upper = compass2d.calibration.group_quantile(scores.upper[m, at], groups, alpha / 2)
+    lower = compass2d.calibration.group_quantile(scores.lower[m, at], groups, alpha / 2)
+    return upper / lower
+
+
+def fill_asymmetric_row(
+    rows: Rows,
+    k: int,
+    method: str,
+    calibration: str,
+    *,
+    scores: CompassScores,
+    problem: CalibrationProblem,
+) -> None:
+    m = garimpo_uncertainty.intervals.COMPASS_METHODS.index(method.removeprefix("a_"))
+    ratio = side_ratio(scores, m, problem.alpha)
+    joint, flags = (
+        found.numpy()
+        for found in compass2d.compass.joint_score(
+            (torch.from_numpy(scores.lower[m]), torch.from_numpy(scores.lower_saturated[m])),
+            (torch.from_numpy(scores.upper[m]), torch.from_numpy(scores.upper_saturated[m])),
+            ratio,
+        )
+    )
+    rows.quantile[k] = problem.quantile(
+        calibration, joint[scores.calibration_at], joint[scores.test_at]
+    )
+    rows.scale[k] = np.nan
+    at = scores.test_at if calibration.startswith("own_region") else scores.calibration_at
+    rows.n_scores[k] = len(at)
+    rows.n_saturated[k] = flags[at].sum()
+    rows.side_ratio[k] = ratio
+    # The upper side is censored at beta_range / ratio (joint_score).
+    rows.censor_at[k] = min(scores.beta_range[m], scores.beta_range[m] / ratio)
+    rows.saturated_fraction[k] = np.mean(rows.quantile[k] >= rows.censor_at[k])
 
 
 def fill_output_space_row(
@@ -256,6 +331,8 @@ def rows_at(
             rows.quantile[k], rows.scale[k] = 0.0, 1.0
         elif method in garimpo_uncertainty.intervals.COMPASS_METHODS:
             fill_compass_row(rows, k, method, calibration, scores=scores, problem=problem)
+        elif method in garimpo_uncertainty.intervals.ASYMMETRIC_METHODS:
+            fill_asymmetric_row(rows, k, method, calibration, scores=scores, problem=problem)
         else:
             fill_output_space_row(
                 rows,
@@ -276,7 +353,7 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
         cells = cells[cells.v > 0]
     calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
     test_cells = cells[cells.role == "test"].reset_index(drop=True)
-    scores, calibration_ratio, test_ratio = read_scores(calibration_cells, test_cells, args)
+    scores, calibration_ratio, test_ratio = read_scores(cells, args)
     by_alpha = [
         rows_at(
             CalibrationProblem(
@@ -304,6 +381,8 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
         n_saturated_calibration=stacked("n_saturated"),
         quantile_saturated_fraction=stacked("saturated_fraction"),
         infinite_quantile_fraction=stacked("infinite_fraction"),
+        side_ratio=stacked("side_ratio"),
+        censor_at=stacked("censor_at"),
         density_ratio_calibration=calibration_ratio,
         density_ratio_test=test_ratio,
     )

@@ -1,10 +1,12 @@
-"""Stage: COMPASS non-conformity scores on calibration and test cells, through the decoder.
+"""Stage: COMPASS non-conformity scores on validation, calibration and test cells.
 
-Writes scores/scores.npz: scores and saturation flags, one row per COMPASS method, plus per-cell
-Jacobians (PCA directions, interval stage) and summed features (density ratio), all by position.
+Writes scores/scores.npz: symmetric and one-sided (Algorithm 6) scores and saturation flags, one row
+per COMPASS method, plus per-cell Jacobians (PCA directions, interval stage) and summed features
+(density ratio), all by position.
 """
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
@@ -24,30 +26,77 @@ import garimpo_uncertainty.stages
 
 
 class BatchScores(NamedTuple):
+    """One batch: symmetric score and flag, then each one-sided score and flag, per method."""
+
     score: np.ndarray
     saturated: np.ndarray
+    lower: np.ndarray
+    lower_saturated: np.ndarray
+    upper: np.ndarray
+    upper_saturated: np.ndarray
     jacobians: np.ndarray
     feature_sums: np.ndarray
 
 
-def search_logits(
+class Space(NamedTuple):
+    """What one COMPASS method perturbs, and how far and how finely its search goes."""
+
+    decode: Callable[[torch.Tensor], torch.Tensor]
+    metric: Callable[[torch.Tensor], torch.Tensor]
+    z: torch.Tensor
+    delta: torch.Tensor
+    beta_range: float
+    threshold: float
+
+
+def batch_spaces(
     model: torch.nn.Module,
     features: list[torch.Tensor],
-    target: torch.Tensor,
+    fitted: compass2d.directions.Directions,
     args: argparse.Namespace,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[list[Space], np.ndarray, np.ndarray]:
+    """Return the spaces in COMPASS_METHODS order, the Jacobians and the summed features."""
+    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
+
+    def soft(logits: torch.Tensor) -> torch.Tensor:
+        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
+
     logits, _ = garimpo_uncertainty.models.split_at(
         model, garimpo_uncertainty.models.LOGITS, features
     )
-    return compass2d.compass.binary_search_scores(
-        lambda z: z,
-        lambda output: compass2d.metrics.hard_area(output, garimpo_uncertainty.data.PIXEL_HA),
-        logits,
-        torch.ones_like(logits),
-        target,
-        args.beta_range_logits,
-        args.search_threshold_logits,
-    )
+    spaces = [
+        Space(
+            lambda z: z,
+            lambda output: compass2d.metrics.hard_area(output, pixel_ha),
+            logits,
+            torch.ones_like(logits),
+            args.beta_range_logits,
+            args.search_threshold_logits,
+        )
+    ]
+    z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
+    jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
+    for direction in ("pca", "svm"):
+        delta = compass2d.directions.cell_deltas(direction, jacobian.astype(np.float64), fitted)
+        spaces.append(
+            Space(
+                decode,
+                soft,
+                z,
+                compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z)),
+                args.beta_range_features,
+                args.search_threshold_features,
+            )
+        )
+    return spaces, jacobian, z.flatten(2).sum(2).cpu().numpy()
+
+
+def search_space(space: Space, target: torch.Tensor) -> list[torch.Tensor]:
+    """Symmetric score and flag, then lower score and flag, then upper score and flag."""
+    searched = (space.decode, space.metric, space.z, space.delta, target)
+    limits = (space.beta_range, space.threshold)
+    lower, upper = compass2d.compass.asymmetric_binary_search_scores(*searched, *limits)
+    return [*compass2d.compass.binary_search_scores(*searched, *limits), *lower, *upper]
 
 
 def score_batch(
@@ -57,37 +106,13 @@ def score_batch(
     fitted: compass2d.directions.Directions,
     args: argparse.Namespace,
 ) -> BatchScores:
-    """Search each method's score on one batch, sharing one encoder pass; one row per method."""
-    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-
-    def soft(logits: torch.Tensor) -> torch.Tensor:
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
-
-    target = masks.to(torch.float64).flatten(1).sum(1) * pixel_ha
+    """Search each method's scores on one batch, sharing one encoder pass; one row per method."""
+    target = masks.to(torch.float64).flatten(1).sum(1) * garimpo_uncertainty.data.PIXEL_HA
     features = garimpo_uncertainty.models.encode(model, x)
-    searches = [search_logits(model, features, target, args)]
-    z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
-    jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
-    feature_sums = z.flatten(2).sum(2).cpu().numpy()
-    for direction in ("pca", "svm"):
-        delta = compass2d.directions.cell_deltas(direction, jacobian.astype(np.float64), fitted)
-        searches.append(
-            compass2d.compass.binary_search_scores(
-                decode,
-                soft,
-                z,
-                compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z)),
-                target,
-                args.beta_range_features,
-                args.search_threshold_features,
-            )
-        )
-    return BatchScores(
-        np.stack([found.cpu().numpy() for found, _ in searches]),
-        np.stack([flags.cpu().numpy() for _, flags in searches]),
-        jacobian,
-        feature_sums,
-    )
+    spaces, jacobian, feature_sums = batch_spaces(model, features, fitted, args)
+    found = [search_space(space, target) for space in spaces]
+    columns = [np.stack([row[c].cpu().numpy() for row in found]) for c in range(6)]
+    return BatchScores(*columns, jacobian, feature_sums)
 
 
 def score_cells(
@@ -102,8 +127,10 @@ def score_cells(
     """Return arrays aligned with `cells`; scores have one row per COMPASS_METHODS entry."""
     fitted = compass2d.directions.Directions.load(args.run_dir / "directions" / f"{args.layer}.npz")
     methods = garimpo_uncertainty.intervals.COMPASS_METHODS
-    score = np.empty((len(methods), len(cells)))
-    saturated = np.empty((len(methods), len(cells)), dtype=bool)
+    arrays = {
+        name: np.empty((len(methods), len(cells)), dtype=bool if "saturated" in name else float)
+        for name in BatchScores._fields[:6]
+    }
     jacobians, feature_sums = [], []
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
@@ -112,15 +139,14 @@ def score_cells(
     for images, masks, _ in loader:
         last = first + len(images)
         batch = score_batch(model, images.to(device), masks.to(device), fitted, args)
-        score[:, first:last] = batch.score
-        saturated[:, first:last] = batch.saturated
+        for name, array in arrays.items():
+            array[:, first:last] = getattr(batch, name)
         jacobians.append(batch.jacobians)
         feature_sums.append(batch.feature_sums)
         first = last
     return {
         "cell_index": cells.cell_index.to_numpy(),
-        "score": score,
-        "saturated": saturated,
+        **arrays,
         "beta_range": np.array(
             [args.beta_range_logits, args.beta_range_features, args.beta_range_features]
         ),
@@ -155,7 +181,8 @@ def main() -> None:
     def work() -> dict:
         cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
         model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
-        evaluated = cells[cells.role.isin(["calibration", "test"])]
+        # Validation cells fix the asymmetric rows' side ratio, apart from calibration.
+        evaluated = cells[cells.role.isin(["validation", "calibration", "test"])]
         arrays = score_cells(model, evaluated, root, metadata, args, device=device)
         garimpo_uncertainty.stages.write_arrays(scores_path, **arrays)
         return {

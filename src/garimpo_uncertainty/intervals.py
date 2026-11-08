@@ -47,6 +47,12 @@ COMBINATIONS += tuple(
     for method in MONDRIAN_METHODS
     for situation in ("external", "own_region")
 )
+# Asymmetric COMPASS (Cheung et al., 2026, Algorithm 6) through one joint score: each a_ row reads
+# the one-sided scores of the COMPASS method named after the prefix.
+ASYMMETRIC_METHODS = ("a_compass_l", "a_compass_j_pca", "a_compass_j_svm")
+COMBINATIONS += tuple(
+    (method, situation) for method in ASYMMETRIC_METHODS for situation in ("external", "own_region")
+)
 # Sensitivity analysis: the pooled external and own-region rows again, by repeated subsampling.
 COMBINATIONS += tuple(
     (method, f"{calibration}_subsampled")

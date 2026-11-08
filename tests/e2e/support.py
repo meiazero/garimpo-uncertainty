@@ -69,6 +69,12 @@ EXPECTED_ROWS |= {
     )
     for calibration in ("external_mondrian", "own_region_mondrian")
 }
+# Asymmetric COMPASS through the joint score.
+EXPECTED_ROWS |= {
+    (method, calibration)
+    for method in ("a_compass_l", "a_compass_j_pca", "a_compass_j_svm")
+    for calibration in ("external", "own_region")
+}
 # The sensitivity analysis: every pooled external and own-region row again, by repeated subsampling.
 EXPECTED_ROWS |= {
     (method, f"{calibration}_subsampled")
