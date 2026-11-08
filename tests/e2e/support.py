@@ -387,7 +387,9 @@ def compute_metrics(
     return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
 
 
-def run_stages_after_training(run_dir: Path, layers: list[str], data_root: Path) -> str:
+def run_stages_after_training(
+    run_dir: Path, layers: list[str], data_root: Path, direction_args: tuple[str, ...] = ()
+) -> str:
     """Run inference through the intervals as slurm/stages.sh does; return the chosen layer."""
     common = checkpoint_args(run_dir)
     run("infer.py", *common, data_root=data_root)
@@ -402,6 +404,7 @@ def run_stages_after_training(run_dir: Path, layers: list[str], data_root: Path)
         "balanced",
         "--svm-pixels-per-cell",
         "50",
+        *direction_args,
         data_root=data_root,
     )
     sweep(run_dir, "layer", layers, data_root)

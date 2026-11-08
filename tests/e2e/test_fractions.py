@@ -27,11 +27,7 @@ SMALL_REPORT = FRACTION_ARTIFACTS / "validation_small.json"
 
 
 def small_args(fraction: str = "0.01", subset_seed: str = "0") -> list[str]:
-    """One tile is 4 cells, so each epoch's 10 updates at batch 2 pass over them 5 times.
-
-    With few updates no logit nears zero, and at the upstream temperature every Jacobian is then
-    exactly zero, which fit_directions rightly refuses.
-    """
+    """One tile is 4 cells, so each epoch's 10 updates at batch 2 pass over them 5 times."""
     return support.train_args(
         "convnet",
         SMALL_DIR,
@@ -44,8 +40,15 @@ def small_args(fraction: str = "0.01", subset_seed: str = "0") -> list[str]:
     )
 
 
+# With few updates no logit need near zero, and at the upstream temperature every Jacobian is then
+# exactly zero, which fit_directions rightly refuses; whether one nears zero depends on the CPU.
+SMOOTH_DIRECTIONS = ("--direction-temperature", "1")
+
+
 def finish_run(run_dir: Path) -> None:
-    support.run_stages_after_training(run_dir, list(support.RUN_ORDER["convnet"][1:]), ROOT)
+    support.run_stages_after_training(
+        run_dir, list(support.RUN_ORDER["convnet"][1:]), ROOT, SMOOTH_DIRECTIONS
+    )
     support.compute_metrics(run_dir, support.BOUNDARY_TOLERANCE, ROOT)
 
 
