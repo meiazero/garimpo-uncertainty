@@ -16,7 +16,7 @@ Written before the pipeline, and the origin of the test.
 | 8 | The mask is rasterized on a grid other than the image's | Not checked automatically: raster versus vector area and NDVI contrast are diagnostics, with no threshold, to read in the report |
 | 9 | Cell size is not what the area metric assumes | `validate_data.py` (`store_layout`, `pixel_size`) |
 | 10 | `g(f(x))` differs from `model(x)`: wrong layer, skip connection lost, batch norm in train mode | E2E |
-| 11 | A library upgrade renames the U-Net decoder modules | `models.feature_layers` raises, E2E |
+| 11 | A library upgrade renames the U-Net decoder modules | `models.common.feature_layers` raises, E2E |
 | 12 | Empty cells have zero Jacobians and normalization gives NaN | `directions._scale` raises; mean term in the PCA direction, E2E |
 | 13 | The SVM normal points to less area | orientation against the mean Jacobian, E2E |
 | 14 | SVM or PCA see calibration or test cells | training-role pass only, `n_train_cells` checked in E2E |
@@ -39,7 +39,7 @@ Written before the pipeline, and the origin of the test.
 | 31 | Band columns of the 13-band `conv1` land out of order | literal column positions checked in E2E |
 | 32 | A weights file with missing or extra keys loads partially | strict load after dropping `fc.*`, E2E |
 | 33 | Runs merge under one model and fraction | `variant` and `train_fraction` in the metadata and the tables; `merge_results.py` refuses a repeated pair, E2E |
-| 34 | Training tries to fetch weights over the network | Nothing in training can: `models.build` reads the two weight files from the data root only |
+| 34 | Training tries to fetch weights over the network | Nothing in training can: `models.common.build` reads the two weight files from the data root only |
 | 35 | Pretrained weights resume or skip under another identity | `encoder_weights` and the file hash in the fingerprint and `last.pt`, E2E |
 | 36 | A larger fraction's download refuses every finished smaller run, or moves its slots | hash of the run's index set and sidecars in the fingerprint; slots fixed by `cell_index`; E2E checks earlier slots stay byte-identical |
 | 37 | Tiles written in another order land in other slots | `cell_index` comes from the split alone, E2E writes in a shuffled order and compares bytes |
