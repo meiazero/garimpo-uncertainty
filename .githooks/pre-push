@@ -1,8 +1,8 @@
 #!/bin/sh
-# Refuse a push when the working tree fails ruff format, lint, or the tests.
+# Refuse a push when the working tree fails ruff format or lint. The tests take minutes, so they
+# run before merging, not on every push.
 # ponytail: checks the working tree, not the pushed commits; push from a clean tree.
 set -e
 cd "$(git rev-parse --show-toplevel)"
 uv run ruff format --check .
 uv run ruff check .
-uv run pytest
