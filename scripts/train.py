@@ -186,8 +186,8 @@ def fit_epoch(
     loader: torch.utils.data.DataLoader,
     device: str,
     started: float,
-) -> tuple[float, float, list[int] | None]:
-    """Return the mean loss, the seconds spent waiting for data, and the last batch's shape."""
+) -> tuple[dict, list[int] | None]:
+    """Return the epoch's loss, updates and data wait, and the last batch's shape."""
     losses = []
     data_wait = 0.0
     batch_shape = None
@@ -202,7 +202,12 @@ def fit_epoch(
         losses.append(loss.item())
         batch_shape = list(images.shape)
         ready = time.monotonic()
-    return float(np.mean(losses)), data_wait, batch_shape
+    fitted = {
+        "train_loss": float(np.mean(losses)),
+        "updates": len(losses),
+        "train_data_wait_seconds": round(data_wait, 3),
+    }
+    return fitted, batch_shape
 
 
 def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice: float) -> None:
@@ -244,7 +249,7 @@ def run_epoch(
     garimpo_uncertainty.stages.take_gpu_peak_bytes()
     state.model.train()
     epoch_start = time.monotonic()
-    train_loss, data_wait, batch_shape = fit_epoch(state, train_loader, device, epoch_start)
+    fitted, batch_shape = fit_epoch(state, train_loader, device, epoch_start)
     train_end = time.monotonic()
     train_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
     validation_start = time.monotonic()
@@ -252,9 +257,8 @@ def run_epoch(
     validation_end = time.monotonic()
     record = {
         "epoch": epoch,
-        "train_loss": train_loss,
+        **fitted,
         "val_dice": dice,
-        "train_data_wait_seconds": round(data_wait, 3),
         "seconds": round(validation_end - epoch_start, 3),
         "train_seconds": train_end - epoch_start,
         "validation_seconds": validation_end - validation_start,
@@ -313,7 +317,7 @@ def train(
         metadata["normalization"],
         args.batch_size,
         args.num_workers,
-        shuffle=True,
+        samples=args.steps_per_epoch * args.batch_size,
         augment=True,
     )
     validation_loader = garimpo_uncertainty.cell_dataset.loader(
@@ -357,6 +361,12 @@ def main() -> None:
         help="picks the training tiles; apart from --seed, so subsets stay nested across seeds",
     )
     parser.add_argument("--epochs", type=int, required=True)
+    parser.add_argument(
+        "--steps-per-epoch",
+        type=int,
+        required=True,
+        help="updates between validations, the same at every fraction (Bornschein et al., 2020)",
+    )
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--lr", type=float, required=True)
     parser.add_argument("--weight-decay", type=float, required=True)
