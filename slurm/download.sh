@@ -16,8 +16,9 @@ if ((FREE + HELD < NEEDED)); then
     exit 1
 fi
 echo "$GARIMPO_DATA_DIR: $(((FREE + HELD) / 1000 ** 3)) GB available, $((NEEDED / 1000 ** 3)) GB needed"
-# One core left free, at most 16 workers.
-WORKERS=$(($(nproc) - 1 < 16 ? $(nproc) - 1 : 16))
+# One core left free, at least 1 and at most 16 workers.
+WORKERS=$(($(nproc) - 1))
+WORKERS=$((WORKERS < 1 ? 1 : WORKERS > 16 ? 16 : WORKERS))
 echo "download workers: $WORKERS"
 
 uv run --no-sync python scripts/download_data.py metadata
