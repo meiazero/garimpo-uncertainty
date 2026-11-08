@@ -23,14 +23,19 @@ def test_training_artifacts(finished_run: support.FinishedRun) -> None:
     assert (history.validation_seconds > 0).all()
     assert (history.train_seconds + history.validation_seconds <= history.seconds + 0.001).all()
     assert (history.train_data_wait_seconds <= history.train_seconds + 0.001).all()
-    # No GPU here, so the peaks are recorded as absent, never as zero.
-    assert history.train_peak_gpu_bytes.isna().all()
-    assert history.validation_peak_gpu_bytes.isna().all()
     infer = json.loads((run_dir / "status" / "infer.json").read_text(encoding="utf-8"))["shapes"]
     assert set(infer["seconds_per_role"]) == set(garimpo_uncertainty.data.ROLES)
     assert all(seconds > 0 for seconds in infer["seconds_per_role"].values())
     assert set(infer["peak_gpu_bytes_per_role"]) == set(garimpo_uncertainty.data.ROLES)
-    assert all(peak is None for peak in infer["peak_gpu_bytes_per_role"].values())
+    infer_peaks = list(infer["peak_gpu_bytes_per_role"].values())
+    peaks = [*history.train_peak_gpu_bytes, *history.validation_peak_gpu_bytes, *infer_peaks]
+    if support.DEVICE == "cpu":
+        # Recorded as absent, never as zero.
+        assert all(pd.isna(peak) for peak in peaks)
+    else:
+        # A peak exists only if the stages, given no --device, chose the GPU themselves.
+        assert all(peak > 0 for peak in peaks)
+        assert json.loads((run_dir / "status" / "train.json").read_text())["peak_gpu_gb"] > 0
     assert (run_dir / "last.pt").exists()
     metadata = garimpo_uncertainty.data.read_run_metadata(run_dir)
     for key in ("arch", "seed", "normalization", "split_hash", "root_commit", "compass_commit"):

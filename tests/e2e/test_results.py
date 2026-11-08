@@ -591,6 +591,13 @@ def compass_inputs(evaluation: Evaluation) -> CompassInputs:
     return CompassInputs(model, metadata, test, jacobians, fitted, compass_rows)
 
 
+# These recompute the stage in this process, on CPU; exact equality holds only on one device.
+same_device_as_the_stage = pytest.mark.skipif(
+    support.DEVICE != "cpu", reason="the stage ran on the GPU, this process recomputes on CPU"
+)
+
+
+@same_device_as_the_stage
 @pytest.mark.parametrize("alpha", support.ALPHAS)
 def test_each_compass_row_alone_matches_the_one_pass(
     evaluation: Evaluation, compass_inputs: CompassInputs, alpha: float
@@ -712,6 +719,7 @@ def test_empty_cell_gets_the_scaled_mean_direction(compass_inputs: CompassInputs
         compass2d.directions.cell_deltas("pca", jacobians, no_mean)
 
 
+@same_device_as_the_stage
 def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     evaluation: Evaluation, compass_inputs: CompassInputs
 ) -> None:

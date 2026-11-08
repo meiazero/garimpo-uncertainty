@@ -66,8 +66,8 @@ from google.colab import runtime; runtime.unassign()
 ```
 
 The background `rsync` copies `runs/` to Drive every 30 minutes, so a session that ends mid-run
-keeps the finished stages and the last checkpoint. The tests do not cover resuming training from
-that checkpoint. Every script runs with `uv run --no-sync`, so a run never changes the environment
+keeps the finished stages and the last checkpoint. `tests/e2e/test_resume.py` kills training after
+its first epoch and requires the rerun to end where an uninterrupted run ends. Every script runs with `uv run --no-sync`, so a run never changes the environment
 under itself.
 
 ## Regenerate the tile lists
