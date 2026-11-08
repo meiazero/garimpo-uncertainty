@@ -1,11 +1,11 @@
 # Values of the full run
 
-Read before step 5 of [full-run.md](full-run.md).
+Read before step 3 of [full-run.md](full-run.md), where the values file is filled in.
 
 `slurm/full.env.example` holds the decided values, so a copy of it starts with them filled in.
-`slurm/full.sbatch` stops on the first open value left empty. Pilot values outside the Decided
-table are not suggestions. `ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION`
-name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
+`slurm/full.sbatch` stops on the first open value left empty. The pilot's values outside the
+Decided table are not suggestions. `ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION` name
+the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 
 ## Decided
 
@@ -32,8 +32,8 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 |---|---|---|
 | `EVAL_BATCH_SIZE` | `slurm/full.env.example` | The pilot's GPU peaks; changing it after an OOM refuses nothing |
 | Layers to diagnose (`LAYERS`) | `fit_directions.py` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |
-| Direction temperature (`--direction-temperature`) | `fit_directions.py`, `verify_monotonicity.py`, `compass_scores.py` | The sigmoid temperature of the area whose Jacobian sets the COMPASS-J direction, apart from the metric's 1e4. At 1e4 the gradient vanishes beyond \|logit\| ≈ 5e-3, so cells predicted empty get the PCA mean as direction. Choose it by leave-one-group-out on calibration; the same value in all three stages |
-| `MIN_FRACTION_ASCENDING`: share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen | `choose_layer.py` | Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Read the pilot's `monotonicity_layer.csv` before fixing it. Too high, and `choose_layer` stops the job naming the closest layer; resubmitting with another value redoes only `choose_layer`, since the stages before it skip |
+| Direction temperature (`--direction-temperature`) | `fit_directions.py`, `verify_monotonicity.py`, `compass_scores.py` | The sigmoid temperature of the area whose Jacobian sets the COMPASS-J direction, separate from the metric's 1e4. At 1e4 the gradient vanishes beyond \|logit\| ≈ 5e-3, so cells predicted empty get the PCA mean as direction. Choose it by leave-one-group-out on calibration; the same value in all three stages |
+| `MIN_FRACTION_ASCENDING`: share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen | `choose_layer.py` | Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Read the pilot's `monotonicity_layer.csv` before fixing it. If it is too high, `choose_layer` stops the job naming the best layer and its fraction; resubmitting with another value redoes only `choose_layer` and what follows, since the stages before it skip |
 | SVM `C`, `class_weight`, pixels sampled per cell | `fit_directions.py` | No source: COMPASS takes its direction from a PCA of the Jacobians, and the SVM is this work's own |
 | Steps and cells of the monotonicity sweep | `verify_monotonicity.py` | The sweep's time in the pilot; COMPASS gives no values (Appendix C) |
 | `SEARCH_THRESHOLD_FEATURES` | `compass_scores.py` | Upstream's runner uses 1e-15, 60 bisection steps from 1000; the pilot's 1e-3 takes 20, a third of the cost |
