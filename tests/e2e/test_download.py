@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 import runpy
 import sys
 import threading
@@ -612,6 +613,17 @@ def test_list_from_another_split_stops_before_creating_a_store(
     assert not (stale / "images.npy").exists()
     assert json.loads((stale / "status" / "download_scenes.json").read_text())["status"] == "failed"
     assert sidecars() == before
+
+
+def test_log_file_keeps_both_runs_timestamped_beside_the_store(incremental: Incremental) -> None:
+    """The second run appends to the first one's log instead of replacing it."""
+    lines = (LIST_ROOT / "logs" / "download.log").read_text().splitlines()
+    starts = [line.split(" INFO ", 1)[1] for line in lines if "tiles already done" in line]
+    assert len(starts) == 2, lines
+    assert starts[0].startswith("0 tiles already done"), starts
+    assert not starts[1].startswith("0 tiles already done"), starts
+    assert sum("tiles of this list by status:" in line for line in lines) == 2
+    assert re.match(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} INFO ", lines[0]), lines[0]
 
 
 def test_list_naming_tiles_outside_the_split_stops(

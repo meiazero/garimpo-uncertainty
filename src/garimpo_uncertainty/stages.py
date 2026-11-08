@@ -34,14 +34,21 @@ IGNORED_ARGUMENTS = {
 MISSING_INPUT = "missing"
 
 
-def log_to_stdout() -> None:
-    """Show this package's messages as bare stdout lines, in order with what a script prints.
+def log_to_stdout(log_file: Path | None = None) -> None:
+    """Show this package's messages as bare stdout lines, and append them timestamped to `log_file`.
 
     Only this package: INFO on the root logger would add the dependencies' messages to the job log.
     Handlers are replaced, not added, so a main run twice in one process does not double each line.
     """
     package = logging.getLogger("garimpo_uncertainty")
+    for handler in package.handlers:
+        handler.close()
     package.handlers = [logging.StreamHandler(sys.stdout)]
+    if log_file is not None:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        to_file = logging.FileHandler(log_file)
+        to_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        package.handlers.append(to_file)
     package.setLevel(logging.INFO)
     package.propagate = False
 

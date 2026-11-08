@@ -6,6 +6,7 @@
 import argparse
 import hashlib
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -16,6 +17,9 @@ import rasterio.enums
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
 import garimpo_uncertainty.stages
+
+# A child of the package's logger, so its lines reach the terminal and the log file.
+logger = logging.getLogger("garimpo_uncertainty.download_data")
 
 
 def file_sha256(path: Path) -> str:
@@ -94,12 +98,14 @@ def main() -> None:
     )
     scenes.add_argument("--force", action="store_true", help="redo every listed tile")
     args = parser.parse_args()
-    garimpo_uncertainty.stages.log_to_stdout()
 
     if args.command == "lists":
+        garimpo_uncertainty.stages.log_to_stdout()
         write_tile_lists(args.split, args.subset_seed, args.out)
         return
     root = garimpo_uncertainty.data.data_root()
+    # Beside the data it describes, so the log travels with the store's archive.
+    garimpo_uncertainty.stages.log_to_stdout(root / "logs" / "download.log")
     if args.command == "metadata":
         garimpo_uncertainty.download.download_metadata(root)
         return
@@ -121,7 +127,7 @@ def main() -> None:
         statuses = garimpo_uncertainty.data.tile_records(
             root, split, selected.tile_id.tolist()
         ).status.value_counts()
-        print(statuses.to_string())
+        logger.info("tiles of this list by status:\n%s", statuses.to_string())
         return {"selected_tiles": len(selected), "statuses": statuses.to_dict()}
 
     # No outputs listed: a rerun always checks the sidecars and fetches what is still pending.
