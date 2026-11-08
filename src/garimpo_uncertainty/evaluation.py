@@ -112,7 +112,8 @@ def _paired_differences(
 
 def _spearman(pairs: np.ndarray) -> float:
     kept = pairs[~np.isnan(pairs).any(axis=1)]
-    if len(kept) < MIN_PAIRS_FOR_CORRELATION:
+    # A constant column has no ranks to correlate; scipy would warn and return NaN anyway.
+    if min(np.unique(kept[:, 0]).size, np.unique(kept[:, 1]).size) < MIN_PAIRS_FOR_CORRELATION:
         return float("nan")
     return float(scipy.stats.spearmanr(kept[:, 0], kept[:, 1]).statistic)
 
@@ -331,8 +332,9 @@ def score_relation(
     for m, method in enumerate(garimpo_uncertainty.intervals.COMPASS_METHODS):
         kept = (split_scores > 0) & (compass_scores[m] > 0) & ~saturated[m]
         x, y = np.log(split_scores[kept]), np.log(compass_scores[m][kept])
-        # Every score saturated leaves nothing to fit; NaN says so instead of failing the stage.
-        fitted = len(x) >= MIN_PAIRS_FOR_CORRELATION
+        # Every score saturated, or one split score shared by every kept cell, leaves no slope to
+        # fit; NaN says so instead of polyfit's rank-deficient answer.
+        fitted = np.unique(x).size >= MIN_PAIRS_FOR_CORRELATION
         slope, intercept = np.polyfit(x, y, 1) if fitted else (np.nan, np.nan)
         rows.append(
             {

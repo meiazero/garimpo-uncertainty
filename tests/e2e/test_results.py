@@ -541,9 +541,12 @@ def test_score_relation_is_a_log_log_fit_on_calibration(evaluation: Evaluation) 
         row = table.loc[method]
         assert row.n_cells == kept.sum(), method
         assert row.n_saturated == saturated[m].sum(), method
-        slope, intercept = np.polyfit(
-            np.log(split_scores[kept]), np.log(compass_scores[m][kept]), 1
-        )
+        x = np.log(split_scores[kept])
+        if np.unique(x).size < 2:
+            assert np.isnan(row.slope), method
+            assert np.isnan(row.intercept), method
+            continue
+        slope, intercept = np.polyfit(x, np.log(compass_scores[m][kept]), 1)
         assert np.isclose(row.slope, slope), method
         assert np.isclose(row.intercept, intercept), method
 
