@@ -1,6 +1,7 @@
 """Stage: joins the small tables of several runs; a run is identified by (model, train_fraction)."""
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -17,7 +18,16 @@ TABLES = {
     "layer_diagnostics.csv": "directions/diagnostics.csv",
     "monotonicity_layer.csv": "monotonicity_layer.csv",
     "monotonicity_endpoint.csv": "monotonicity_endpoint.csv",
+    "chosen_layers.csv": "chosen_layer.json",
 }
+
+
+def read_table(path: Path) -> pd.DataFrame:
+    """Read a CSV as is, and chosen_layer.json as one row: its candidates are already tables."""
+    if path.suffix == ".csv":
+        return pd.read_csv(path)
+    chosen = json.loads(path.read_text(encoding="utf-8"))
+    return pd.DataFrame([{k: chosen[k] for k in ("layer", "min_fraction_ascending")}])
 
 
 def main() -> None:
@@ -36,7 +46,7 @@ def main() -> None:
     for name, relative in TABLES.items():
         frames = []
         for run_dir, identity in zip(args.runs, identities, strict=True):
-            frame = pd.read_csv(run_dir / relative)
+            frame = read_table(run_dir / relative)
             frames.append(frame.assign(**{k: v for k, v in identity.items() if k not in frame}))
         pd.concat(frames, ignore_index=True).to_csv(args.out / name, index=False)
         print(f"{args.out / name}: {sum(len(f) for f in frames)} rows")

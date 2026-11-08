@@ -2,6 +2,7 @@
 
 import fcntl
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -123,11 +124,14 @@ def build_once(name: str, build: Callable[[], object]) -> None:
 
 
 def finish_run(arch: str, run_dir: Path, data_root: Path) -> FinishedRun:
-    _, layer, other_layer = RUN_ORDER[arch]
     run("train.py", *train_args(arch, run_dir), data_root=data_root)
-    run_stages_after_training(run_dir, layer, [layer, other_layer], data_root)
+    layer = run_stages_after_training(run_dir, list(RUN_ORDER[arch][1:]), data_root)
     compute_metrics(run_dir, BOUNDARY_TOLERANCE, data_root)
     return FinishedRun(arch, run_dir, layer)
+
+
+def chosen_layer(run_dir: Path) -> str:
+    return json.loads((run_dir / "chosen_layer.json").read_text())["layer"]
 
 
 def group_tiles() -> list[dict]:
@@ -358,9 +362,8 @@ def compute_metrics(
     return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
 
 
-def run_stages_after_training(
-    run_dir: Path, layer: str, layers: list[str], data_root: Path
-) -> None:
+def run_stages_after_training(run_dir: Path, layers: list[str], data_root: Path) -> str:
+    """Run inference through the intervals as slurm/stages.sh does; return the chosen layer."""
     common = checkpoint_args(run_dir)
     run("infer.py", *common, data_root=data_root)
     run(
@@ -376,26 +379,41 @@ def run_stages_after_training(
         "50",
         data_root=data_root,
     )
-    # beta_max equals the search range below, as slurm/stages.sh passes it.
-    for use, swept in (("layer", layers), ("endpoint", [layer])):
-        run(
-            "verify_monotonicity.py",
-            *common,
-            "--use",
-            use,
-            "--layers",
-            *swept,
-            "--beta-max-logits",
-            "100",
-            "--beta-max-features",
-            "100",
-            "--steps",
-            "9",
-            "--cells-per-role",
-            "6",
-            data_root=data_root,
-        )
+    sweep(run_dir, "layer", layers, data_root)
+    # Every layer qualifies, as in the pilot: a few epochs on synthetic tiles need not be monotonic.
+    run(
+        "choose_layer.py",
+        "--run-dir",
+        str(run_dir),
+        "--min-fraction-ascending",
+        "0",
+        data_root=data_root,
+    )
+    layer = chosen_layer(run_dir)
+    sweep(run_dir, "endpoint", [layer], data_root)
     run_scores_and_intervals(run_dir, layer, data_root, beta_range="100", threshold="1e-3")
+    return layer
+
+
+def sweep(run_dir: Path, use: str, layers: list[str], data_root: Path) -> None:
+    """Algorithm 2, with beta_max equal to the search range below, as slurm/stages.sh passes it."""
+    run(
+        "verify_monotonicity.py",
+        *checkpoint_args(run_dir),
+        "--use",
+        use,
+        "--layers",
+        *layers,
+        "--beta-max-logits",
+        "100",
+        "--beta-max-features",
+        "100",
+        "--steps",
+        "9",
+        "--cells-per-role",
+        "6",
+        data_root=data_root,
+    )
 
 
 def run_scores_and_intervals(

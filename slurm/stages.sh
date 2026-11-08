@@ -5,8 +5,8 @@
 # after it; `train` runs again only when named, so a downstream fix never retrains.
 # The sweep's beta_max is the search range, so it covers the domain the binary search walks.
 
-STAGE_ORDER=(train infer fit_directions layer_monotonicity endpoint_monotonicity compass_scores
-    calibrate generate_intervals compute_metrics)
+STAGE_ORDER=(train infer fit_directions layer_monotonicity choose_layer endpoint_monotonicity
+    compass_scores calibrate generate_intervals compute_metrics)
 COMMON=(--checkpoint "$RUN_DIR/best_model.pt" --run-dir "$RUN_DIR" --batch-size "$EVAL_BATCH_SIZE"
     --num-workers "$NUM_WORKERS")
 
@@ -47,7 +47,7 @@ run_validate() {
         "${VALIDATE_ARGS[@]}" ${FORCE_VALIDATE:+--force}
 }
 
-# Everything LAYER does not depend on, so LAYER can be chosen from these outputs.
+# Everything up to the layer, chosen from the validation role by choose_layer.py.
 run_diagnostics() {
     monotonicity_args
     # Passed whenever set, so train.py alone decides what fits the architecture.
@@ -64,19 +64,23 @@ run_diagnostics() {
         --svm-pixels-per-cell "$SVM_PIXELS_PER_CELL" --seed "$SEED"
     run_stage layer_monotonicity verify_monotonicity "${MONOTONICITY_ARGS[@]}" --use layer \
         --layers "${LAYERS[@]}"
+    run_stage choose_layer choose_layer --run-dir "$RUN_DIR" \
+        --min-fraction-ascending "$MIN_FRACTION_ASCENDING"
 }
 
 run_calibrated_stages() {
     monotonicity_args
+    local layer read_layer='import json, sys; print(json.load(open(sys.argv[1]))["layer"])'
+    layer=$(uv run --no-sync python -c "$read_layer" "$RUN_DIR/chosen_layer.json")
     run_stage endpoint_monotonicity verify_monotonicity "${MONOTONICITY_ARGS[@]}" --use endpoint \
-        --layers "$LAYER"
-    run_stage compass_scores compass_scores "${COMMON[@]}" --layer "$LAYER" \
+        --layers "$layer"
+    run_stage compass_scores compass_scores "${COMMON[@]}" --layer "$layer" \
         --beta-range-logits "$BETA_RANGE_LOGITS" --beta-range-features "$BETA_RANGE_FEATURES" \
         --search-threshold-logits "$SEARCH_THRESHOLD_LOGITS" \
         --search-threshold-features "$SEARCH_THRESHOLD_FEATURES"
     run_stage calibrate calibrate --run-dir "$RUN_DIR" --cells "$CELLS" \
         --score-floor-ha "$SCORE_FLOOR_HA" --seed "$SEED" --lightgbm-jobs "$NUM_WORKERS"
-    run_stage generate_intervals generate_intervals "${COMMON[@]}" --layer "$LAYER"
+    run_stage generate_intervals generate_intervals "${COMMON[@]}" --layer "$layer"
     run_stage compute_metrics compute_metrics --run-dir "$RUN_DIR" \
         --boundary-tolerance-px "$BOUNDARY_TOLERANCE_PX" --seed "$SEED"
 }

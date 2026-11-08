@@ -31,7 +31,8 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 | `EPOCHS`, one value for every run | `slurm/full.env.example` | The pilot's seconds per update, against the 7-day `gpuq` limit and 13 runs |
 | `EVAL_BATCH_SIZE` | `slurm/full.env.example` | The pilot's GPU peaks; changing it after an OOM refuses nothing |
 | ConvNet channel widths | `train.py` | No source; the proposal only asks for a network without skip connections |
-| Layers to diagnose, and the layer to calibrate | `fit_directions.py`, `compass_scores.py` | COMPASS §4.1: the explained variance of the Jacobians' first component, then a monotonicity sweep. Appendix E tried every layer of the head |
+| Layers to diagnose (`LAYERS`) | `fit_directions.py` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |
+| `MIN_FRACTION_ASCENDING`: share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen | `choose_layer.py` | Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Read the pilot's `monotonicity_layer.csv` before fixing it. Too high, and `choose_layer` stops the job naming the closest layer; resubmitting with another value redoes only `choose_layer`, since the stages before it skip |
 | SVM `C`, `class_weight`, pixels sampled per cell | `fit_directions.py` | No source: COMPASS takes its direction from a PCA of the Jacobians, and the SVM is this work's own |
 | Steps and cells of the monotonicity sweep | `verify_monotonicity.py` | The sweep's time in the pilot; COMPASS gives no values (Appendix C) |
 | `SEARCH_THRESHOLD_FEATURES` | `compass_scores.py` | Upstream's runner uses 1e-15, 60 bisection steps from 1000; the pilot's 1e-3 takes 20, a third of the cost |

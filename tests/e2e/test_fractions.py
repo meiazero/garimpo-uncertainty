@@ -45,8 +45,7 @@ def small_args(fraction: str = "0.01", subset_seed: str = "0") -> list[str]:
 
 
 def finish_run(run_dir: Path) -> None:
-    _, layer, other_layer = support.RUN_ORDER["convnet"]
-    support.run_stages_after_training(run_dir, layer, [layer, other_layer], ROOT)
+    support.run_stages_after_training(run_dir, list(support.RUN_ORDER["convnet"][1:]), ROOT)
     support.compute_metrics(run_dir, support.BOUNDARY_TOLERANCE, ROOT)
 
 
@@ -305,6 +304,7 @@ def test_merge_never_compares_across_fractions(merged_fractions: Path, table: st
         "monotonicity_endpoint.csv",
         "coverage_by_stratum.csv",
         "score_relation.csv",
+        "chosen_layers.csv",
     ],
 )
 def test_merged_tables_cover_both_fractions(merged_fractions: Path, table: str) -> None:

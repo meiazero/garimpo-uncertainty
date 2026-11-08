@@ -242,6 +242,19 @@ def test_merge_keeps_every_row_of_each_model(merged_results: pd.DataFrame) -> No
     assert len(merged_results) == 2 * len(support.ALPHAS) * len(support.EXPECTED_ROWS)
 
 
+def test_merge_records_each_runs_chosen_layer(
+    merged_results: pd.DataFrame, convnet_run: support.FinishedRun, unet_run: support.FinishedRun
+) -> None:
+    """The two runs chose different layers, so a layer attached to the wrong run would show."""
+    chosen = pd.read_csv(support.ARTIFACTS / "merged" / "chosen_layers.csv")
+    assert len(chosen) == len(set(merged_results.model)) == 2
+    assert chosen.set_index("model").layer.to_dict() == {
+        "convnet": convnet_run.layer,
+        "unet_scratch": unet_run.layer,
+    }
+    assert (chosen.min_fraction_ascending == 0).all()
+
+
 def test_merge_refuses_two_runs_of_one_variant(
     convnet_run: support.FinishedRun, saturated_run: Path, data_root: Path
 ) -> None:
@@ -336,7 +349,7 @@ def calibrate_command(run_dir: Path) -> tuple[str, str, list[str]]:
 
 
 def generate_command(run_dir: Path) -> tuple[str, str, list[str]]:
-    args = [*support.checkpoint_args(run_dir), "--layer", "up.1", "--force"]
+    args = [*support.checkpoint_args(run_dir), "--layer", support.chosen_layer(run_dir), "--force"]
     return "generate_intervals.py", "generate_intervals", args
 
 

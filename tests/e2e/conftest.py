@@ -28,7 +28,7 @@ def data_root() -> Path:
 def shared_run(arch: str, data_root: Path) -> support.FinishedRun:
     run_dir = support.RUNS / arch
     support.build_once(f"{arch}_run", lambda: support.finish_run(arch, run_dir, data_root))
-    return support.FinishedRun(arch, run_dir, support.RUN_ORDER[arch][1])
+    return support.FinishedRun(arch, run_dir, support.chosen_layer(run_dir))
 
 
 @pytest.fixture(scope="session")

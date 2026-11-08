@@ -35,7 +35,7 @@ finished stages.
 
 The job ends with `scripts/pipeline_check.py`: status, seconds, peak memory and shapes per stage, slot hashes,
 the failing stage with its error, scenes missing, cells per role, Dice, percent monotonic per
-direction, `|cos(v1, w)|`, saturated searches, PICP and MPIW per method. It receives the job's exit
+direction, the chosen layer with every candidate's fractions, `|cos(v1, w)|`, saturated searches, PICP and MPIW per method. It receives the job's exit
 code, so an error outside every stage also reads FAIL.
 
 After fixing the code, `git pull && uv sync` on the login node and resubmit. Finished stages skip

@@ -21,7 +21,8 @@
 #   validate_data and the pipeline check each also hash every slot of the run, 10.9 GB read per
 #   call, which this count leaves out.
 # - compass_scores adds, per cell, 80 g(z) evaluations (20 steps x 2 endpoints x 2 directions) and
-#   one Jacobian, on the layers after LAYER; at decoder.blocks.4 that is the head alone.
+#   one Jacobian, on the layers after the chosen one: the head alone at decoder.blocks.4, one
+#   more block at decoder.blocks.3.
 #   generate_intervals adds 48 g(z) per test cell (8 COMPASS-J rows x 2 endpoints x 3 alphas);
 #   compass_l needs no decoder.
 # - EPOCHS=2 x STEPS_PER_EPOCH=20 is 40 updates on 160 cells. A model still predicting nothing has
@@ -61,8 +62,9 @@ WEIGHT_DECAY=0.01            # torch's AdamW default
 LOSS=dice_bce
 SEED=0
 
-LAYER=decoder.blocks.4
 LAYERS=(decoder.blocks.3 decoder.blocks.4)
+# Every layer qualifies, so the pilot reaches the last stage; the check prints each fraction.
+MIN_FRACTION_ASCENDING=0
 SVM_C=1.0
 SVM_CLASS_WEIGHT=balanced
 SVM_PIXELS_PER_CELL=200

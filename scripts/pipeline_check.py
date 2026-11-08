@@ -20,6 +20,7 @@ RUN_STAGES = (
     "infer",
     "fit_directions",
     "layer_monotonicity",
+    "choose_layer",
     "endpoint_monotonicity",
     "compass_scores",
     "calibrate",
@@ -48,12 +49,6 @@ def parse_args() -> argparse.Namespace:
     # Arguments and not run_meta.json: a job that fails before training has no run_meta.json.
     parser.add_argument("--train-fraction", type=float, required=True)
     parser.add_argument("--subset-seed", type=int, required=True)
-    parser.add_argument(
-        "--through",
-        choices=RUN_STAGES,
-        default=RUN_STAGES[-1],
-        help="last stage expected to have run, for a run stopped after the layer diagnostics",
-    )
     parser.add_argument(
         "--job-exit-code",
         type=int,
@@ -129,6 +124,16 @@ def report_store(
     return store_problems, tiles
 
 
+def print_chosen_layer(path: Path) -> None:
+    print("\n--- layer chosen from the validation role")
+    if not path.exists():
+        print(f"not produced: {path}")
+        return
+    chosen = json.loads(path.read_text(encoding="utf-8"))
+    print(f"{chosen['layer']}, ascending on at least {chosen['min_fraction_ascending']}")
+    print(pd.DataFrame(chosen["candidates"]).set_index("layer").to_string())
+
+
 def print_run_tables(run_dir: Path) -> None:
     print_table(
         "updates, validation Dice, timings, data wait and GPU peaks per epoch",
@@ -140,6 +145,7 @@ def print_run_tables(run_dir: Path) -> None:
         run_dir / "monotonicity_layer.csv",
         lambda f: f.set_index(["layer", "direction", "role"]),
     )
+    print_chosen_layer(run_dir / "chosen_layer.json")
     print_table(
         "monotonicity of the chosen layer, on grid points only",
         run_dir / "monotonicity_endpoint.csv",
@@ -225,7 +231,6 @@ def exit_with_verdict(failed: list[dict]) -> None:
 def main() -> None:
     args = parse_args()
     root = garimpo_uncertainty.data.data_root()
-    expected = RUN_STAGES[: RUN_STAGES.index(args.through) + 1]
     split = pd.read_csv(args.split)
     tile_ids = garimpo_uncertainty.data.select_tiles(
         split, args.train_fraction, args.subset_seed
@@ -235,7 +240,7 @@ def main() -> None:
         read_status(root / "status", "download_scenes"),
         read_status(root / "status" / selection, "validate_data"),
     ]
-    records += [read_status(args.run_dir / "status", stage) for stage in expected]
+    records += [read_status(args.run_dir / "status", stage) for stage in RUN_STAGES]
 
     print_stage_table(records)
     failed = report_failed_stages(records, args.job_exit_code)
