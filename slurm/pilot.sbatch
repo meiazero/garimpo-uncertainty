@@ -67,6 +67,7 @@ SWEEP_STEPS=21
 SWEEP_CELLS=20
 BETA_RANGE_LOGITS=100        # upstream's value; also the sweep's beta_max
 BETA_RANGE_FEATURES=1000     # upstream's value; also the sweep's beta_max
+DIRECTION_TEMPERATURE=10000  # upstream's temperature, the metric's; see docs/decisions.md
 SEARCH_THRESHOLD_LOGITS=1e-2 # upstream's value
 SEARCH_THRESHOLD_FEATURES=1e-3
 CELLS=all

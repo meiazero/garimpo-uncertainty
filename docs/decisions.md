@@ -13,6 +13,7 @@ are not suggestions.
 | Starting weights and fraction: one env file per run | `train.py`, `slurm/full.env.example` |
 | `EVAL_BATCH_SIZE`, for every stage after training; changing it after an OOM refuses nothing | `slurm/full.env.example` |
 | Layers to diagnose (`LAYERS`) | `fit_directions.py` |
+| Direction temperature (`--direction-temperature`): the sigmoid temperature of the area whose Jacobian sets the COMPASS-J direction, apart from the metric's 1e4. At 1e4 the gradient vanishes beyond \|logit\| ≈ 5e-3, so cells predicted empty get the PCA mean as direction. Choose it by leave-one-group-out on calibration; the same value in all three stages | `fit_directions.py`, `verify_monotonicity.py`, `compass_scores.py` |
 | Share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen (`MIN_FRACTION_ASCENDING`). Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Read the pilot's `monotonicity_layer.csv` before fixing it. Too high, and `choose_layer` stops the job naming the closest layer; resubmitting with another value redoes only `choose_layer`, since the stages before it skip | `choose_layer.py` |
 | SVM `C`, `class_weight`, pixels sampled per cell | `fit_directions.py` |
 | Population: every cell, or cells with mining (`--cells`) | `calibrate.py` |

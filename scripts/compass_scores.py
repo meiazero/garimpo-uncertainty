@@ -75,7 +75,14 @@ def batch_spaces(
         )
     ]
     z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
-    jacobian = compass2d.directions.jacobian_sum(decode, z, soft).cpu().numpy()
+    jacobian = compass2d.directions.jacobian_sum(
+        decode,
+        z,
+        lambda logits: compass2d.metrics.soft_area(
+            logits, garimpo_uncertainty.data.PIXEL_HA, args.direction_temperature
+        ),
+    )
+    jacobian = jacobian.cpu().numpy()
     for direction in ("pca", "svm"):
         delta = compass2d.directions.cell_deltas(direction, jacobian.astype(np.float64), fitted)
         spaces.append(
@@ -166,6 +173,13 @@ def main() -> None:
     parser.add_argument("--search-threshold-logits", type=float, default=1e-2)
     parser.add_argument("--search-threshold-features", type=float, default=1e-8)
     parser.add_argument("--temperature", type=float, default=compass2d.metrics.UPSTREAM_TEMPERATURE)
+    parser.add_argument(
+        "--direction-temperature",
+        type=float,
+        default=compass2d.metrics.UPSTREAM_TEMPERATURE,
+        help="sigmoid temperature of the area whose Jacobian sets the direction; at 1e4 the "
+        "gradient vanishes beyond |logit| ~ 5e-3, so cells predicted empty get the mean direction",
+    )
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
     parser.add_argument("--num-workers", type=int, default=4)

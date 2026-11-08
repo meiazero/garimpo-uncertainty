@@ -38,7 +38,8 @@ run_stage() {
 monotonicity_args() {
     MONOTONICITY_ARGS=("${COMMON[@]}" --beta-max-logits "$BETA_RANGE_LOGITS"
         --beta-max-features "$BETA_RANGE_FEATURES" --steps "$SWEEP_STEPS"
-        --cells-per-role "$SWEEP_CELLS" --seed "$SEED")
+        --cells-per-role "$SWEEP_CELLS" --seed "$SEED"
+        --direction-temperature "$DIRECTION_TEMPERATURE")
 }
 
 run_validate() {
@@ -60,7 +61,8 @@ run_diagnostics() {
     run_stage infer infer "${COMMON[@]}"
     run_stage fit_directions fit_directions "${COMMON[@]}" --layers "${LAYERS[@]}" \
         --svm-c "$SVM_C" --svm-class-weight "$SVM_CLASS_WEIGHT" \
-        --svm-pixels-per-cell "$SVM_PIXELS_PER_CELL" --seed "$SEED"
+        --svm-pixels-per-cell "$SVM_PIXELS_PER_CELL" --seed "$SEED" \
+        --direction-temperature "$DIRECTION_TEMPERATURE"
     run_stage layer_monotonicity verify_monotonicity "${MONOTONICITY_ARGS[@]}" --use layer \
         --layers "${LAYERS[@]}"
     run_stage choose_layer choose_layer --run-dir "$RUN_DIR" \
@@ -76,7 +78,8 @@ run_calibrated_stages() {
     run_stage compass_scores compass_scores "${COMMON[@]}" --layer "$layer" \
         --beta-range-logits "$BETA_RANGE_LOGITS" --beta-range-features "$BETA_RANGE_FEATURES" \
         --search-threshold-logits "$SEARCH_THRESHOLD_LOGITS" \
-        --search-threshold-features "$SEARCH_THRESHOLD_FEATURES"
+        --search-threshold-features "$SEARCH_THRESHOLD_FEATURES" \
+        --direction-temperature "$DIRECTION_TEMPERATURE"
     run_stage calibrate calibrate --run-dir "$RUN_DIR" --cells "$CELLS" \
         --score-floor-ha "$SCORE_FLOOR_HA" --seed "$SEED" --lightgbm-jobs "$NUM_WORKERS"
     run_stage generate_intervals generate_intervals "${COMMON[@]}" --layer "$layer"
