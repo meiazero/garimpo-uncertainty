@@ -292,6 +292,33 @@ def test_weighted_rows_put_the_test_cell_at_infinity(evaluation: Evaluation) -> 
     assert (test_ratio > 0).all()
 
 
+def test_mondrian_rows_calibrate_each_predicted_stratum_alone(evaluation: Evaluation) -> None:
+    """Calibrate each stratum of predicted mining alone, external and own region.
+
+    A stratum with no other score gives inf.
+    """
+    calibration = evaluation.cells[evaluation.cells.role == "calibration"]
+    scores = np.abs(calibration.v - calibration.vhat).to_numpy()
+    groups = calibration.group.to_numpy()
+    strata = (calibration.vhat.to_numpy() > 0).astype(int)
+    test_scores = np.abs(evaluation.v - evaluation.vhat)
+    test_strata = (evaluation.vhat > 0).astype(int)
+    external = evaluation.quantile[evaluation.row("conformal_simple", "external_mondrian")]
+    own = evaluation.quantile[evaluation.row("conformal_simple", "own_region_mondrian")]
+    for i in range(len(evaluation.v)):
+        same = strata == test_strata[i]
+        expected = pooled_quantile(scores[same], groups[same], 1 - ALPHA) if same.any() else np.inf
+        assert np.isclose(external[i], expected), i
+        others = (test_strata == test_strata[i]) & (evaluation.groups != evaluation.groups[i])
+        expected = (
+            pooled_quantile(test_scores[others], evaluation.groups[others], 1 - ALPHA)
+            if others.any()
+            else np.inf
+        )
+        assert np.isclose(own[i], expected), i
+    assert set(test_strata.tolist()) == {0, 1}, "the fixture needs both strata"
+
+
 def test_own_region_calibration_excludes_the_evaluated_group(evaluation: Evaluation) -> None:
     groups = evaluation.groups
     own = evaluation.quantile[evaluation.row("conformal_simple", "own_region")]
@@ -547,7 +574,7 @@ def test_each_compass_row_alone_matches_the_one_pass(
     pixel_ha = garimpo_uncertainty.data.PIXEL_HA
     model, test = compass_inputs.model, compass_inputs.test
     compass_rows = compass_inputs.compass_rows
-    assert len(compass_rows) == 13
+    assert len(compass_rows) == 19
     level = ALPHAS.index(alpha)
 
     def soft(logits: torch.Tensor) -> torch.Tensor:

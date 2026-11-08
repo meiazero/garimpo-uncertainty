@@ -56,6 +56,19 @@ EXPECTED_ROWS = {
     ("compass_j_svm", "external"),
     ("compass_j_svm", "own_region"),
 }
+# Mondrian by predicted mining, one literal row per method and situation.
+EXPECTED_ROWS |= {
+    (method, calibration)
+    for method in (
+        "conformal_simple",
+        "conformal_local",
+        "cqr",
+        "compass_l",
+        "compass_j_pca",
+        "compass_j_svm",
+    )
+    for calibration in ("external_mondrian", "own_region_mondrian")
+}
 # The sensitivity analysis: every pooled external and own-region row again, by repeated subsampling.
 EXPECTED_ROWS |= {
     (method, f"{calibration}_subsampled")

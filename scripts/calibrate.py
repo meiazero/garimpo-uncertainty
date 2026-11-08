@@ -24,12 +24,23 @@ import garimpo_uncertainty.stages
 def quantile_rule(
     calibration: str, alpha: float, seed: int
 ) -> Callable[[np.ndarray, np.ndarray], float]:
-    """CDF pooling, the main rule, or repeated subsampling for the sensitivity rows."""
+    """CDF pooling, the main rule, or repeated subsampling for the sensitivity rows.
+
+    No score bounds nothing: a Mondrian stratum can leave a held-out group alone, which gets inf.
+    """
     if calibration.endswith("_subsampled"):
-        return lambda scores, groups: compass2d.calibration.subsampled_quantile(
-            scores, groups, alpha, garimpo_uncertainty.intervals.SUBSAMPLES, seed
-        )
-    return lambda scores, groups: compass2d.calibration.group_quantile(scores, groups, alpha)
+
+        def rule(scores: np.ndarray, groups: np.ndarray) -> float:
+            return compass2d.calibration.subsampled_quantile(
+                scores, groups, alpha, garimpo_uncertainty.intervals.SUBSAMPLES, seed
+            )
+
+    else:
+
+        def rule(scores: np.ndarray, groups: np.ndarray) -> float:
+            return compass2d.calibration.group_quantile(scores, groups, alpha)
+
+    return lambda scores, groups: rule(scores, groups) if len(scores) else np.inf
 
 
 def quantile_per_cell(
@@ -71,6 +82,10 @@ class CalibrationProblem:
     def quantile(
         self, calibration: str, calibration_scores: np.ndarray, test_scores: np.ndarray
     ) -> np.ndarray:
+        if calibration.endswith("_mondrian"):
+            return self.mondrian(
+                calibration.removesuffix("_mondrian"), calibration_scores, test_scores
+            )
         return quantile_per_cell(
             calibration,
             calibration_scores,
@@ -82,6 +97,30 @@ class CalibrationProblem:
             alpha=self.alpha,
             seed=self.seed,
         )
+
+    def mondrian(
+        self, situation: str, calibration_scores: np.ndarray, test_scores: np.ndarray
+    ) -> np.ndarray:
+        """Each stratum of predicted mining calibrated alone (Vovk et al., 2005)."""
+        rule = quantile_rule(situation, self.alpha, self.seed)
+        calibration_strata = garimpo_uncertainty.intervals.mondrian_stratum(self.calibration)
+        test_strata = garimpo_uncertainty.intervals.mondrian_stratum(self.test)
+        test_groups = self.test.group.to_numpy()
+        if situation == "external":
+            return compass2d.calibration.mondrian_quantiles(
+                calibration_scores,
+                self.calibration.group.to_numpy(),
+                calibration_strata,
+                test_strata,
+                rule,
+            )
+        quantiles = np.empty(len(test_scores))
+        for stratum in np.unique(test_strata):
+            inside = test_strata == stratum
+            quantiles[inside] = compass2d.calibration.leave_one_group_out_quantiles(
+                test_scores[inside], test_groups[inside], rule
+            )
+        return quantiles
 
 
 @dataclass(frozen=True)

@@ -32,6 +32,21 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("compass_j_svm", "external"),
     ("compass_j_svm", "own_region"),
 )
+# Mondrian calibration by predicted mining, the stratum known when an interval is used: one quantile
+# for cells predicted empty, one for the rest. conformal_simple here is classic Mondrian CP.
+MONDRIAN_METHODS = (
+    "conformal_simple",
+    "conformal_local",
+    "cqr",
+    "compass_l",
+    "compass_j_pca",
+    "compass_j_svm",
+)
+COMBINATIONS += tuple(
+    (method, f"{situation}_mondrian")
+    for method in MONDRIAN_METHODS
+    for situation in ("external", "own_region")
+)
 # Sensitivity analysis: the pooled external and own-region rows again, by repeated subsampling.
 COMBINATIONS += tuple(
     (method, f"{calibration}_subsampled")
@@ -63,6 +78,11 @@ def fit_cqr(
         for level in (alpha / 2, 1 - alpha / 2)
     ]
     return models[0], models[1]
+
+
+def mondrian_stratum(cells: pd.DataFrame) -> np.ndarray:
+    """1 where the model predicts mining, 0 elsewhere."""
+    return (cells.vhat.to_numpy() > 0).astype(int)
 
 
 def uncertainty_ha(cells: pd.DataFrame) -> np.ndarray:
