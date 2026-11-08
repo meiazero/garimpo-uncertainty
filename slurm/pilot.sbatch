@@ -17,7 +17,8 @@
 #   validation), infer 2,976, fit_directions 320, monotonicity 60, compass_scores 2,528,
 #   generate_intervals 1,424, 8,524 in total. validate_data and the pipeline check each also hash
 #   every slot of the run, 10.9 GB read per call, which this count leaves out.
-# - compass_scores adds, per cell, 80 g(z) evaluations (20 steps x 2 endpoints x 2 directions) and
+# - compass_scores adds, per cell, 160 g(z) evaluations (20 steps x 2 directions x 4: the two
+#   symmetric endpoints plus Algorithm 6's lower and upper sides) and
 #   one Jacobian, on the layers after the chosen one: the head alone at decoder.blocks.4, one
 #   more block at decoder.blocks.3.
 #   generate_intervals adds 48 g(z) per test cell (8 COMPASS-J rows x 2 endpoints x 3 alphas);
