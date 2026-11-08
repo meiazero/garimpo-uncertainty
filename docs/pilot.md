@@ -21,7 +21,7 @@ the failing stage with its error, scenes missing, cells per role, Dice, percent 
 direction, the chosen layer with every candidate's fractions, `|cos(v1, w)|`, saturated searches, PICP and MPIW per method. It receives the script's exit
 code, so an error outside every stage also reads FAIL.
 
-After fixing the code, push it; the next session's clone picks it up. Finished stages skip
+After fixing the code, commit and push it from your machine, since the session's token is read-only; the next session's clone picks it up. Finished stages skip
 themselves. A stage whose inputs or arguments changed stops with status `refused`, which fails the
 check. Commits are recorded in the metadata but stay out of the fingerprint, so a code fix alone
 invalidates nothing: name the first stage it affects.

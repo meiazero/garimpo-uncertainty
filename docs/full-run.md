@@ -6,7 +6,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 |---|---|---|
 | 1 | every session | The session cell of the [install](../README.md#install) |
 | 2 | CPU runtime, once | The data cell of the [quick start](../README.md#quick-start): metadata, the 100% list, both weights, then `rsync` to Drive (from the versioned list, so `lists` need not run first; resumable within a session; contains every smaller fraction of that list's seed; sizes in [runs.md](runs.md#training-fractions); another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar) |
-| 3 | any | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, fill in every value (see [decisions.md](decisions.md)), and commit it, since each session starts from a fresh clone |
+| 3 | any | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, fill in every value (see [decisions.md](decisions.md)), then commit and push it from your machine: each session starts from a fresh clone, with a read-only token |
 | 4 | GPU runtime | The run cell below, one run per session (the run chooses the layer from the validation role and continues; `chosen_layer.json` records why) |
 | 5 | GPU runtime | Repeat steps 3 and 4 for the other three runs in [runs.md](runs.md#model-variants) |
 | 6 | any | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
