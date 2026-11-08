@@ -22,7 +22,9 @@ each array's size is in [data-layout.md](data-layout.md).
 
 ## Training fractions
 
-Only the `train` role is reduced, so every fraction is evaluated on the same cells. Tiles are drawn
+The experiment trains at `1.0` only. `0.01` is the pilot's, which debugs the code on 186 tiles;
+`0.05` and `0.10` keep their versioned lists but no run uses them. Only the `train` role is reduced,
+so every fraction is evaluated on the same cells. Tiles are drawn
 whole, per scale, from one seeded shuffle, so under one `SUBSET_SEED` each subset contains the
 smaller ones. `SUBSET_SEED` is apart from the training `SEED`.
 
@@ -33,14 +35,8 @@ smaller ones. `SUBSET_SEED` is apart from the training `SEED`.
 | `0.10` | 6 | 95 | 277 | 4,432 | 16.3 |
 | `1.0` | 56 | 947 | 1,179 | 18,864 | 69.2 |
 
-Limits of the curve:
-
-- There is one seed per fraction, so differences between fractions are descriptive only.
-- At 1% a single artisanal tile is drawn, so that point depends heavily on which tile it is.
-- Every run makes the same updates: an epoch is `STEPS_PER_EPOCH` batches drawn as back-to-back
-  shuffles of the run's training cells, not one pass over them. So the 1% run sees each cell about
-  100 times as often as the 100% run, and its best checkpoint, chosen on validation Dice, guards
-  against the overfitting this invites.
+An epoch is `STEPS_PER_EPOCH` batches drawn as back-to-back shuffles of the run's training cells,
+not one pass over them, so a run's training time depends on `EPOCHS` and not on its fraction.
 
 A run reads only its own slots of the shared store, its tiles recorded as `tile_ids` in
 `run_meta.json`, and each stage's fingerprint holds a hash of its index set and its tiles' sidecars.
@@ -104,18 +100,19 @@ ask for a tile the download did not fetch, and the E2E asserts that each version
 
 | Model in the results | `ARCH` | `ENCODER_WEIGHTS` | `RUN_DIR` | Input |
 |---|---|---|---|---|
-| `unet_scratch` | `unet` | `none` | `runs/unet_scratch-f<F>` | z-score of the run's training cells |
-| `unet_imagenet` | `unet` | `imagenet` | `runs/unet_imagenet-f<F>` | z-score of the run's training cells |
-| `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/unet_sentinel2-f<F>` | reflectance / 10000, stored as mean 0 and std 1 |
+| `unet_scratch` | `unet` | `none` | `runs/unet_scratch-f1.0` | z-score of the run's training cells |
+| `unet_imagenet` | `unet` | `imagenet` | `runs/unet_imagenet-f1.0` | z-score of the run's training cells |
+| `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/unet_sentinel2-f1.0` | reflectance / 10000, stored as mean 0 and std 1 |
 | `convnet` | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
 
-The learning curve is 3 U-Net variants x 4 fractions plus the ConvNet at 100%: 13 runs, one env file
-each, and 13 x 31 = 403 method and calibration rows, 17 main rows and 14 of the sensitivity
-analysis above, each at the three levels alpha = 0.05, 0.10 and 0.15: 1,209 rows. The code does not refuse a ConvNet at a lower
-fraction; it is simply not among these runs. Each run is one training, so differences between
+The experiment is the three U-Net variants and the ConvNet, all at 100%: 4 runs, one env file each,
+and 4 x 31 = 124 method and calibration rows, 17 main rows and 14 of the sensitivity analysis
+above, each at the three levels alpha = 0.05, 0.10 and 0.15: 372 rows. One architecture with three
+starting weights, plus the ConvNet without skip connections that the proposal asks for, so the runs
+vary where the model starts, not its design. Each run is one training, so differences between
 variants have no replication behind them and the comparison is descriptive only.
 `merge_results.py` identifies a run by `(model, train_fraction)` and refuses a repeated pair; each
-run's paired comparisons stay inside that run, so no comparison crosses fractions.
+run's paired comparisons stay inside that run.
 
 | Weights | Source | License |
 |---|---|---|
