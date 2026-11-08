@@ -42,10 +42,11 @@ monotonicity_args() {
         --direction-temperature "$DIRECTION_TEMPERATURE")
 }
 
+# CELL_PX is for the tests' synthetic store; a real store has validate_data.py's default.
 run_validate() {
     uv run --no-sync python scripts/validate_data.py --train-fraction "$TRAIN_FRACTION" \
         --subset-seed "$SUBSET_SEED" --report "$VALIDATION_REPORT" \
-        "${VALIDATE_ARGS[@]}" ${FORCE_VALIDATE:+--force}
+        "${VALIDATE_ARGS[@]}" ${FORCE_VALIDATE:+--force} ${CELL_PX:+--cell-px "$CELL_PX"}
 }
 
 # Everything up to the layer, chosen from the validation role by choose_layer.py.
