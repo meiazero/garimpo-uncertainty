@@ -19,8 +19,10 @@ Limits of the curve:
 
 - There is one seed per fraction, so differences between fractions are descriptive only.
 - At 1% a single artisanal tile is drawn, so that point depends heavily on which tile it is.
-- Epochs are an explicit value of each run. Whether the fractions share a number of epochs or a
-  number of updates is an open decision, and with fixed epochs a smaller fraction gets fewer updates.
+- Every run makes the same updates: an epoch is `STEPS_PER_EPOCH` batches drawn as back-to-back
+  shuffles of the run's training cells, not one pass over them. So the 1% run sees each cell about
+  100 times as often as the 100% run, and its best checkpoint, chosen on validation Dice, guards
+  against the overfitting this invites.
 
 A run reads only its own slots of the shared store, its tiles recorded as `tile_ids` in
 `run_meta.json`, and each stage's fingerprint holds a hash of its index set and its tiles' sidecars.

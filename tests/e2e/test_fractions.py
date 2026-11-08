@@ -27,7 +27,7 @@ SMALL_REPORT = FRACTION_ARTIFACTS / "validation_small.json"
 
 
 def small_args(fraction: str = "0.01", subset_seed: str = "0") -> list[str]:
-    """One tile is 4 cells.
+    """One tile is 4 cells, so each epoch's 10 updates at batch 2 pass over them 5 times.
 
     With few updates no logit nears zero, and at the upstream temperature every Jacobian is then
     exactly zero, which fit_directions rightly refuses.
@@ -37,7 +37,7 @@ def small_args(fraction: str = "0.01", subset_seed: str = "0") -> list[str]:
         SMALL_DIR,
         batch_size="2",
         lr="1e-2",
-        epochs="40",
+        epochs="8",
         split_path=SPLIT_PATH,
         fraction=fraction,
         subset_seed=subset_seed,
@@ -242,6 +242,14 @@ def test_every_fraction_is_evaluated_on_the_same_cells(full_run: Path) -> None:
     assert len(small_train) == support.CELLS_PER_TILE
     diagnostics = pd.read_csv(SMALL_DIR / "directions" / "diagnostics.csv")
     assert (diagnostics.n_train_cells == support.CELLS_PER_TILE).all()
+
+
+def test_every_fraction_makes_the_same_updates_per_epoch(full_run: Path) -> None:
+    """A hundredth of the cells still trains as long between validations."""
+    small = pd.read_csv(SMALL_DIR / "history.csv")
+    full = pd.read_csv(full_run / "history.csv")
+    assert (small.updates == int(support.STEPS_PER_EPOCH)).all()
+    assert (full.updates == int(support.STEPS_PER_EPOCH)).all()
 
 
 def test_normalization_comes_from_the_run_s_own_training_tiles(full_run: Path) -> None:

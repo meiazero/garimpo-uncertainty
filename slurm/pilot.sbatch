@@ -11,20 +11,22 @@
 # Each variant is its own job in its own run directory, with its own time limit below.
 #
 # Memory and time are estimates, never measured, and rest on the current code:
-# - Memory: 8 workers, 2 prefetched batches each, 8 cells of 6.3 MB stay under 1 GB; the SVM matrix
+# - Memory: 8 workers, 2 prefetched batches each, 16 cells of 6.3 MB stay under 2 GB; the SVM matrix
 #   is 160 training cells x 200 pixels, under 10 MB at 32 channels.
 # - Downstream cells are 2,528 calibration and test (158 tiles), about 8x the ~300 of the earlier
 #   pilot subset, so 4 h is less safe than it was.
-# - Cells read and passed through the encoder: train 896, infer 2,976, fit_directions 320,
-#   monotonicity 60, compass_scores 2,528, generate_intervals 1,424, 8,204 in total. So 4 h needs
-#   about 0.57 cells/s, reading from NFS included. Unmeasured. validate_data and the pipeline check
-#   each also hash every slot of the run, 10.9 GB read per call, which this count leaves out.
+# - Cells read and passed through the encoder: train 1,216 (2 x 20 x 16 plus 2 x 288
+#   validation), infer 2,976, fit_directions 320, monotonicity 60, compass_scores 2,528,
+#   generate_intervals 1,424, 8,524 in total. So 4 h needs about 0.59 cells/s, reading from NFS included. Unmeasured.
+#   validate_data and the pipeline check each also hash every slot of the run, 10.9 GB read per
+#   call, which this count leaves out.
 # - compass_scores adds, per cell, 80 g(z) evaluations (20 steps x 2 endpoints x 2 directions) and
 #   one Jacobian, on the layers after LAYER; at decoder.blocks.4 that is the head alone.
 #   generate_intervals adds 48 g(z) per test cell (8 COMPASS-J rows x 2 endpoints x 3 alphas);
 #   compass_l needs no decoder.
-# - EPOCHS=2 is 40 updates on 160 cells. A model still predicting nothing has all-zero Jacobians at
-#   temperature 10,000, and fit_directions stops; whether 40 updates avoid that is unknown.
+# - EPOCHS=2 x STEPS_PER_EPOCH=20 is 40 updates on 160 cells. A model still predicting nothing has
+#   all-zero Jacobians at temperature 10,000, and fit_directions stops; whether 40 updates avoid
+#   that is unknown.
 # 48 GB and 4 h are guesses; adjust them from the peak memory and seconds per stage that the
 # pipeline check prints. A job killed at the limit keeps its finished stages, which then skip.
 #SBATCH -J garimpo-pilot
@@ -38,7 +40,9 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-.}"
 
-# ---- PILOT-ONLY VALUES: chosen to make the pipeline run, NOT scientific choices ---------------
+# ---- PILOT VALUES: the decided ones of docs/decisions.md where it has one, so the pilot measures
+# them; the rest (fraction, EPOCHS, STEPS_PER_EPOCH, EVAL_BATCH_SIZE, layers, SVM, sweep,
+# SEARCH_THRESHOLD_FEATURES, SCORE_FLOOR_HA) only make the pipeline run, NOT scientific choices --
 TRAIN_FRACTION=0.01
 SUBSET_SEED=0
 # The versioned list of the two values above; validate_data fails on a tile this did not download.
@@ -49,7 +53,8 @@ ARCH=unet
 ARCH_ARGS=()
 ENCODER_WEIGHTS="${ENCODER_WEIGHTS:-none}"
 EPOCHS=2
-BATCH_SIZE=8
+STEPS_PER_EPOCH=20
+BATCH_SIZE=16
 EVAL_BATCH_SIZE=8
 LR=1e-4                      # the paper's value, Appendix E
 WEIGHT_DECAY=0.01            # torch's AdamW default
