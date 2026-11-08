@@ -22,13 +22,19 @@ container disk is erased when the pod stops. The repository is private, so clone
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh                     # again on every new pod
+export UV_PYTHON_INSTALL_DIR=/workspace/uv-python                   # in every new shell
+export GARIMPO_DATA_DIR=/workspace/garimpo-data                     # in every new shell
 cd /workspace
 git clone --recurse-submodules <ROOT_REPO_URL> garimpo-uncertainty
 cd garimpo-uncertainty
 uv sync
 git config core.hooksPath .githooks
-export GARIMPO_DATA_DIR=/workspace/garimpo-data                     # in every new shell
 ```
+
+`uv sync` runs once, on the first pod; later pods reuse `.venv` from the volume. It needs the
+interpreter on the volume too, hence `UV_PYTHON_INSTALL_DIR`: uv installs Python 3.12 when the image
+lacks it, by default on the container disk. Its download cache stays on the container disk, so give
+that first pod a container disk of 20 GB: torch and its CUDA libraries take about 5.3 GB.
 
 The data root is `$GARIMPO_DATA_DIR`; its default, `~/Experiments/datasets/garimpo`, is on the
 container disk of a pod.
