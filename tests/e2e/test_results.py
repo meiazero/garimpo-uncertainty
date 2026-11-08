@@ -212,7 +212,8 @@ def test_quantiles_grow_as_alpha_shrinks(evaluation: Evaluation) -> None:
         if method == "cqr":
             continue
         by_level = evaluation.all_quantile[order, k]
-        assert (np.diff(by_level, axis=0) <= 1e-9).all(), (method, calibration)
+        # Compared, not subtracted: weighted quantiles may be inf at several levels.
+        assert (by_level[1:] <= by_level[:-1] + 1e-9).all(), (method, calibration)
     simple = evaluation.row("conformal_simple", "external")
     assert (
         evaluation.all_quantile[order[0], simple][0] > evaluation.all_quantile[order[-1], simple][0]
@@ -258,6 +259,37 @@ def test_quantile_weighs_groups_equally(evaluation: Evaluation) -> None:
     cell_ha = evaluation.test.cell_ha.to_numpy()
     assert np.allclose(evaluation.lower[simple], np.clip(evaluation.vhat - expected, 0, cell_ha))
     assert np.allclose(evaluation.upper[simple], np.clip(evaluation.vhat + expected, 0, cell_ha))
+
+
+def brute_force_weighted_quantile(
+    scores: np.ndarray, groups: np.ndarray, ratio: np.ndarray, test_ratio: float, level: float
+) -> float:
+    """Tibshirani et al. (2019), Corollary 1 with groups as units, one candidate at a time."""
+    sizes = {group: int((groups == group).sum()) for group in np.unique(groups)}
+    masses = np.array([r / sizes[g] for r, g in zip(ratio, groups, strict=True)])
+    total = masses.sum() + test_ratio
+    for candidate in np.sort(scores):
+        if masses[scores <= candidate].sum() >= level * total - 1e-12 * total:
+            return float(candidate)
+    return float("inf")
+
+
+def test_weighted_rows_put_the_test_cell_at_infinity(evaluation: Evaluation) -> None:
+    """Each test cell gets its own quantile, with its own density ratio as mass at +inf."""
+    with np.load(evaluation.run_dir / "calibration" / "quantiles.npz") as stored:
+        ratio, test_ratio = stored["density_ratio_calibration"], stored["density_ratio_test"]
+        infinite = stored["infinite_quantile_fraction"][ALPHAS.index(ALPHA)]
+    calibration = evaluation.cells[evaluation.cells.role == "calibration"]
+    scores = np.abs(calibration.v - calibration.vhat).to_numpy()
+    groups = calibration.group.to_numpy()
+    k = evaluation.row("conformal_simple", "external_weighted")
+    expected = [
+        brute_force_weighted_quantile(scores, groups, ratio, r, 1 - ALPHA) for r in test_ratio
+    ]
+    assert np.allclose(evaluation.quantile[k], expected)
+    assert infinite[k] == np.mean(np.isinf(expected))
+    assert (ratio > 0).all()
+    assert (test_ratio > 0).all()
 
 
 def test_own_region_calibration_excludes_the_evaluated_group(evaluation: Evaluation) -> None:
@@ -403,9 +435,12 @@ def test_coverage_by_stratum_matches_one_computation_per_cell(evaluation: Evalua
     v, vhat, groups = evaluation.v, evaluation.vhat, evaluation.groups
     lower, upper = evaluation.lower, evaluation.upper
     edges = np.quantile(v[v > 0], [0.2, 0.4, 0.6, 0.8]).tolist()
+    regions = evaluation.test.region.to_numpy()
+    names = sorted(set(regions.tolist()))
     strata = {
         "reference_area": (np.array([area_bin(float(value), edges) for value in v]), v),
         "predicted_mining": ((vhat > 0).astype(int), vhat),
+        "region": (np.array([names.index(region) for region in regions]), v),
     }
     assert (v[strata["reference_area"][0] == 0] == 0).all()
     at = table[table.alpha == ALPHA]
@@ -428,6 +463,8 @@ def test_coverage_by_stratum_matches_one_computation_per_cell(evaluation: Evalua
                 assert np.isclose(row.mpiw, mean_of_group_means(width, groups[inside]))
                 assert row.low_ha == by[inside].min()
                 assert row.high_ha == by[inside].max()
+                if partition == "region":
+                    assert row.label == names[row.stratum]
     assert set(table.alpha) == set(ALPHAS)
 
 
@@ -521,6 +558,9 @@ def test_each_compass_row_alone_matches_the_one_pass(
 
     alone_lower = np.empty((len(compass_rows), len(test)))
     alone_upper = np.empty((len(compass_rows), len(test)))
+    with np.load(evaluation.run_dir / "scores" / "scores.npz") as stored:
+        beta_range = dict(zip(intervals.COMPASS_METHODS, stored["beta_range"], strict=True))
+    whole_cell = np.zeros((len(compass_rows), len(test)), dtype=bool)
     with torch.no_grad():
         for row, (k, method) in enumerate(compass_rows):
             first = 0
@@ -529,7 +569,10 @@ def test_each_compass_row_alone_matches_the_one_pass(
             ):
                 last = first + len(images)
                 features = garimpo_uncertainty.models.encode(model, images)
-                beta = torch.as_tensor(evaluation.all_quantile[level, k, first:last])
+                quantile = evaluation.all_quantile[level, k, first:last]
+                # A quantile censored at beta_range gives the whole cell, inf included.
+                whole_cell[row, first:last] = quantile >= beta_range[method]
+                beta = torch.as_tensor(np.where(whole_cell[row, first:last], 0.0, quantile))
                 if method == "compass_l":
                     logits, _ = garimpo_uncertainty.models.split_at(
                         model, garimpo_uncertainty.models.LOGITS, features
@@ -552,6 +595,8 @@ def test_each_compass_row_alone_matches_the_one_pass(
                 alone_lower[row, first:last] = low.numpy()
                 alone_upper[row, first:last] = high.numpy()
                 first = last
+    cell_ha = np.broadcast_to(test.cell_ha.to_numpy(), whole_cell.shape)
+    alone_lower[whole_cell], alone_upper[whole_cell] = 0.0, cell_ha[whole_cell]
     alone_lower, alone_upper = intervals.clip_to_cell(
         alone_lower, alone_upper, test.cell_ha.to_numpy()
     )
@@ -595,6 +640,7 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
             metadata=compass_inputs.metadata,
             args=args,
             device="cpu",
+            beta_range=stage["read_beta_range"](evaluation.run_dir),
             lower=lower,
             upper=upper,
         )
@@ -602,6 +648,13 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     assert sorted(reads) == list(range(len(test)))
     assert len(encoder_passes) == int(np.ceil(len(test) / 8))
     rows = compass_inputs.rows
+    stage["widen_saturated"](
+        evaluation.all_quantile,
+        stage["read_beta_range"](evaluation.run_dir),
+        test.cell_ha.to_numpy(),
+        lower,
+        upper,
+    )
     clipped_lower, clipped_upper = garimpo_uncertainty.intervals.clip_to_cell(
         lower[:, rows], upper[:, rows], test.cell_ha.to_numpy()
     )

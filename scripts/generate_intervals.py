@@ -84,6 +84,7 @@ def compass_endpoints(
     metadata: dict,
     args: argparse.Namespace,
     device: str,
+    beta_range: dict[str, float],
     lower: np.ndarray,
     upper: np.ndarray,
 ) -> None:
@@ -108,10 +109,37 @@ def compass_endpoints(
         for a in range(len(quantile)):
             for k, method in rows:
                 beta = torch.as_tensor(quantile[a, k, first:last], device=device)
+                # Saturated rows become trivial in widen_saturated; 0 keeps inf out of the decoder.
+                beta = torch.where(beta >= beta_range[method], 0.0, beta)
                 low, high = spaces[method].endpoints(beta)
                 lower[a, k, first:last] = low.cpu().numpy()
                 upper[a, k, first:last] = high.cpu().numpy()
         first = last
+
+
+def widen_saturated(
+    quantile: np.ndarray,
+    beta_range: dict[str, float],
+    cell_ha: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+) -> None:
+    """Turn every COMPASS interval whose quantile reached beta_range into the whole cell.
+
+    Such a quantile is censored: the true one may be any larger, so nothing narrower is supported.
+    """
+    for k, (method, _) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS):
+        if method in beta_range:
+            trivial = quantile[:, k] >= beta_range[method]
+            lower[:, k] = np.where(trivial, 0.0, lower[:, k])
+            upper[:, k] = np.where(trivial, cell_ha, upper[:, k])
+
+
+def read_beta_range(run_dir: Path) -> dict[str, float]:
+    with np.load(run_dir / "scores" / "scores.npz") as stored:
+        return dict(
+            zip(garimpo_uncertainty.intervals.COMPASS_METHODS, stored["beta_range"], strict=True)
+        )
 
 
 def read_jacobians(run_dir: Path, cell_index: np.ndarray) -> np.ndarray:
@@ -147,9 +175,11 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
         metadata=metadata,
         args=args,
         device=device,
+        beta_range=read_beta_range(args.run_dir),
         lower=lower,
         upper=upper,
     )
+    widen_saturated(quantile, read_beta_range(args.run_dir), test.cell_ha.to_numpy(), lower, upper)
     lower, upper = garimpo_uncertainty.intervals.clip_to_cell(lower, upper, test.cell_ha.to_numpy())
     garimpo_uncertainty.stages.write_arrays(
         output,

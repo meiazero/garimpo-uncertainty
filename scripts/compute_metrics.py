@@ -45,6 +45,7 @@ def read_saturation(run_dir: Path) -> dict[str, np.ndarray]:
                 "n_calibration_scores",
                 "n_saturated_calibration",
                 "quantile_saturated_fraction",
+                "infinite_quantile_fraction",
             )
         }
 
@@ -59,6 +60,7 @@ def aligned_cells(
         evaluated.v.to_numpy(),
         evaluated.vhat.to_numpy(),
         evaluated.group.to_numpy(),
+        evaluated.region.to_numpy(),
         {name: values[at] for name, values in segmentation.items()},
     )
 

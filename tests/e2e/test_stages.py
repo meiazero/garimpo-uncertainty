@@ -200,6 +200,33 @@ def test_saturation_is_reported_not_hidden(saturated_run: Path, data_root: Path)
     assert relation.slope[relation.n_cells < 2].isna().all()
 
 
+def test_saturated_quantiles_give_the_whole_cell(saturated_run: Path, data_root: Path) -> None:
+    """A quantile censored at beta_range supports no interval narrower than the cell."""
+    cells = garimpo_uncertainty.data.read_predictions(data_root, saturated_run)
+    with np.load(saturated_run / "intervals" / "intervals.npz") as stored:
+        cell_index, lower, upper, quantile = (
+            stored["cell_index"],
+            stored["lower"],
+            stored["upper"],
+            stored["quantile"],
+        )
+    with np.load(saturated_run / "scores" / "scores.npz") as stored:
+        beta_range = dict(
+            zip(garimpo_uncertainty.intervals.COMPASS_METHODS, stored["beta_range"], strict=True)
+        )
+    cell_ha = cells.set_index("cell_index").cell_ha.loc[cell_index].to_numpy()
+    checked = 0
+    for k, (method, _) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS):
+        if method in beta_range:
+            trivial = quantile[:, k] >= beta_range[method]
+            checked += int(trivial.sum())
+            assert (lower[:, k][trivial] == 0).all(), method
+            assert np.array_equal(
+                upper[:, k][trivial], np.broadcast_to(cell_ha, trivial.shape)[trivial]
+            )
+    assert checked > 0
+
+
 def test_missing_input_is_recorded(saturated_run: Path, data_root: Path, tmp_path: Path) -> None:
     run_dir = Path(shutil.copytree(saturated_run, tmp_path / "saturated"))
     result = support.run(

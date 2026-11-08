@@ -2,7 +2,8 @@
 
 Reads persisted areas and scores. Writes calibration/quantiles.npz: quantile and output-space terms
 as [A, K, N], A indexing ALPHAS, K COMBINATIONS and N the test cells (NaN terms on COMPASS rows,
-whose endpoints come from the decoder), and the score counts and saturation of each row as [A, K].
+whose endpoints come from the decoder), and the score counts, saturation and share of infinite
+quantiles of each row as [A, K].
 """
 
 import argparse
@@ -38,7 +39,8 @@ def quantile_per_cell(
     test_scores: np.ndarray,
     test_groups: np.ndarray,
     *,
-    density_ratio: np.ndarray,
+    calibration_ratio: np.ndarray,
+    test_ratio: np.ndarray,
     alpha: float,
     seed: int,
 ) -> np.ndarray:
@@ -47,10 +49,9 @@ def quantile_per_cell(
     if situation == "external":
         return np.full(len(test_scores), rule(calibration_scores, calibration_groups))
     if calibration == "external_weighted":
-        value = compass2d.calibration.group_quantile(
-            calibration_scores, calibration_groups, alpha, density_ratio
+        return compass2d.calibration.group_weighted_quantiles(
+            calibration_scores, calibration_groups, calibration_ratio, test_ratio, alpha
         )
-        return np.full(len(test_scores), value)
     if situation == "own_region":
         return compass2d.calibration.leave_one_group_out_quantiles(test_scores, test_groups, rule)
     raise ValueError(f"unknown calibration: {calibration!r}")
@@ -62,7 +63,8 @@ class CalibrationProblem:
 
     calibration: pd.DataFrame
     test: pd.DataFrame
-    density_ratio: np.ndarray
+    calibration_ratio: np.ndarray
+    test_ratio: np.ndarray
     alpha: float
     seed: int
 
@@ -75,7 +77,8 @@ class CalibrationProblem:
             self.calibration.group.to_numpy(),
             test_scores,
             self.test.group.to_numpy(),
-            density_ratio=self.density_ratio,
+            calibration_ratio=self.calibration_ratio,
+            test_ratio=self.test_ratio,
             alpha=self.alpha,
             seed=self.seed,
         )
@@ -103,6 +106,7 @@ class Rows:
     n_scores: np.ndarray
     n_saturated: np.ndarray
     saturated_fraction: np.ndarray
+    infinite_fraction: np.ndarray
 
     @classmethod
     def allocate(cls, n_rows: int, n_cells: int) -> Self:
@@ -115,13 +119,14 @@ class Rows:
             n_scores=np.zeros(n_rows, dtype=int),
             n_saturated=np.full(n_rows, np.nan),
             saturated_fraction=np.full(n_rows, np.nan),
+            infinite_fraction=np.zeros(n_rows),
         )
 
 
 def read_scores(
     calibration_cells: pd.DataFrame, test_cells: pd.DataFrame, args: argparse.Namespace
-) -> tuple[CompassScores, np.ndarray]:
-    """Return the scores and the density ratio of test over calibration features."""
+) -> tuple[CompassScores, np.ndarray, np.ndarray]:
+    """Return the scores and the density ratio of test over calibration features at both."""
     with np.load(args.run_dir / "scores" / "scores.npz") as stored:
         calibration_at = garimpo_uncertainty.data.positions_of(
             stored["cell_index"], calibration_cells.cell_index.to_numpy()
@@ -132,13 +137,16 @@ def read_scores(
         scores = CompassScores(
             stored["score"], stored["saturated"], stored["beta_range"], calibration_at, test_at
         )
-        density_ratio = compass2d.calibration.density_ratio(
+        calibration_ratio, test_ratio = compass2d.calibration.density_ratio(
             stored["feature_sums"][calibration_at],
             stored["feature_sums"][test_at],
-            args.seed,
-            args.lightgbm_jobs,
+            calibration_cells.group.to_numpy(),
+            test_cells.group.to_numpy(),
+            n_folds=garimpo_uncertainty.intervals.DENSITY_RATIO_FOLDS,
+            seed=args.seed,
+            n_jobs=args.lightgbm_jobs,
         )
-    return scores, density_ratio
+    return scores, calibration_ratio, test_ratio
 
 
 def fill_compass_row(
@@ -219,6 +227,7 @@ def rows_at(
                 score_floor_ha=args.score_floor_ha,
                 cqr_models=cqr_models,
             )
+    rows.infinite_fraction[:] = np.isinf(rows.quantile).mean(axis=1)
     return rows
 
 
@@ -228,10 +237,12 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
         cells = cells[cells.v > 0]
     calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
     test_cells = cells[cells.role == "test"].reset_index(drop=True)
-    scores, density_ratio = read_scores(calibration_cells, test_cells, args)
+    scores, calibration_ratio, test_ratio = read_scores(calibration_cells, test_cells, args)
     by_alpha = [
         rows_at(
-            CalibrationProblem(calibration_cells, test_cells, density_ratio, alpha, args.seed),
+            CalibrationProblem(
+                calibration_cells, test_cells, calibration_ratio, test_ratio, alpha, args.seed
+            ),
             scores,
             cells[cells.role == "train"],
             args,
@@ -253,13 +264,22 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
         n_calibration_scores=stacked("n_scores"),
         n_saturated_calibration=stacked("n_saturated"),
         quantile_saturated_fraction=stacked("saturated_fraction"),
+        infinite_quantile_fraction=stacked("infinite_fraction"),
+        density_ratio_calibration=calibration_ratio,
+        density_ratio_test=test_ratio,
+    )
+    masses = compass2d.calibration.group_masses(
+        calibration_cells.group.to_numpy(), calibration_ratio
     )
     return {
         "calibration_cells": len(calibration_cells),
         "test_cells": len(test_cells),
         "rows": len(garimpo_uncertainty.intervals.COMBINATIONS),
         "alphas": list(garimpo_uncertainty.intervals.ALPHAS),
-        "density_ratio_max": float(density_ratio.max()),
+        "density_ratio_max": float(max(calibration_ratio.max(), test_ratio.max())),
+        # Below a handful, the weighted rows rest on almost no calibration group.
+        "weighted_group_ess": compass2d.calibration.effective_sample_size(masses),
+        "calibration_groups": len(masses),
     }
 
 

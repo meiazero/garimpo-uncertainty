@@ -24,11 +24,12 @@ MIN_PAIRS_FOR_CORRELATION = 2
 
 @dataclass(frozen=True)
 class EvaluatedCells:
-    """The test cells under evaluation, aligned: reference and predicted areas, group, quality."""
+    """The test cells under evaluation, aligned: areas, group, region and segmentation quality."""
 
     v: np.ndarray
     vhat: np.ndarray
     group: np.ndarray
+    region: np.ndarray
     segmentation: dict[str, np.ndarray]
 
 
@@ -261,11 +262,16 @@ def area_bins(v: np.ndarray) -> np.ndarray:
     return np.where(v > 0, 1 + np.searchsorted(edges, v, side="left"), 0)
 
 
-def strata(cells: EvaluatedCells) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Each partition's stratum per cell, and the area that defines it."""
+def strata(cells: EvaluatedCells) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Each partition's stratum per cell, the area that defines it, and each stratum's label.
+
+    The held-out region is the shift itself, so its coverage is the one the guarantee is about.
+    """
+    regions, region_codes = np.unique(cells.region, return_inverse=True)
     return {
-        "reference_area": (area_bins(cells.v), cells.v),
-        "predicted_mining": ((cells.vhat > 0).astype(int), cells.vhat),
+        "reference_area": (area_bins(cells.v), cells.v, np.arange(6).astype(str)),
+        "predicted_mining": ((cells.vhat > 0).astype(int), cells.vhat, np.array(["0", "1"])),
+        "region": (region_codes, cells.v, regions),
     }
 
 
@@ -281,13 +287,13 @@ def coverage_by_stratum(
     """PICP and MPIW per stratum, group-weighted, from intervals calibrated once on every cell.
 
     By reference area, adapted from Cheung et al. (2026), Figure 7, whose bins it does not
-    define; by predicted mining, the only stratum known when an interval is used. The guarantee is
-    marginal, so a stratum may fall short.
+    define; by predicted mining, the only stratum known when an interval is used; by held-out
+    region. The guarantee is marginal, so a stratum may fall short.
     """
     combos = garimpo_uncertainty.intervals.COMBINATIONS
     covered = ((cells.v >= lower) & (cells.v <= upper)).astype(float)
     frames = []
-    for partition, (labels, by) in strata(cells).items():
+    for partition, (labels, by, names) in strata(cells).items():
         for stratum in np.unique(labels):
             inside = labels == stratum
             groups = np.unique(cells.group[inside])
@@ -302,6 +308,7 @@ def coverage_by_stratum(
                 "calibration": [calibration for _, calibration in combos],
                 "partition": partition,
                 "stratum": int(stratum),
+                "label": str(names[stratum]),
                 "low_ha": float(by[inside].min()),
                 "high_ha": float(by[inside].max()),
                 "n_cells": int(inside.sum()),
