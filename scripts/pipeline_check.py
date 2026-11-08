@@ -83,7 +83,8 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
     required = [r for r in records if r["stage"] != "download_scenes"]
     failed = [r for r in required if r["status"] != "ok"]
     first_failure = next(
-        (r for r in required if r["status"] in ("failed", "refused", "running")), None
+        (r for r in required if r["status"] in ("failed", "refused", "running", "interrupted")),
+        None,
     )
     if first_failure is not None:
         print(f"\n--- failing stage: {first_failure['stage']} ({first_failure['status']})")

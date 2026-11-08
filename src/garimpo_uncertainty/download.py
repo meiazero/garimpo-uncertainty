@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -441,6 +442,25 @@ def _refuse_other_resampling(
         )
 
 
+def _process_in_pool(
+    one: Callable[[int], tuple[int, str]], pending: list[int], workers: int
+) -> None:
+    """Run `one` over the pending tiles; on Ctrl+C, start no queued tile, finish those running."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        try:
+            for count, (tile_id, status) in enumerate(pool.map(one, pending), start=1):
+                logger.info("[%s/%s] tile %s: %s", count, len(pending), tile_id, status)
+        except KeyboardInterrupt:
+            # Explicit, whatever the interpreter does with the map's queued futures.
+            logger.warning(
+                "interrupted: no queued tile starts; waiting for up to %s tiles in progress to "
+                "write their sidecars. Killing the process loses only those, redone on rerun.",
+                workers,
+            )
+            pool.shutdown(cancel_futures=True)
+            raise
+
+
 def download_scenes(
     root: Path,
     split: pd.DataFrame,
@@ -478,6 +498,4 @@ def download_scenes(
 
     pending = [int(t) for t in selected.tile_id if force or int(t) not in finished]
     logger.info("%s tiles already done, %s pending", len(selected) - len(pending), len(pending))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        for count, (tile_id, status) in enumerate(pool.map(one, pending), start=1):
-            logger.info("[%s/%s] tile %s: %s", count, len(pending), tile_id, status)
+    _process_in_pool(one, pending, workers)
