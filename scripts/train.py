@@ -17,6 +17,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
+import garimpo_uncertainty.models
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.models.unet
 import garimpo_uncertainty.stages
@@ -119,8 +120,7 @@ def new_metadata(
         "arch": args.arch,
         "variant": garimpo_uncertainty.models.common.variant_name(args.arch, args.encoder_weights),
         "in_channels": len(garimpo_uncertainty.data.BANDS),
-        "channels": args.channels,
-        "encoder": garimpo_uncertainty.models.unet.UNET_ENCODER if args.arch == "unet" else None,
+        "encoder": garimpo_uncertainty.models.ENCODER,
         "encoder_weights": args.encoder_weights,
         "encoder_weights_sha256": args.encoder_weights_sha256,
         "seed": args.seed,
@@ -158,7 +158,6 @@ def start_training(
     model = garimpo_uncertainty.models.common.build(
         args.arch,
         metadata["in_channels"],
-        args.channels,
         starting_weights,
         weights_file,
     ).to(device)
@@ -340,8 +339,12 @@ def train(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--arch", choices=["convnet", "unet"], required=True)
-    parser.add_argument("--channels", type=int, nargs="+", help="widths; required for convnet")
+    parser.add_argument(
+        "--arch",
+        choices=["convnet", "unet"],
+        required=True,
+        help="convnet is smp's DeepLabV3, with no skip connections; both use one ResNet-18 encoder",
+    )
     parser.add_argument(
         "--encoder-weights",
         choices=list(garimpo_uncertainty.models.unet.UNET_VARIANTS),

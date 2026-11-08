@@ -39,7 +39,6 @@ TILES=outputs/tiles/tiles_1pct.json
 RESAMPLING_20M=bilinear
 
 ARCH=unet
-ARCH_ARGS=()
 ENCODER_WEIGHTS="${ENCODER_WEIGHTS:-none}"
 EPOCHS=2
 STEPS_PER_EPOCH=20

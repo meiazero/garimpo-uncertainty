@@ -1,42 +1,18 @@
-"""The ConvNet without skip connections, the simple model compared."""
+"""The ConvNet is smp's DeepLabV3: its decoder reads only the deepest feature, no skip connections.
 
-import itertools
+Every argument not passed here keeps its smp 0.6.0 default (docs/decisions.md).
+"""
 
-import torch
+import segmentation_models_pytorch
+
+import garimpo_uncertainty.models
 
 
-def _conv_block(in_channels: int, out_channels: int) -> torch.nn.Sequential:
-    return torch.nn.Sequential(
-        torch.nn.Conv2d(in_channels, out_channels, 3, padding=1),
-        torch.nn.BatchNorm2d(out_channels),
-        torch.nn.ReLU(inplace=True),
+def build(in_channels: int) -> segmentation_models_pytorch.DeepLabV3:
+    """Build the ConvNet from random weights, on the U-Net's encoder."""
+    return segmentation_models_pytorch.DeepLabV3(
+        encoder_name=garimpo_uncertainty.models.ENCODER,
+        encoder_weights=None,
+        in_channels=in_channels,
+        classes=1,
     )
-
-
-class ConvNet(torch.nn.Module):
-    """Down and up convolutions with no skip connections, the simple model compared."""
-
-    def __init__(self, in_channels: int, channels: list[int]) -> None:
-        super().__init__()
-        widths = [in_channels, *channels]
-        self.down = torch.nn.ModuleList(_conv_block(a, b) for a, b in itertools.pairwise(widths))
-        self.pool = torch.nn.MaxPool2d(2)
-        reverse = channels[::-1]
-        self.up = torch.nn.ModuleList(
-            torch.nn.Sequential(torch.nn.Upsample(scale_factor=2), _conv_block(a, b))
-            for a, b in itertools.pairwise(reverse)
-        )
-        self.head = torch.nn.Conv2d(channels[0], 1, 1)
-
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        for index, block in enumerate(self.down):
-            x = block(x)
-            if index < len(self.down) - 1:
-                x = self.pool(x)
-        return x
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.encode(x)
-        for block in self.up:
-            x = block(x)
-        return self.head(x)

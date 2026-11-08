@@ -677,7 +677,7 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     """The stage's own function, in this process, so its reads and encoder passes can be counted."""
     model, test = compass_inputs.model, compass_inputs.test
     stage = runpy.run_path(str(support.ROOT / "scripts" / "generate_intervals.py"))
-    first_layer = model.down[0] if evaluation.arch == "convnet" else model.encoder.conv1
+    first_layer = model.encoder.conv1
     encoder_passes: list[int] = []
     handle = first_layer.register_forward_hook(lambda *_: encoder_passes.append(1))
     reads: list[int] = []

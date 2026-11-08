@@ -14,7 +14,7 @@ dependencies = [
     "scikit-learn>=1.3",
     "safetensors>=0.4",
     "scipy>=1.13",
-    # models.common.split_at mirrors this release's UnetDecoder.forward.
+    # models.common.split_at mirrors this release's UnetDecoder.forward and DeepLabV3Decoder.forward.
     "segmentation-models-pytorch==0.6.0",
     "shapely>=2.0",
     "torch>=2.14.0",

@@ -54,7 +54,7 @@ run_diagnostics() {
     # Passed whenever set, so train.py alone decides what fits the architecture.
     local encoder_weights=()
     [ -z "${ENCODER_WEIGHTS:-}" ] || encoder_weights=(--encoder-weights "$ENCODER_WEIGHTS")
-    run_stage train train --arch "$ARCH" "${ARCH_ARGS[@]}" "${encoder_weights[@]}" --run-dir "$RUN_DIR" \
+    run_stage train train --arch "$ARCH" "${encoder_weights[@]}" --run-dir "$RUN_DIR" \
         --train-fraction "$TRAIN_FRACTION" --subset-seed "$SUBSET_SEED" --epochs "$EPOCHS" \
         --steps-per-epoch "$STEPS_PER_EPOCH" \
         --batch-size "$BATCH_SIZE" --lr "$LR" --weight-decay "$WEIGHT_DECAY" \

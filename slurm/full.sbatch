@@ -16,7 +16,6 @@ source "${1:?usage: bash slurm/full.sbatch <values.env>}"
 : "${SWEEP_STEPS:?}" "${SWEEP_CELLS:?}" "${BETA_RANGE_LOGITS:?}" "${BETA_RANGE_FEATURES:?}"
 : "${DIRECTION_TEMPERATURE:?}"
 [ "$ARCH" != unet ] || : "${ENCODER_WEIGHTS:?}"
-[ "$ARCH" != convnet ] || [ "${#ARCH_ARGS[@]}" -gt 0 ] || { echo "ARCH_ARGS is empty" >&2; exit 1; }
 : "${MIN_FRACTION_ASCENDING:?}" "${SEARCH_THRESHOLD_LOGITS:?}" "${SEARCH_THRESHOLD_FEATURES:?}"
 : "${CELLS:?}" "${SCORE_FLOOR_HA:?}" "${BOUNDARY_TOLERANCE_PX:?}"
 [ "${#LAYERS[@]}" -gt 0 ] || { echo "LAYERS is empty" >&2; exit 1; }

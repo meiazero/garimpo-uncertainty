@@ -84,7 +84,7 @@ EXPECTED_ROWS |= {
     if calibration in {"external", "own_region"}
 }
 RUN_ORDER = {
-    "convnet": (["--channels", "8", "16", "32"], "up.1", "up.0"),
+    "convnet": ([], "decoder.relu", "decoder.aspp"),
     "unet": (
         ["--encoder-weights", "none"],
         "decoder.blocks.4",
