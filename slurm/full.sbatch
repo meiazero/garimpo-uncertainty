@@ -1,23 +1,15 @@
 #!/bin/bash
 # Full run of one model, every value required from a file written by you:
 #   cp slurm/full.env.example slurm/unet_scratch-f1.0.env    # fill in; see docs/decisions.md
-#   slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env
+#   CUDA_VISIBLE_DEVICES=0 bash slurm/full.sbatch slurm/unet_scratch-f1.0.env
 #
-# The COMPASS-J layer is chosen inside the job, from the validation role (scripts/choose_layer.py).
+# One run per GPU: on a pod with several, start one per CUDA_VISIBLE_DEVICES and give each
+# NUM_WORKERS of about the pod's vCPUs divided by the runs.
 #
-# ponytail: memory and time follow the repo's other gpuq jobs, not a measurement; set them from
-# the peak and the seconds per stage that the pilot's pipeline check prints.
-#SBATCH -J garimpo-full
-#SBATCH -p gpuq
-#SBATCH --gres=gpu:a100:1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
-#SBATCH --time=7-00:00:00
-#SBATCH -o outputs/logs/%x-%j.out
-#SBATCH -e outputs/logs/%x-%j.err
+# The COMPASS-J layer is chosen inside the run, from the validation role (scripts/choose_layer.py).
 set -euo pipefail
-cd "${SLURM_SUBMIT_DIR:?}"
-source "${1:?usage: slurm/submit.sh slurm/full.sbatch <values.env>}"
+cd "$(dirname "$0")/.."
+source "${1:?usage: bash slurm/full.sbatch <values.env>}"
 
 : "${ARCH:?}" "${RUN_DIR:?}" "${TRAIN_FRACTION:?}" "${SUBSET_SEED:?}"
 : "${EPOCHS:?}" "${STEPS_PER_EPOCH:?}" "${BATCH_SIZE:?}" "${LR:?}" "${WEIGHT_DECAY:?}"
@@ -32,10 +24,10 @@ source "${1:?usage: slurm/submit.sh slurm/full.sbatch <values.env>}"
 
 VALIDATION_REPORT=outputs/data_validation-fraction-$TRAIN_FRACTION-seed-$SUBSET_SEED.json
 VALIDATE_ARGS=(--split-summary outputs/split_summary.json)
-NUM_WORKERS=${SLURM_CPUS_PER_TASK:-16}
+NUM_WORKERS=${NUM_WORKERS:-16}
 
 # The exit code goes to the check because an error before run_stage leaves every status ok. A failed
-# check fails the job, so SLURM cannot show a broken run as completed; a stage's exit code wins.
+# check fails the script, so a broken run never exits 0; a stage's exit code wins.
 trap 'job_exit=$?; check_exit=0; uv run --no-sync python scripts/pipeline_check.py --run-dir "$RUN_DIR" --train-fraction "$TRAIN_FRACTION" --subset-seed "$SUBSET_SEED" --job-exit-code "$job_exit" || check_exit=$?; exit "$((job_exit ? job_exit : check_exit))"' EXIT
 
 source slurm/stages.sh

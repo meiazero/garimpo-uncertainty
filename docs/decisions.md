@@ -28,7 +28,7 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 
 | Value | Where | What settles it |
 |---|---|---|
-| `EPOCHS`, one value for every run | `slurm/full.env.example` | The pilot's seconds per update, against the 7-day `gpuq` limit and 13 runs |
+| `EPOCHS`, one value for every run | `slurm/full.env.example` | The pilot's seconds per update, against the GPU budget for 13 runs, one per GPU |
 | `EVAL_BATCH_SIZE` | `slurm/full.env.example` | The pilot's GPU peaks; changing it after an OOM refuses nothing |
 | ConvNet channel widths | `train.py` | No source; the proposal only asks for a network without skip connections |
 | Layers to diagnose (`LAYERS`) | `fit_directions.py` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |

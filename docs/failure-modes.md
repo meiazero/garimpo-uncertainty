@@ -10,7 +10,7 @@ Written before the pipeline, and the origin of the test.
 | 2 | Only part of a group's selected tiles is downloaded, so a group's coverage is computed on a biased subset | `validate_data.py` (`partial_group`), E2E |
 | 3 | A group spans two split roles (leakage) | `validate_data.py` (`group_leakage`), E2E |
 | 4 | An interrupted download leaves half-written slots that a resume trusts | slots flushed before the sidecar says `ok`; a forced re-cut removes the sidecar first, E2E |
-| 5 | The SAS token expires during a long download | token refresh in `download.py` (cluster only) |
+| 5 | The SAS token expires during a long download | token refresh in `download.py` (real downloads only) |
 | 6 | Arithmetic on `uint16` DN overflows or goes negative | cast to float before the offset in `CellDataset` |
 | 7 | Processing baseline 04.00 adds a radiometric offset, so scenes across 2022 differ by construction | `boa_offset` in the sidecar of each tile, applied by `CellDataset`, E2E |
 | 8 | The mask is rasterized on a grid other than the image's | Not checked automatically: raster versus vector area and NDVI contrast are diagnostics, with no threshold, to read in the report |
@@ -27,8 +27,8 @@ Written before the pipeline, and the origin of the test.
 | 19 | Relative or local score divides by zero on empty cells | required `--score-floor-ha` |
 | 20 | Bootstrap resamples cells instead of groups, or method pairs use different resamples | shared group index matrix in `evaluation.summarize`; the E2E checks the paired point differences, not the resamples |
 | 21 | A method x calibration row is missing from the results | exact row set checked in E2E |
-| 22 | Compute node tries to reach the network | `uv run --no-sync` in every job, download on the login node |
-| 23 | SLURM fails because the log directory does not exist | `slurm/submit.sh` |
+| 22 | A stage changes the environment under a run in progress | `uv run --no-sync` in every script |
+| 23 | The pod stops and its container disk takes the data or the runs with it | clone and `GARIMPO_DATA_DIR` on the network volume ([README](../README.md#install)); not checked automatically |
 | 24 | A metric change forces a retrain | stages read persisted files; E2E hashes everything around a metrics rerun |
 | 25 | A changed argument silently reuses an old output | stage fingerprint refuses and fails the pipeline check, E2E; a code change is redone by name with `FORCE_FROM` |
 | 26 | A later stage rebuilds the model on another split | split hash in the checkpoint |
@@ -39,7 +39,7 @@ Written before the pipeline, and the origin of the test.
 | 31 | Band columns of the 13-band `conv1` land out of order | literal column positions checked in E2E |
 | 32 | A weights file with missing or extra keys loads partially | strict load after dropping `fc.*`, E2E |
 | 33 | Runs merge under one model and fraction | `variant` and `train_fraction` in the metadata and the tables; `merge_results.py` refuses a repeated pair, E2E |
-| 34 | A compute node tries to fetch weights | Nothing in training can: `models.build` reads the two weight files from the data root only |
+| 34 | Training tries to fetch weights over the network | Nothing in training can: `models.build` reads the two weight files from the data root only |
 | 35 | Pretrained weights resume or skip under another identity | `encoder_weights` and the file hash in the fingerprint and `last.pt`, E2E |
 | 36 | A larger fraction's download refuses every finished smaller run, or moves its slots | hash of the run's index set and sidecars in the fingerprint; slots fixed by `cell_index`; E2E checks earlier slots stay byte-identical |
 | 37 | Tiles written in another order land in other slots | `cell_index` comes from the split alone, E2E writes in a shuffled order and compares bytes |

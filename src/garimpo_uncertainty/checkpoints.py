@@ -41,7 +41,7 @@ def file_sha256(path: Path) -> str:
 
 
 def warn_on_code_change(metadata: dict) -> None:
-    """Warn, not fail: adjusting code between stages is expected while debugging on the cluster."""
+    """Warn, not fail: adjusting code between stages is expected while debugging the pilot."""
     current = code_versions()
     for key in ("root_commit", "compass_commit"):
         if metadata[key] != current[key]:

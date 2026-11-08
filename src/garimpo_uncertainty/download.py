@@ -1,4 +1,4 @@
-"""Login-node download: Jasansky et al. metadata and Sentinel-2 L2A cells from Planetary Computer.
+"""Download, no GPU: Jasansky et al. metadata and Sentinel-2 L2A cells from Planetary Computer.
 
 Resumable: a tile is done once its sidecar says so, and the sidecar is written after its slots are
 flushed. Tiles that fail keep their reason in the sidecar; nothing is dropped silently.
