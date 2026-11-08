@@ -315,7 +315,7 @@ def _place_tile(reference_href: str, tile_geometry: shapely.Geometry) -> TilePla
         grid, scene_width, scene_height = reference.transform, reference.width, reference.height
     col, row, offset, excess = tile_origin(grid, _to_utm(tile_geometry, epsg).bounds, tile_px)
     _check_inside_scene(col, row, tile_px, scene_width, scene_height)
-    return TilePlacement(epsg, grid * rasterio.Affine.translation(col, row), offset, excess)
+    return TilePlacement(epsg, grid @ rasterio.Affine.translation(col, row), offset, excess)
 
 
 def _read_bands(

@@ -45,7 +45,7 @@ full disk under a write to a hole can kill the process with SIGBUS rather than r
 written, so rerun after freeing space. Untested. In all, images 59.3 GB plus masks and SCL 9.9 GB.
 
 A cell's georeferencing comes from its tile's sidecar: with `row, col = divmod(position, 4)`, the
-cell's transform is `Affine(*transform) * Affine.translation(col * 512, row * 512)`, in `epsg`.
+cell's transform is `Affine(*transform) @ Affine.translation(col * 512, row * 512)`, in `epsg`.
 
 Artifacts inside a run align by position with its cell table or carry `cell_index`, always ascending:
 
