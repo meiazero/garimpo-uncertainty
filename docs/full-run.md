@@ -33,7 +33,9 @@ tar --format=posix -I 'zstd -19 -T0' -cf <DIR>.tar.zst -C <DIR> .
 Then upload the archive to Drive as `garimpo/data.tar.zst`. `slurm/download.sh` downloads the
 metadata, the 100% list and both starting weights. It stops before downloading when the disk cannot
 hold the store, counting what is already downloaded as available, and resumes when rerun. It uses
-one worker per CPU minus one, between 1 and 16. Without `GARIMPO_DATA_DIR` it writes to
+one worker per CPU minus one, between 1 and 16. Each tile is printed as it ends, with the rate
+and the time left, and every line is also appended, timestamped, to
+`<DIR>/logs/download.log`. Without `GARIMPO_DATA_DIR` it writes to
 `~/Experiments/datasets/garimpo`. The `tar` line needs free disk for the archive as well.
 
 On Colab, run the data cell of the [quick start](../README.md#quick-start) on a CPU runtime:
