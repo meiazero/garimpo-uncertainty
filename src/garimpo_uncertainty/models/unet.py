@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import safetensors.torch
+import segmentation_models_pytorch
 import torch
 
 import garimpo_uncertainty.data
@@ -32,17 +33,21 @@ SENTINEL2_MOCO_BANDS = (
 )
 
 
-def check_encoder_weights(arch: str, encoder_weights: str | None) -> None:
-    """Raise when a choice of starting weights does not fit the model."""
-    if arch == "convnet" and encoder_weights is not None:
-        raise ValueError("--encoder-weights is invalid for convnet, which has no encoder")
-    if arch == "unet" and encoder_weights is None:
-        raise ValueError(f"--encoder-weights is required for unet: {', '.join(UNET_VARIANTS)}")
-
-
-def variant_name(arch: str, encoder_weights: str | None) -> str:
-    """Return the model's name in the results, which arch alone would merge across weights."""
-    return UNET_VARIANTS[encoder_weights] if arch == "unet" else arch
+def build(
+    in_channels: int, encoder_weights: str, weights_file: Path | None
+) -> segmentation_models_pytorch.Unet:
+    """Build the U-Net, loading the chosen starting weights into its encoder."""
+    model = segmentation_models_pytorch.Unet(
+        encoder_name=UNET_ENCODER,
+        encoder_weights=None,
+        in_channels=in_channels,
+        classes=1,
+    )
+    if encoder_weights == "imagenet":
+        load_imagenet(model, weights_file)
+    if encoder_weights == "sentinel2_moco":
+        load_sentinel2_moco(model, weights_file)
+    return model
 
 
 def load_imagenet(model: torch.nn.Module, path: Path) -> None:

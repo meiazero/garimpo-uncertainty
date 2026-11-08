@@ -117,7 +117,7 @@ def new_metadata(
 ) -> dict:
     return {
         "arch": args.arch,
-        "variant": garimpo_uncertainty.models.unet.variant_name(args.arch, args.encoder_weights),
+        "variant": garimpo_uncertainty.models.common.variant_name(args.arch, args.encoder_weights),
         "in_channels": len(garimpo_uncertainty.data.BANDS),
         "channels": args.channels,
         "encoder": garimpo_uncertainty.models.unet.UNET_ENCODER if args.arch == "unet" else None,
@@ -379,7 +379,7 @@ def main() -> None:
     args = parser.parse_args()
     garimpo_uncertainty.stages.log_to_stdout()
     try:
-        garimpo_uncertainty.models.unet.check_encoder_weights(args.arch, args.encoder_weights)
+        garimpo_uncertainty.models.common.check_encoder_weights(args.arch, args.encoder_weights)
     except ValueError as error:
         parser.error(str(error))
 

@@ -4,7 +4,6 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-import segmentation_models_pytorch
 import torch
 
 import garimpo_uncertainty.models.convnet
@@ -14,20 +13,20 @@ FEATURE_LAYER = re.compile(r"(up|decoder\.blocks)\.\d+")
 LOGITS = "logits"
 
 
-def _build_unet(
-    in_channels: int, encoder_weights: str, weights_file: Path | None
-) -> segmentation_models_pytorch.Unet:
-    model = segmentation_models_pytorch.Unet(
-        encoder_name=garimpo_uncertainty.models.unet.UNET_ENCODER,
-        encoder_weights=None,
-        in_channels=in_channels,
-        classes=1,
+def check_encoder_weights(arch: str, encoder_weights: str | None) -> None:
+    """Raise when a choice of starting weights does not fit the model."""
+    if arch == "convnet" and encoder_weights is not None:
+        raise ValueError("--encoder-weights is invalid for convnet, which has no encoder")
+    if arch == "unet" and encoder_weights is None:
+        variants = ", ".join(garimpo_uncertainty.models.unet.UNET_VARIANTS)
+        raise ValueError(f"--encoder-weights is required for unet: {variants}")
+
+
+def variant_name(arch: str, encoder_weights: str | None) -> str:
+    """Return the model's name in the results, which arch alone would merge across weights."""
+    return (
+        garimpo_uncertainty.models.unet.UNET_VARIANTS[encoder_weights] if arch == "unet" else arch
     )
-    if encoder_weights == "imagenet":
-        garimpo_uncertainty.models.unet.load_imagenet(model, weights_file)
-    if encoder_weights == "sentinel2_moco":
-        garimpo_uncertainty.models.unet.load_sentinel2_moco(model, weights_file)
-    return model
 
 
 def build(
@@ -46,7 +45,7 @@ def build(
             raise ValueError("convnet needs channels")
         return garimpo_uncertainty.models.convnet.ConvNet(in_channels, channels)
     if arch == "unet":
-        return _build_unet(in_channels, encoder_weights, weights_file)
+        return garimpo_uncertainty.models.unet.build(in_channels, encoder_weights, weights_file)
     raise ValueError(f"unknown architecture: {arch!r}")
 
 
