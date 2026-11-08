@@ -2,6 +2,24 @@
 
 Read to know what a run selects, downloads and starts from.
 
+## Dataset size
+
+The 1,207 tiles of Jasansky et al. (2024) that carry the dataset's split field enter, 975 industrial
+and 232 artisanal (`outputs/frame.json`). A tile is 2,048 x 2,048 pixels at 10 m, cut into 16 cells
+of 512 pixels. Industrial tiles within 50 km of a held-out tile are dropped, 28 of them, which leaves
+1,179 tiles and 18,864 cells (`outputs/split_summary.json`):
+
+| Role | Artisanal tiles | Industrial tiles | Cells | Groups |
+|---|---|---|---|---|
+| `train` | 56 | 947 | 16,048 | 21 |
+| `validation` | 18 | 0 | 288 | 5 |
+| `calibration` | 69 | 0 | 1,104 | 25 |
+| `test` | 89 | 0 | 1,424 | 24 |
+| Total | 232 | 947 | 18,864 | 75 |
+
+On disk the store takes 69.2 GB at the 100% fraction and 10.9 GB for the pilot, per the table below;
+each array's size is in [data-layout.md](data-layout.md).
+
 ## Training fractions
 
 Only the `train` role is reduced, so every fraction is evaluated on the same cells. Tiles are drawn

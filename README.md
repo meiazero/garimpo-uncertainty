@@ -7,6 +7,9 @@ area from Sentinel-2, evaluated under geographic domain shift.
   code, `scripts/` the stages, and `slurm/` the cluster jobs.
 - `outputs/` holds the versioned tables, including `split.csv`, the split used, and `tiles/`, the
   tiles each training fraction downloads.
+- The data are 1,179 Sentinel-2 tiles cut into 18,864 cells of 512 x 512 pixels, 69.2 GB on disk
+  at the 100% training fraction and 10.9 GB for the pilot; per role in
+  [docs/runs.md](docs/runs.md#dataset-size).
 - No model result exists yet. The code has run only under pytest, on synthetic data; the pipeline has
   never run on real scenes or on the cluster.
 
@@ -49,7 +52,7 @@ Results go to `runs/pilot/`, never to `outputs/`. How a run goes and how to resu
 |---|---|
 | [docs/pilot.md](docs/pilot.md) | The pilot run, its check report, resubmitting with `FORCE_FROM` |
 | [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading a larger fraction, regenerating tile lists, running outside the cluster, rerunning one stage |
-| [docs/runs.md](docs/runs.md) | Training fractions, tile lists, model variants, starting weights and their limits |
+| [docs/runs.md](docs/runs.md) | Dataset size by role, training fractions, tile lists, model variants, starting weights and their limits |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, and where each is set |
 | [docs/stages.md](docs/stages.md) | Every stage's node, inputs and outputs; skips, refusals and the data validation |
 | [docs/data-layout.md](docs/data-layout.md) | The store, slot hashes, sparse files, run artifacts, resource measurements |
