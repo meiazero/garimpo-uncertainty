@@ -111,7 +111,9 @@ above, each at the three levels alpha = 0.05, 0.10 and 0.15: 372 rows. One archi
 starting weights, plus the ConvNet that the proposal asks for: the ConvNet, smp's DeepLabV3 with a
 ResNet-18 encoder, whose decoder reads only the deepest feature, so no skip connections. The U-Net
 runs vary where the model starts; the ConvNet against `unet_scratch`, both from random weights on
-the same encoder, varies only the decoder: skip connections or none. Each run is one training, so differences between
+the same ResNet-18 layers, varies the decoder, skip connections or none, together with the
+encoder's output stride: DeepLabV3 dilates `layer3` and `layer4` to stride 8, where the U-Net's
+encoder downsamples to 32. Each run is one training, so differences between
 variants have no replication behind them and the comparison is descriptive only.
 `merge_results.py` identifies a run by `(model, train_fraction)` and refuses a repeated pair; each
 run's paired comparisons stay inside that run.
