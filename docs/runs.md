@@ -140,7 +140,7 @@ compares each such file's path, size and mtime: a `best_model.pt` with a new mti
 after training refuse. Both weights are plain files
 under `$GARIMPO_DATA_DIR/weights/`, so training never reaches a network or a library cache.
 
-Every U-Net uses a ResNet-18 encoder, fixed in `models.UNET_ENCODER`, the smallest ResNet with both ImageNet and SSL4EO-S12 MoCo weights (a U-Net of 14.3 M parameters, against 32.5 M with ResNet-50), so `LAYERS` carries over between
+Every U-Net uses a ResNet-18 encoder, fixed in `models.unet.UNET_ENCODER`, the smallest ResNet with both ImageNet and SSL4EO-S12 MoCo weights (a U-Net of 14.3 M parameters, against 32.5 M with ResNet-50), so `LAYERS` carries over between
 them and no run can mix encoders. `choose_layer.py` chooses the layer per run. The names `decoder.blocks.N` come
 from smp's decoder (`decoders/unet/decoder.py` of the pinned 0.6.0), which keeps one block per
 `decoder_channels` entry and takes its input widths from the encoder. `fit_directions.py` checks each name against

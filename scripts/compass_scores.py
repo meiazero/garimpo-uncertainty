@@ -21,7 +21,7 @@ import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models
+import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages
 
 
@@ -61,8 +61,8 @@ def batch_spaces(
     def soft(logits: torch.Tensor) -> torch.Tensor:
         return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
 
-    logits, _ = garimpo_uncertainty.models.split_at(
-        model, garimpo_uncertainty.models.LOGITS, features
+    logits, _ = garimpo_uncertainty.models.common.split_at(
+        model, garimpo_uncertainty.models.common.LOGITS, features
     )
     spaces = [
         Space(
@@ -74,7 +74,7 @@ def batch_spaces(
             args.search_threshold_logits,
         )
     ]
-    z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
+    z, decode = garimpo_uncertainty.models.common.split_at(model, args.layer, features)
     jacobian = compass2d.directions.jacobian_sum(
         decode,
         z,
@@ -115,7 +115,7 @@ def score_batch(
 ) -> BatchScores:
     """Search each method's scores on one batch, sharing one encoder pass; one row per method."""
     target = masks.to(torch.float64).flatten(1).sum(1) * garimpo_uncertainty.data.PIXEL_HA
-    features = garimpo_uncertainty.models.encode(model, x)
+    features = garimpo_uncertainty.models.common.encode(model, x)
     spaces, jacobian, feature_sums = batch_spaces(model, features, fitted, args)
     found = [search_space(space, target) for space in spaces]
     columns = [np.stack([row[c].cpu().numpy() for row in found]) for c in range(6)]

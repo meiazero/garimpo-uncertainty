@@ -21,7 +21,7 @@ import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models
+import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages
 
 COMPASS_ROWS = (
@@ -57,10 +57,10 @@ def search_spaces(
     def soft(logits: torch.Tensor) -> torch.Tensor:
         return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
 
-    logits, _ = garimpo_uncertainty.models.split_at(
-        model, garimpo_uncertainty.models.LOGITS, features
+    logits, _ = garimpo_uncertainty.models.common.split_at(
+        model, garimpo_uncertainty.models.common.LOGITS, features
     )
-    z, decode = garimpo_uncertainty.models.split_at(model, args.layer, features)
+    z, decode = garimpo_uncertainty.models.common.split_at(model, args.layer, features)
     spaces = {
         "compass_l": SearchSpace(
             lambda zi: zi,
@@ -135,7 +135,7 @@ def compass_endpoints(
     first = 0
     for images, _, _ in loader:
         last = first + len(images)
-        features = garimpo_uncertainty.models.encode(model, images.to(device))
+        features = garimpo_uncertainty.models.common.encode(model, images.to(device))
         batch_jacobians = jacobians[first:last].astype(np.float64)
         spaces = search_spaces(model, features, batch_jacobians, fitted, args)
         for a, (k, method) in itertools.product(range(len(calibrated.quantile)), rows):

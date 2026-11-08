@@ -21,7 +21,7 @@ import torch
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
-import garimpo_uncertainty.models
+import garimpo_uncertainty.models.common
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "tests" / "artifacts" / "e2e"
@@ -497,7 +497,7 @@ def write_changed_split(name: str, directory: Path) -> tuple[Path, str]:
 def write_synthetic_sentinel2_weights(path: Path, seed: int = 0) -> dict[str, torch.Tensor]:
     """Write a file shaped as the MoCo checkpoint: 13-band ResNet-18 keys plus fc."""
     torch.manual_seed(seed)
-    encoder = garimpo_uncertainty.models.build("unet", 13).encoder
+    encoder = garimpo_uncertainty.models.common.build("unet", 13).encoder
     state = {key: value.clone() for key, value in encoder.state_dict().items()}
     for column in range(13):
         state["conv1.weight"][:, column] += column / 100

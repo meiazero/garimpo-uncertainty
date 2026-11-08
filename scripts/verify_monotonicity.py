@@ -18,7 +18,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
-import garimpo_uncertainty.models
+import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages
 
 ROLES_BY_USE = {"layer": ("validation",), "endpoint": ("calibration", "test")}
@@ -60,7 +60,7 @@ def sweep_layer(
         pixel_ha = garimpo_uncertainty.data.PIXEL_HA
         return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
 
-    z, decode = garimpo_uncertainty.models.split_at(model, layer, features)
+    z, decode = garimpo_uncertainty.models.common.split_at(model, layer, features)
     jacobian = compass2d.directions.jacobian_sum(
         decode,
         z,
@@ -101,9 +101,9 @@ def sweep_role(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     for images, _, _ in loader:
-        features = garimpo_uncertainty.models.encode(model, images.to(device))
-        logits, _ = garimpo_uncertainty.models.split_at(
-            model, garimpo_uncertainty.models.LOGITS, features
+        features = garimpo_uncertainty.models.common.encode(model, images.to(device))
+        logits, _ = garimpo_uncertainty.models.common.split_at(
+            model, garimpo_uncertainty.models.common.LOGITS, features
         )
         uniform.append(
             compass2d.compass.verify_monotonicity(
@@ -119,7 +119,7 @@ def sweep_role(
             swept = sweep_layer(model, layer, features, fitted[layer], args)
             for direction, flags in swept.items():
                 per_direction.setdefault((layer, direction), []).append(flags)
-    rows = [summarize(uniform, garimpo_uncertainty.models.LOGITS, "uniform", role)]
+    rows = [summarize(uniform, garimpo_uncertainty.models.common.LOGITS, "uniform", role)]
     rows += [
         summarize(flags, layer, direction, role)
         for (layer, direction), flags in per_direction.items()
