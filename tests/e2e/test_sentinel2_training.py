@@ -64,7 +64,7 @@ def test_sentinel2_checkpoint_records_the_weights(trained_sentinel2: Sentinel2Ru
     )
     metadata = best["meta"]
     assert metadata["normalization"] == {"mean": [0.0] * 6, "std": [1.0] * 6}
-    assert metadata["encoder"] == "resnet50"
+    assert metadata["encoder"] == "resnet18"
     assert metadata["encoder_weights"] == "sentinel2_moco"
     assert metadata["variant"] == "unet_sentinel2"
     sha256 = hashlib.sha256(trained_sentinel2.weights.read_bytes()).hexdigest()

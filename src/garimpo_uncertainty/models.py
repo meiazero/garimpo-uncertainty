@@ -1,4 +1,4 @@
-"""The segmentation models: a plain ConvNet and a ResNet-50 smp U-Net that may start pretrained."""
+"""The segmentation models: a plain ConvNet and a ResNet-18 smp U-Net that may start pretrained."""
 
 import itertools
 import re
@@ -19,7 +19,7 @@ UNET_VARIANTS = {
     "imagenet": "unet_imagenet",
     "sentinel2_moco": "unet_sentinel2",
 }
-UNET_ENCODER = "resnet50"
+UNET_ENCODER = "resnet18"
 IMAGENET_N_BANDS = 3
 SENTINEL2_MOCO_BANDS = (
     "B01",
@@ -89,7 +89,7 @@ def variant_name(arch: str, encoder_weights: str | None) -> str:
 
 
 def load_imagenet(model: torch.nn.Module, path: Path) -> None:
-    """Load ImageNet's ResNet-50 into a U-Net encoder, fitting its RGB filters to our bands.
+    """Load ImageNet's ResNet-18 into a U-Net encoder, fitting its RGB filters to our bands.
 
     Cycles and rescales conv1 as smp's patch_first_conv does, without going through its hub lookup.
     """
@@ -108,7 +108,7 @@ def load_imagenet(model: torch.nn.Module, path: Path) -> None:
 
 
 def load_sentinel2_moco(model: torch.nn.Module, path: Path) -> None:
-    """Load a 13-band MoCo ResNet-50 into a U-Net encoder, keeping the columns of our bands.
+    """Load a 13-band MoCo ResNet-18 into a U-Net encoder, keeping the columns of our bands.
 
     The kept filters are not rescaled by 13/6: that factor assumes every band contributes alike, and
     bn1 follows conv1, so training re-estimates the activation scale. smp's 3/in_channels differs,

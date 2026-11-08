@@ -7,7 +7,7 @@ Read when a stage fails, skips or refuses.
 | `download_data.py metadata` | any | Zenodo 14195737 | `$DATA/zenodo/mining_area_data.gpkg` |
 | `download_data.py lists` | any, only to regenerate | `outputs/split.csv`, subset seed | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
 | `download_data.py scenes` | any | `outputs/tiles/tiles_<P>pct.json`, `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/{images,masks,scl,stats}.npy`, `$DATA/tiles/*.json` |
-| `download_data.py weights` | any | Hugging Face | `$DATA/weights/resnet50_sentinel2_all_moco-df8b932e.pth`, `$DATA/weights/resnet50_imagenet-df1aad85.safetensors` |
+| `download_data.py weights` | any | Hugging Face | `$DATA/weights/resnet18_sentinel2_all_moco-59bfdff9.pth`, `$DATA/weights/resnet18_imagenet-b1d1d36f.safetensors` |
 | `validate_data.py` | CPU | store, sidecars, split, fraction | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
 | `train.py` | GPU | the run's slots and sidecars, split, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
 | `infer.py` | GPU | checkpoint, store | `predictions/cells.npz`, `predictions/{validation,calibration,test}.npy` |
