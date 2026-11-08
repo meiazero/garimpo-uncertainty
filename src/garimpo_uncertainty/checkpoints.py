@@ -64,7 +64,6 @@ def load_model(checkpoint: Path, cells: pd.DataFrame, device: str) -> tuple[torc
     model = garimpo_uncertainty.models.common.build(
         metadata["arch"],
         in_channels=metadata["in_channels"],
-        channels=metadata["channels"],
     )
     model.load_state_dict(content["model"])
     return model.eval().requires_grad_(requires_grad=False).to(device), metadata

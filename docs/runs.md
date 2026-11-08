@@ -103,13 +103,17 @@ ask for a tile the download did not fetch, and the E2E asserts that each version
 | `unet_scratch` | `unet` | `none` | `runs/unet_scratch-f1.0` | z-score of the run's training cells |
 | `unet_imagenet` | `unet` | `imagenet` | `runs/unet_imagenet-f1.0` | z-score of the run's training cells |
 | `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/unet_sentinel2-f1.0` | reflectance / 10000, stored as mean 0 and std 1 |
-| `convnet` | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
+| `convnet` (smp's DeepLabV3) | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
 
 The experiment is the three U-Net variants and the ConvNet, all at 100%: 4 runs, one env file each,
 and 4 x 31 = 124 method and calibration rows, 17 main rows and 14 of the sensitivity analysis
 above, each at the three levels alpha = 0.05, 0.10 and 0.15: 372 rows. One architecture with three
-starting weights, plus the ConvNet without skip connections that the proposal asks for, so the runs
-vary where the model starts, not its design. Each run is one training, so differences between
+starting weights, plus the ConvNet that the proposal asks for: the ConvNet, smp's DeepLabV3 with a
+ResNet-18 encoder, whose decoder reads only the deepest feature, so no skip connections. The U-Net
+runs vary where the model starts; the ConvNet against `unet_scratch`, both from random weights on
+the same ResNet-18 layers, varies the decoder, skip connections or none, together with the
+encoder's output stride: DeepLabV3 dilates `layer3` and `layer4` to stride 8, where the U-Net's
+encoder downsamples to 32. Each run is one training, so differences between
 variants have no replication behind them and the comparison is descriptive only.
 `merge_results.py` identifies a run by `(model, train_fraction)` and refuses a repeated pair; each
 run's paired comparisons stay inside that run.
@@ -140,8 +144,9 @@ compares each such file's path, size and mtime: a `best_model.pt` with a new mti
 after training refuse. Both weights are plain files
 under `$GARIMPO_DATA_DIR/weights/`, so training never reaches a network or a library cache.
 
-Every U-Net uses a ResNet-18 encoder, fixed in `models.unet.UNET_ENCODER`, the smallest ResNet with both ImageNet and SSL4EO-S12 MoCo weights (a U-Net of 14.3 M parameters, against 32.5 M with ResNet-50), so `LAYERS` carries over between
-them and no run can mix encoders. `choose_layer.py` chooses the layer per run. The names `decoder.blocks.N` come
+Every model uses a ResNet-18 encoder, fixed in `models.ENCODER`, the smallest ResNet with both ImageNet and SSL4EO-S12 MoCo weights (a U-Net of 14.3 M parameters, against 32.5 M with ResNet-50), so `LAYERS` carries over between
+the U-Nets and no run can mix encoders. `choose_layer.py` chooses the layer per run. The names `decoder.blocks.N` come
 from smp's decoder (`decoders/unet/decoder.py` of the pinned 0.6.0), which keeps one block per
-`decoder_channels` entry and takes its input widths from the encoder. `fit_directions.py` checks each name against
+`decoder_channels` entry and takes its input widths from the encoder. The ConvNet's are `decoder.aspp` and
+`decoder.relu`, from `decoders/deeplabv3/decoder.py`. `fit_directions.py` checks each name against
 the built model and stops on an unknown one, and the E2E asserts the two names the pilot uses.

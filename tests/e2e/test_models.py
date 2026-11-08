@@ -15,22 +15,23 @@ WEIGHTS_ARTIFACTS = support.ROOT / "tests" / "artifacts" / "weights"
 SENTINEL2_MOCO_COLUMNS = (1, 2, 3, 7, 11, 12)
 
 
-@pytest.mark.parametrize(
-    ("arch", "options"),
-    [("convnet", {"channels": [8, 16, 32]}), ("unet", {})],
-    ids=["convnet", "unet"],
-)
-def test_decomposition_reproduces_the_model(arch: str, options: dict) -> None:
+# Literal module names of smp 0.6.0, so a name the layer pattern misses or adds fails here.
+EXPECTED_LAYERS = {
+    "convnet": ["decoder.aspp", "decoder.relu", "logits"],
+    "unet": [*(f"decoder.blocks.{index}" for index in range(5)), "logits"],
+}
+
+
+@pytest.mark.parametrize("arch", ["convnet", "unet"])
+def test_decomposition_reproduces_the_model(arch: str) -> None:
     """F then g must reproduce the model at every layer, and z must really drive the output."""
     torch.manual_seed(0)
     x = torch.randn(2, 6, support.CELL_PX, support.CELL_PX)
-    model = garimpo_uncertainty.models.common.build(arch, in_channels=6, **options).eval()
+    model = garimpo_uncertainty.models.common.build(arch, in_channels=6).eval()
     layers = garimpo_uncertainty.models.common.feature_layers(model)
-    assert len(layers) > 1
-    assert layers[-1] == garimpo_uncertainty.models.common.LOGITS
-    first_layer = model.down[0] if arch == "convnet" else model.encoder.conv1
+    assert layers == EXPECTED_LAYERS[arch]
     encoder_passes = []
-    first_layer.register_forward_hook(lambda *_, passes=encoder_passes: passes.append(1))
+    model.encoder.conv1.register_forward_hook(lambda *_, passes=encoder_passes: passes.append(1))
     with torch.no_grad():
         expected = model(x)
         encoder_passes.clear()

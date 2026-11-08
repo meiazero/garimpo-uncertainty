@@ -4,7 +4,7 @@ Read before step 5 of [full-run.md](full-run.md).
 
 `slurm/full.env.example` holds the decided values, so a copy of it starts with them filled in.
 `slurm/full.sbatch` stops on the first open value left empty. Pilot values outside the Decided
-table are not suggestions. `ARCH`, `ARCH_ARGS`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION`
+table are not suggestions. `ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION`
 name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 
 ## Decided
@@ -23,6 +23,7 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 | `BETA_RANGE_LOGITS`, `BETA_RANGE_FEATURES`, `SEARCH_THRESHOLD_LOGITS` | 100, 1000, 1e-2 | Upstream's active runner, `2D/run_cp.py:488-492`. The paper gives none of them |
 | `CELLS` | `all` | Calibration must come from the test cells' distribution (Mossina et al. 2024, Algorithm 1). `nonempty` selects by the reference, unknown when an interval is used |
 | `BOUNDARY_TOLERANCE_PX` | 5.43 | 0.75% of the image diagonal, Csurka et al. 2013, BMVC; also MATLAB `bfscore`'s default. A 512-pixel cell's diagonal is 724 pixels |
+| ConvNet (`--arch convnet`) | smp's `DeepLabV3`: encoder `models.ENCODER` (ResNet-18, the U-Net's), `encoder_weights=None`, `classes=1`, every other argument at smp's default: `encoder_output_stride` 8, `decoder_channels` 256, `decoder_atrous_rates` (12, 24, 36), ASPP not separable, `decoder_aspp_dropout` 0.5, final upsampling equal to the output stride | User decision, 2026-11-08. In the installed `segmentation_models_pytorch` 0.6.0: defaults at `decoders/deeplabv3/model.py:61-73`, upsampling at `model.py:93-99`; `DeepLabV3Decoder.forward` at `decoders/deeplabv3/decoder.py:64-70` starts from `features[-1]` alone, so no skip connections. Against `unet_scratch` it changes the decoder and, with it, the encoder's output stride: the same ResNet-18 layers, dilated to stride 8 (`model.py:84-91` passes `output_stride` to the encoder) |
 | `alpha` | 0.05, 0.1 and 0.15, every run | Cheung et al. 2026, COMPASS, Table 1; the constant `intervals.ALPHAS`, no flag |
 
 ## Open
@@ -30,7 +31,6 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 | Value | Where | What settles it |
 |---|---|---|
 | `EVAL_BATCH_SIZE` | `slurm/full.env.example` | The pilot's GPU peaks; changing it after an OOM refuses nothing |
-| ConvNet channel widths | `train.py` | No source; the proposal only asks for a network without skip connections |
 | Layers to diagnose (`LAYERS`) | `fit_directions.py` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |
 | Direction temperature (`--direction-temperature`) | `fit_directions.py`, `verify_monotonicity.py`, `compass_scores.py` | The sigmoid temperature of the area whose Jacobian sets the COMPASS-J direction, apart from the metric's 1e4. At 1e4 the gradient vanishes beyond \|logit\| ≈ 5e-3, so cells predicted empty get the PCA mean as direction. Choose it by leave-one-group-out on calibration; the same value in all three stages |
 | `MIN_FRACTION_ASCENDING`: share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen | `choose_layer.py` | Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Read the pilot's `monotonicity_layer.csv` before fixing it. Too high, and `choose_layer` stops the job naming the closest layer; resubmitting with another value redoes only `choose_layer`, since the stages before it skip |

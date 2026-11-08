@@ -7,6 +7,7 @@ import segmentation_models_pytorch
 import torch
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.models
 
 # Each choice names one model in every results table.
 UNET_VARIANTS = {
@@ -14,7 +15,6 @@ UNET_VARIANTS = {
     "imagenet": "unet_imagenet",
     "sentinel2_moco": "unet_sentinel2",
 }
-UNET_ENCODER = "resnet18"
 IMAGENET_N_BANDS = 3
 SENTINEL2_MOCO_BANDS = (
     "B01",
@@ -38,7 +38,7 @@ def build(
 ) -> segmentation_models_pytorch.Unet:
     """Build the U-Net, loading the chosen starting weights into its encoder."""
     model = segmentation_models_pytorch.Unet(
-        encoder_name=UNET_ENCODER,
+        encoder_name=garimpo_uncertainty.models.ENCODER,
         encoder_weights=None,
         in_channels=in_channels,
         classes=1,

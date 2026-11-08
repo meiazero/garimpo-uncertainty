@@ -84,7 +84,7 @@ EXPECTED_ROWS |= {
     if calibration in {"external", "own_region"}
 }
 RUN_ORDER = {
-    "convnet": (["--channels", "8", "16", "32"], "up.1", "up.0"),
+    "convnet": ([], "decoder.relu", "decoder.aspp"),
     "unet": (
         ["--encoder-weights", "none"],
         "decoder.blocks.4",
@@ -259,7 +259,13 @@ def run(
 ) -> subprocess.CompletedProcess:
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
     command = [sys.executable, f"scripts/{script}", *args]
-    return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
+    result = subprocess.run(  # noqa: S603 - arguments come from the tests
+        command, check=False, cwd=ROOT, env=env, capture_output=True, text=True
+    )
+    # CalledProcessError's message omits stderr, which is all CI shows of a failing stage.
+    if check and result.returncode != 0:
+        raise AssertionError(f"{script} exited {result.returncode}:\n{result.stderr[-4000:]}")
+    return result
 
 
 def train_args(
@@ -381,7 +387,9 @@ def compute_metrics(
     return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
 
 
-def run_stages_after_training(run_dir: Path, layers: list[str], data_root: Path) -> str:
+def run_stages_after_training(
+    run_dir: Path, layers: list[str], data_root: Path, direction_args: tuple[str, ...] = ()
+) -> str:
     """Run inference through the intervals as slurm/stages.sh does; return the chosen layer."""
     common = checkpoint_args(run_dir)
     run("infer.py", *common, data_root=data_root)
@@ -396,6 +404,7 @@ def run_stages_after_training(run_dir: Path, layers: list[str], data_root: Path)
         "balanced",
         "--svm-pixels-per-cell",
         "50",
+        *direction_args,
         data_root=data_root,
     )
     sweep(run_dir, "layer", layers, data_root)

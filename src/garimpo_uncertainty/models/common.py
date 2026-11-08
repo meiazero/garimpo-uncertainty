@@ -4,19 +4,23 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
+import segmentation_models_pytorch
 import torch
 
 import garimpo_uncertainty.models.convnet
 import garimpo_uncertainty.models.unet
 
-FEATURE_LAYER = re.compile(r"(up|decoder\.blocks)\.\d+")
+# U-Net blocks, then the ConvNet's ASPP and decoder output; never the `decoder` both models have.
+FEATURE_LAYER = re.compile(r"decoder\.(blocks\.\d+|aspp|relu)")
 LOGITS = "logits"
 
 
 def check_encoder_weights(arch: str, encoder_weights: str | None) -> None:
     """Raise when a choice of starting weights does not fit the model."""
     if arch == "convnet" and encoder_weights is not None:
-        raise ValueError("--encoder-weights is invalid for convnet, which has no encoder")
+        raise ValueError(
+            "--encoder-weights is invalid for convnet, which always starts from random weights"
+        )
     if arch == "unet" and encoder_weights is None:
         variants = ", ".join(garimpo_uncertainty.models.unet.UNET_VARIANTS)
         raise ValueError(f"--encoder-weights is required for unet: {variants}")
@@ -32,7 +36,6 @@ def variant_name(arch: str, encoder_weights: str | None) -> str:
 def build(
     arch: str,
     in_channels: int,
-    channels: list[int] | None = None,
     encoder_weights: str = "none",
     weights_file: Path | None = None,
 ) -> torch.nn.Module:
@@ -41,9 +44,7 @@ def build(
     Only the start of a training reads pretrained weights, so later stages never need them.
     """
     if arch == "convnet":
-        if not channels:
-            raise ValueError("convnet needs channels")
-        return garimpo_uncertainty.models.convnet.ConvNet(in_channels, channels)
+        return garimpo_uncertainty.models.convnet.build(in_channels)
     if arch == "unet":
         return garimpo_uncertainty.models.unet.build(in_channels, encoder_weights, weights_file)
     raise ValueError(f"unknown architecture: {arch!r}")
@@ -61,20 +62,12 @@ def feature_layers(model: torch.nn.Module) -> list[str]:
 @torch.no_grad()
 def encode(model: torch.nn.Module, x: torch.Tensor) -> list[torch.Tensor]:
     """Return the encoder's output for a batch; every g(z) on it reads from this one pass."""
-    return (
-        [model.encode(x)]
-        if isinstance(model, garimpo_uncertainty.models.convnet.ConvNet)
-        else model.encoder(x)
-    )
+    return model.encoder(x)
 
 
 def _run_blocks(
     model: torch.nn.Module, features: list[torch.Tensor], z: torch.Tensor, blocks: range
 ) -> torch.Tensor:
-    if isinstance(model, garimpo_uncertainty.models.convnet.ConvNet):
-        for index in blocks:
-            z = model.up[index](z)
-        return z
     # Mirrors UnetDecoder.forward of smp 0.6.0, which pyproject.toml pins for this reason.
     shapes = [feature.shape[2:] for feature in features][::-1]
     skips = features[1:-1][::-1]
@@ -92,12 +85,13 @@ def split_at(
 
     COMPASS evaluates g dozens of times per batch, so g must not depend on the encoder's cost.
     """
-    is_convnet = isinstance(model, garimpo_uncertainty.models.convnet.ConvNet)
-    total = len(model.up if is_convnet else model.decoder.blocks)
-    head = model.head if is_convnet else model.segmentation_head
+    if isinstance(model, segmentation_models_pytorch.DeepLabV3):
+        return _split_convnet(model, layer, features)
+    total = len(model.decoder.blocks)
+    head = model.segmentation_head
     stage = total - 1 if layer == LOGITS else int(layer.rsplit(".", 1)[1])
     with torch.no_grad():
-        first = features[0] if is_convnet else model.decoder.center(features[-1])
+        first = model.decoder.center(features[-1])
         z = _run_blocks(model, features, first, range(stage + 1))
         if layer == LOGITS:
             return head(z), lambda logits: logits
@@ -106,3 +100,22 @@ def split_at(
         return head(_run_blocks(model, features, zi, range(stage + 1, total)))
 
     return z, decode
+
+
+def _split_convnet(
+    model: segmentation_models_pytorch.DeepLabV3, layer: str, features: list[torch.Tensor]
+) -> tuple[torch.Tensor, torch.nn.Sequential]:
+    decoder = model.decoder
+    # Mirrors DeepLabV3Decoder.forward of smp 0.6.0: one chain on the deepest feature alone.
+    chain = {
+        "decoder.aspp": decoder.aspp,
+        "decoder.conv": decoder.conv,
+        "decoder.bn": decoder.bn,
+        "decoder.relu": decoder.relu,
+        LOGITS: model.segmentation_head,
+    }
+    stop = list(chain).index(layer) + 1
+    modules = list(chain.values())
+    with torch.no_grad():
+        z = torch.nn.Sequential(*modules[:stop])(features[-1])
+    return z, torch.nn.Sequential(*modules[stop:])
