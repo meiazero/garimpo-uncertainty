@@ -185,6 +185,12 @@ def _run_work(
         }
         write_json(status_path, record | _peak_memory())
         raise
+    except KeyboardInterrupt:
+        # Ctrl+C is no failure to debug: the stage stopped where it was and a rerun resumes it.
+        seconds = round(time.monotonic() - start, 1)
+        stopped = {"status": "interrupted", "error": "Ctrl+C; rerun to resume", "seconds": seconds}
+        write_json(status_path, identity | stopped)
+        raise
     record = identity | {
         "status": "ok",
         "completed_fingerprint": stage_fingerprint,

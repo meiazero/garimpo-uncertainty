@@ -28,7 +28,7 @@ dev = [
     "ruff>=0.16.9",
 ]
 
-# The PyPI torch wheel targets CUDA 13; the CENAPAD A100 driver needs the cu126 build.
+# The PyPI torch wheel targets CUDA 13; the cu126 build also runs on hosts with a CUDA 12 driver.
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"

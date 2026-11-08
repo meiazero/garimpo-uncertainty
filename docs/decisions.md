@@ -12,6 +12,7 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 | Value | Set to | Source |
 |---|---|---|
 | Training budget across fractions | Same `EPOCHS` and `STEPS_PER_EPOCH` in every run, so every fraction gets the same updates and is validated at the same steps | Bornschein et al. 2020, arXiv:2009.12583, §3.3: an epoch is "always 1.28M/256 = 5000 gradient steps, regardless of the size of the actual training set used"; with fixed epochs the 1% run would get 100× fewer updates than the 100% run |
+| `EPOCHS` | 100, every run | User decision, 2026-11-08: 25,000 updates of 16 cells. The time per update is what the pilot measures |
 | `STEPS_PER_EPOCH` | 250 | nnU-Net, Isensee et al. 2021, arXiv:1904.08128: "each epoch is defined as 250 training iterations" |
 | `BATCH_SIZE` | 16 | Jasansky et al., same dataset and 512-pixel chips: `configs/cnn/cnn_segment_config_gpu_L4.yaml` of github.com/SimonJasansky/mine-segmentation. COMPASS used 32 on 128-pixel images (Appendix E) |
 | `LR` | 1e-4, AdamW | Cheung et al. 2026, COMPASS, Appendix E; `2D/datasets/kvasir/run_nn.py:58` of github.com/matthewyccheung/compass |
@@ -28,7 +29,6 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 
 | Value | Where | What settles it |
 |---|---|---|
-| `EPOCHS`, one value for every run | `slurm/full.env.example` | The pilot's seconds per update on an L4: each run's training within 12 h, and the stages after it within 4 h |
 | `EVAL_BATCH_SIZE` | `slurm/full.env.example` | The pilot's GPU peaks; changing it after an OOM refuses nothing |
 | ConvNet channel widths | `train.py` | No source; the proposal only asks for a network without skip connections |
 | Layers to diagnose (`LAYERS`) | `fit_directions.py` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |

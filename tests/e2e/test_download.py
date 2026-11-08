@@ -4,6 +4,7 @@ import hashlib
 import json
 import runpy
 import sys
+import threading
 import urllib.error
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ import shapely.affinity
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
+import garimpo_uncertainty.stages
 import garimpo_uncertainty.validation
 from tests.e2e import support
 
@@ -313,6 +315,66 @@ def test_crash_during_a_recut_leaves_no_sidecar_vouching_for_it(scratch_download
     # The hash must follow the re-cut slots, not stay from the first cut.
     sidecar = json.loads(sidecar_path.read_text())
     assert sidecar["slots_sha256"] == garimpo_uncertainty.data.slots_sha256(store, slice(0, 16))
+
+
+def test_ctrl_c_finishes_the_tile_in_progress_and_starts_no_other(
+    scratch_download: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl+C after the first tile, while one worker holds the second; the rerun does the rest."""
+    root = scratch_download
+    tiles = root / "tiles"
+    before = {t: (tiles / f"{t}.json").stat().st_mtime_ns for t in (0, 1)}
+    second_started, release = threading.Event(), threading.Event()
+    process_tile = download.process_tile
+
+    def held_second_tile(root: Path, store: object, source: download.TileSource, *rest: object):
+        if source.tile_id == 1:
+            second_started.set()
+            release.wait(timeout=30)
+        return process_tile(root, store, source, *rest)
+
+    info = download.logger.info
+
+    def ctrl_c_on_first_progress(message: str, *args: object) -> None:
+        info(message, *args)
+        if message.startswith("[%s/%s]"):
+            assert second_started.wait(timeout=30)
+            threading.Timer(0.2, release.set).start()
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(download, "process_tile", held_second_tile)
+    monkeypatch.setattr(download.logger, "info", ctrl_c_on_first_progress)
+
+    def work() -> dict:
+        download.download_scenes(root, SPLIT, SPLIT, 1, BILINEAR, force=True)
+        return {}
+
+    status = root / "status" / "download_scenes.json"
+    with pytest.raises(KeyboardInterrupt):
+        garimpo_uncertainty.stages.run_stage(
+            root / "status",
+            "download_scenes",
+            [],
+            {"arguments": {}, "inputs": {}},
+            work,
+            force=False,
+        )
+
+    after = {t: (tiles / f"{t}.json").stat().st_mtime_ns for t in (0, 1)}
+    assert all(after[t] != before[t] for t in (0, 1)), "both tiles must have been redone"
+    assert json.loads((tiles / "1.json").read_text())["status"] == "missing_item"
+    assert not (tiles / "2.json").exists()
+    assert not (tiles / "3.json").exists()
+    assert json.loads(status.read_text())["status"] == "interrupted"
+    assert "completed_fingerprint" not in json.loads(status.read_text())
+
+    monkeypatch.setattr(download.logger, "info", info)
+    download.download_scenes(root, SPLIT, SPLIT, 1, BILINEAR)
+    assert (tiles / "0.json").stat().st_mtime_ns == after[0], "a finished tile was redone"
+    assert {json.loads((tiles / f"{t}.json").read_text())["status"] for t in (2, 3)} == {
+        "missing_item",
+        "error_ValueError",
+    }
 
 
 def test_missing_artisanal_tile_and_off_scene_window_fail_validation(

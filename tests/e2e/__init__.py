@@ -1,4 +1,4 @@
-"""End-to-end checks on synthetic data, on CPU, through the same code the cluster runs.
+"""End-to-end checks on synthetic data, on CPU, through the same code a pod runs.
 
 Covered: select_tiles on the real split, the versioned tile lists, the cell store, the download on
 local rasters (tile_origin, process_tile, _read_band, _boa_offset, download_scenes, the lists and

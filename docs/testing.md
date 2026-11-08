@@ -3,7 +3,7 @@
 Read before changing the pipeline or adding a test.
 
 ```bash
-slurm/submit.sh slurm/cpu.sbatch -m pytest -q
+uv run pytest -q
 uv run ruff format --check . && uv run ruff check .
 ```
 

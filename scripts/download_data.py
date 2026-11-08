@@ -1,4 +1,4 @@
-"""Login-node stage: downloads metadata, weights or Sentinel-2 cells; safe to rerun, it resumes.
+"""Download stage, no GPU: metadata, weights or Sentinel-2 cells; safe to rerun, it resumes.
 
 `lists` writes which tiles each training fraction uses, once per seed; `scenes` downloads one list.
 """
