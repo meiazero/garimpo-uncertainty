@@ -7,7 +7,7 @@ last column names a guard that a test in `tests/e2e/` exercises.
 
 | # | Failure | Caught by |
 |---|---|---|
-| 1 | A Sentinel-2 scene is missing and the tile disappears silently | `validate_data.py` (artisanal: `missing_scenes`; industrial with `missing_item` or `no_mask_polygon`: `tiles_not_ok`, excluded from the counts), E2E for `missing_scenes` and `missing_item` |
+| 1 | A Sentinel-2 scene is missing and the tile disappears silently | `validate_data.py` (artisanal: `missing_scenes`; industrial with `missing_item` or `no_mask_polygon`: `tiles_not_ok`, excluded from the counts), E2E for `missing_scenes`, `missing_item` and `no_mask_polygon` |
 | 2 | Only part of a group's selected tiles is downloaded, so a group's coverage is computed on a biased subset | `validate_data.py` (`partial_group`), E2E |
 | 3 | A group spans two split roles (leakage) | `validate_data.py` (`group_leakage`), E2E |
 | 4 | An interrupted download leaves half-written slots that a resume trusts | slots flushed before the sidecar says `ok`; a forced re-cut removes the sidecar first, E2E |
@@ -16,9 +16,9 @@ last column names a guard that a test in `tests/e2e/` exercises.
 | 7 | Processing baseline 04.00 adds a radiometric offset, so scenes across 2022 differ by construction | `boa_offset` in the sidecar of each tile, applied by `CellDataset`, E2E |
 | 8 | The mask is rasterized on a grid other than the image's | Not checked automatically: raster versus vector area and NDVI contrast are diagnostics, with no threshold, to read in the report |
 | 9 | Cell size is not what the area metric assumes | `validate_data.py` (`store_layout`, `pixel_size`) |
-| 10 | `g(f(x))` differs from `model(x)`: wrong layer, skip connection lost, batch norm in train mode | E2E for the layer and the skip connection; eval mode is set by `checkpoints.load_model`, while the E2E sets it itself |
+| 10 | `g(f(x))` differs from `model(x)`: wrong layer, skip connection lost, batch norm in train mode | E2E for the layer and the skip connection; eval mode is set by `checkpoints.load_model`, E2E on a trained checkpoint: no module left in train mode, and each cell's output is the same alone or in a batch |
 | 11 | A library upgrade renames the U-Net decoder modules | `models.common.feature_layers` raises, E2E |
-| 12 | Empty cells have zero Jacobians and normalization gives NaN | `directions._scale` raises; mean term in the PCA direction; no E2E |
+| 12 | Empty cells have zero Jacobians and normalization gives NaN | `directions._scale` raises; mean term in the PCA direction; E2E on the fitted directions of a run, with a zero Jacobian and with no mean |
 | 13 | The SVM normal points to less area | orientation against the mean Jacobian, E2E |
 | 14 | SVM or PCA see calibration or test cells | training-role pass only, `n_train_cells` checked in E2E |
 | 15 | Non-monotonic response makes endpoint intervals non-nested | Algorithm 2 sweep over the search range, `monotonicity_endpoint.csv`; sampled cells and grid points only, so a turn between two points passes |

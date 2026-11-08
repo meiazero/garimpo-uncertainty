@@ -671,6 +671,47 @@ def test_each_compass_row_alone_matches_the_one_pass(
     assert np.array_equal(alone_upper, evaluation.all_upper[level, compass_inputs.rows])
 
 
+def test_loaded_model_scores_each_cell_independently_of_its_batch(
+    compass_inputs: CompassInputs,
+) -> None:
+    """jacobian_sum takes per-cell gradients from one backward pass over a batch.
+
+    That holds only if no cell's output depends on another's, which batch norm in train mode
+    breaks; the stages get their model from load_model alone, so it must leave eval mode on.
+    """
+    model = compass_inputs.model
+    assert not any(module.training for module in model.modules())
+    assert not any(parameter.requires_grad for parameter in model.parameters())
+    torch.manual_seed(0)
+    x = torch.randn(3, compass_inputs.metadata["in_channels"], support.CELL_PX, support.CELL_PX)
+    with torch.no_grad():
+        together = model(x)
+        alone = torch.cat([model(x[i : i + 1]) for i in range(len(x))])
+    assert torch.allclose(together, alone, atol=1e-5)
+
+
+def test_empty_cell_gets_the_scaled_mean_direction(compass_inputs: CompassInputs) -> None:
+    """A cell predicted empty has a zero Jacobian; its PCA direction must be finite, never NaN.
+
+    With no mean either, the direction is zero, and dividing by its spread must raise instead.
+    """
+    fitted = compass_inputs.fitted
+    jacobians = compass_inputs.jacobians.copy()
+    jacobians[0] = 0
+    deltas = compass2d.directions.cell_deltas("pca", jacobians, fitted)
+    assert np.isfinite(deltas).all()
+    np.testing.assert_allclose(deltas[0], fitted.pca_mean / fitted.pca_mean.std(ddof=1))
+
+    no_mean = compass2d.directions.Directions(
+        fitted.pca_components,
+        np.zeros_like(fitted.pca_mean),
+        fitted.pca_explained_variance,
+        fitted.svm_w,
+    )
+    with pytest.raises(ValueError, match="constant across channels"):
+        compass2d.directions.cell_deltas("pca", jacobians, no_mean)
+
+
 def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     evaluation: Evaluation, compass_inputs: CompassInputs
 ) -> None:

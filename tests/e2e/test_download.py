@@ -509,6 +509,36 @@ def test_missing_artisanal_tile_and_off_scene_window_fail_validation(
     assert "partial_group" in problems, problems
 
 
+def test_tile_without_a_mask_polygon_never_disappears_silently(
+    scene: tuple[dict, np.ndarray], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both scenes exist, but neither tile has a polygon: the artisanal one must fail validation."""
+    root = DOWNLOAD_ARTIFACTS / "no_mask_polygon"
+    write_local_gpkg(root, ["S2_LOCAL"] * 4, [TILE_BOX] * 4, [MASK] * 4)
+    geopandas.GeoDataFrame({"tile_id": [2, 3], "geometry": [to_wgs84(MASK)] * 2}, crs=4326).to_file(
+        download.gpkg_path(root), layer="preferred_polygons", driver="GPKG"
+    )
+    serve_local_scene(monkeypatch, scene[0])
+    download.download_scenes(root, SPLIT, SELECTED, 2, BILINEAR)
+    for tile_id in TILE_IDS:
+        sidecar = json.loads((root / "tiles" / f"{tile_id}.json").read_text())
+        assert sidecar["status"] == "no_mask_polygon", sidecar
+
+    report, _ = garimpo_uncertainty.validation.validate(
+        root, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, workers=2
+    )
+    assert "missing_scenes: 1 cases, for example [0]" in report["problems"], report["problems"]
+    # The industrial tile counts as excluded; only the artisanal one is unaccounted for.
+    counts = "split_counts: 1 cases, for example ['Artisanal/test: expected 1, accounted for 0']"
+    assert counts in report["problems"], report["problems"]
+    assert not any(p.startswith("industrial_download_errors") for p in report["problems"])
+    assert report["industrial_tiles_excluded"] == 1
+    assert {(r["tile_id"], r["status"]) for r in report["tiles_not_ok"]} == {
+        (0, "no_mask_polygon"),
+        (1, "no_mask_polygon"),
+    }
+
+
 def test_sidecar_binds_its_tile_to_its_slot_and_content(downloaded: Path) -> None:
     store = garimpo_uncertainty.data.open_store(downloaded)
     sidecar = json.loads((downloaded / "tiles" / "0.json").read_text())
