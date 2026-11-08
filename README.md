@@ -17,56 +17,61 @@ Attribution and licenses: [below](#attribution-and-licenses).
 
 ## Install
 
-On a RunPod pod with a network volume at `/workspace`. Keep the clone and the data there: the
-container disk is erased when the pod stops. The repository is private, so clone with a GitHub token.
+Every Colab session starts the same way. In a Python cell, with a read-only GitHub token saved as
+the Colab secret `GH_TOKEN`, since the repository is private:
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh                     # again on every new pod
-export UV_PYTHON_INSTALL_DIR=/workspace/uv-python                   # in every new shell
-export GARIMPO_DATA_DIR=/workspace/garimpo-data                     # in every new shell
-cd /workspace
-git clone --recurse-submodules <ROOT_REPO_URL> garimpo-uncertainty
-cd garimpo-uncertainty
-uv sync
-git config core.hooksPath .githooks
+```python
+import os
+from google.colab import drive, userdata
+drive.mount("/content/drive")
+REPO = "github.com/<OWNER>/garimpo-uncertainty.git"         # the repository's path on GitHub
+DRIVE = "/content/drive/MyDrive/garimpo"                    # store and runs between sessions
+DATA = "/content/garimpo-data"                              # always this path: runs record it
+TOKEN = userdata.get("GH_TOKEN")
+os.environ["GARIMPO_DATA_DIR"] = DATA
+os.environ["PATH"] = "/root/.local/bin:" + os.environ["PATH"]
+!apt-get -qq install -y rsync > /dev/null
+!curl -LsSf https://astral.sh/uv/install.sh | sh
+!git clone --recurse-submodules https://{TOKEN}@{REPO} /content/garimpo-uncertainty
+%cd /content/garimpo-uncertainty
+!uv sync
+!mkdir -p {DRIVE}/data {DRIVE}/runs {DATA} runs outputs/logs
+!rsync -a {DRIVE}/data/ {DATA}/ && rsync -a {DRIVE}/runs/ runs/
 ```
 
-`uv sync` runs once, on the first pod; later pods reuse `.venv` from the volume. It needs the
-interpreter on the volume too, hence `UV_PYTHON_INSTALL_DIR`: uv installs Python 3.12 when the image
-lacks it, by default on the container disk. Its download cache stays on the container disk, so give
-that first pod a container disk of 20 GB: torch and its CUDA libraries take about 5.3 GB.
-
-The data root is `$GARIMPO_DATA_DIR`; its default, `~/Experiments/datasets/garimpo`, is on the
-container disk of a pod.
+The runtime's disk is erased when the session ends, so the store and `runs/` live in Drive and are
+copied to the local disk first: reading the store's memmaps through Drive would make every cell a
+remote read. A `!` line mixing a Python `{name}` with a shell `$name` is passed on unexpanded, so the
+cells use Python names only and write `$$` for the shell's `$`. `rsync -a` keeps modification times, which the stages' fingerprints compare. Check that
+`df -h /content` leaves room for the 69.2 GB store, `.venv` (6.9 GB) and the runs.
 
 ## Quick start
 
-The pilot, the 1% training fraction. The download needs no GPU: where the volume's data center
-offers CPU pods with network volumes, one can do it while no GPU is billed.
+The data, once, on a CPU runtime, after the session cell. The 1% list comes first: the time between its two `date` lines
+says whether the 100% list fits the session, since a session that ends mid-download loses what the
+local disk held:
 
-```bash
-bash slurm/pilot.sbatch download
-ENCODER_WEIGHTS=imagenet bash slurm/pilot.sbatch download           # data, then that variant's weights
-ENCODER_WEIGHTS=sentinel2_moco bash slurm/pilot.sbatch download
+```python
+!date; uv run --no-sync python scripts/download_data.py metadata; date
+!date; uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_1pct.json --resampling-20m bilinear; date
+!date; uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m bilinear; date
+!uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco
+!rsync -a {DATA}/ {DRIVE}/data/
+from google.colab import runtime; runtime.unassign()
 ```
 
-Then on the GPU pod, inside `tmux` so a dropped SSH session does not stop it. The pod bills by the hour until it stops, so the chain below stops it when the last variant ends,
-failed or not; the data and runs stay on the volume. The variants run one after another, since they
-would share one GPU. First check that `command -v runpodctl && echo "$RUNPOD_POD_ID"` prints both
-(RunPod's docs spell the command `runpodctl pod stop`; older versions take `runpodctl stop pod`):
+The pilot, the 1% training fraction, on an L4 runtime, after the session cell. A cell goes on after
+a failed `!` line, so the runs reach Drive and `runtime.unassign()` releases the GPU, which spends
+compute units until it is released, whatever the pilot's outcome:
 
-```bash
-tmux new -s pilot                                  # apt-get install -y tmux if missing
-mkdir -p outputs/logs
-for w in none imagenet sentinel2_moco; do
-    ENCODER_WEIGHTS=$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$w.log
-done; runpodctl pod stop "$RUNPOD_POD_ID"
+```python
+!for w in none imagenet sentinel2_moco; do ENCODER_WEIGHTS=$$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$$w.log; done
+!rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
+from google.colab import runtime; runtime.unassign()
 ```
 
-Detach with `Ctrl-b d` and reattach with `tmux attach -t pilot`.
-
-After a code fix, the same chain with `FORCE_FROM=calibrate` before `bash slurm/pilot.sbatch`
-redoes each variant from that stage.
+After a code fix, `FORCE_FROM=calibrate` before `bash slurm/pilot.sbatch` redoes each variant from
+that stage.
 
 Results go to `runs/pilot/`, never to `outputs/`. How a run goes and how to restart it:
 [docs/pilot.md](docs/pilot.md).
@@ -76,7 +81,7 @@ Results go to `runs/pilot/`, never to `outputs/`. How a run goes and how to rest
 | Document | Covers |
 |---|---|
 | [docs/pilot.md](docs/pilot.md) | The pilot run, its check report, resubmitting with `FORCE_FROM` |
-| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading a larger fraction, regenerating tile lists, running several runs on one pod, rerunning one stage |
+| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading a larger fraction, regenerating tile lists, the run cell for Colab, rerunning one stage |
 | [docs/runs.md](docs/runs.md) | Dataset size by role, training fractions, tile lists, model variants, starting weights and their limits |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, and where each is set |
 | [docs/stages.md](docs/stages.md) | Every stage's node, inputs and outputs; skips, refusals and the data validation |

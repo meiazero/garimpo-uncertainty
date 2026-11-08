@@ -4,18 +4,26 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 
 | Step | Where | Command |
 |---|---|---|
-| 1 | any pod | The [install](../README.md#install), with `GARIMPO_DATA_DIR` on the network volume |
-| 2 | any pod | `uv run --no-sync python scripts/download_data.py metadata` |
-| 3 | any pod | `uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m bilinear` (from the versioned list, so `lists` need not run first; resumable; contains every smaller fraction of that list's seed; sizes in [runs.md](runs.md#training-fractions); another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar, so later stages refuse until redone; a re-cut with identical content changes nothing) |
-| 4 | any pod | `uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco` |
-| 5 | any pod | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, then fill in every value (see [decisions.md](decisions.md)) |
-| 6 | GPU pod | Inside `tmux`: `CUDA_VISIBLE_DEVICES=0 bash slurm/full.sbatch slurm/unet_scratch-f1.0.env 2>&1 \| tee outputs/logs/unet_scratch-f1.0.log`, or with the pod stopping at the end as [below](#several-runs-on-one-pod) (the run chooses the layer from the validation role and continues; `chosen_layer.json` records why) |
-| 7 | GPU pod | Repeat steps 5 and 6 for each other run of the learning curve in [runs.md](runs.md#model-variants), one per GPU, as [below](#several-runs-on-one-pod) |
-| 8 | any pod | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
+| 1 | every session | The session cell of the [install](../README.md#install) |
+| 2 | CPU runtime, once | The data cell of the [quick start](../README.md#quick-start): metadata, the 100% list, both weights, then `rsync` to Drive (from the versioned list, so `lists` need not run first; resumable within a session; contains every smaller fraction of that list's seed; sizes in [runs.md](runs.md#training-fractions); another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar) |
+| 3 | any | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, fill in every value (see [decisions.md](decisions.md)), and commit it, since each session starts from a fresh clone |
+| 4 | GPU runtime | The run cell below, one run per session (the run chooses the layer from the validation role and continues; `chosen_layer.json` records why) |
+| 5 | GPU runtime | Repeat steps 3 and 4 for each other run in [runs.md](runs.md#model-variants) |
+| 6 | any | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
 
-Steps 2 to 4 need no GPU: where the volume's data center offers CPU pods with network volumes, one
-can do them while no GPU is billed; not every data center does. Every script uses `uv run --no-sync`, so a run never changes the environment under the
-others. Create `outputs/logs` once before step 6.
+The run cell, after the session cell. A background `rsync` copies `runs/` to Drive every 30 minutes,
+so a session that ends mid-run keeps the finished stages and the last checkpoint. Resuming training
+from that checkpoint is not covered by the tests. `NUM_WORKERS` follows the runtime's CPUs:
+
+```python
+ENV = "unet_scratch-f1.0"
+!(while sleep 1800; do rsync -a --exclude '*.tmp' runs/ {DRIVE}/runs/; done) > /dev/null 2>&1 &
+!NUM_WORKERS={os.cpu_count()} bash slurm/full.sbatch slurm/{ENV}.env 2>&1 | tee outputs/logs/{ENV}.log
+!rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
+from google.colab import runtime; runtime.unassign()
+```
+
+Every script uses `uv run --no-sync`, so a run never changes the environment under itself.
 
 ## Download a larger fraction
 
@@ -38,34 +46,10 @@ uv run --no-sync python scripts/download_data.py lists --subset-seed <SUBSET_SEE
 The E2E fails if regenerating with the recorded seed does not reproduce the versioned files byte for
 byte, so commit the regenerated files with whatever changed them.
 
-## Several runs on one pod
-
-Each run uses one GPU, chosen with `CUDA_VISIBLE_DEVICES`. On a pod with four, start four runs, and
-give each `NUM_WORKERS` of about the pod's vCPUs divided by four (default 16):
-
-`wait` holds until the four end, failed or not, and then the pod stops, since it bills by the hour
-until it does; check `runpodctl` first, as in [pilot.md](pilot.md):
-
-```bash
-tmux new -s full
-for gpu_env in 0:unet_scratch-f1.0 1:unet_imagenet-f1.0 2:unet_sentinel2-f1.0 3:convnet-f1.0; do
-    gpu=${gpu_env%%:*}; env=${gpu_env#*:}
-    CUDA_VISIBLE_DEVICES=$gpu NUM_WORKERS=<N> bash slurm/full.sbatch slurm/$env.env \
-        > outputs/logs/$env.log 2>&1 &
-done; wait; runpodctl pod stop "$RUNPOD_POD_ID"
-```
-
-`tail -f outputs/logs/<run>.log` follows one run from another `tmux` window.
-
-Training and the later stages write only to their own `RUN_DIR`. Runs of one fraction share the
-validation report and its status, written atomically. Each run hashes every slot of its selection
-when it starts, so four 100% runs started together read 4 x 69.2 GB at once from the volume. No test
-covers runs started side by side.
-
 ## Rerun one stage
 
-Rerunning one stage needs no earlier stage: `uv run --no-sync python scripts/<stage>.py ...`, on the
-GPU pod for the stages [stages.md](stages.md) marks GPU. A new metric or another boundary F1
+Rerunning one stage needs no earlier stage: `uv run --no-sync python scripts/<stage>.py ...`, on a GPU
+runtime for the stages [stages.md](stages.md) marks GPU. A new metric or another boundary F1
 tolerance, with the run's `SEED` because the seed is part of the fingerprint:
 
 ```bash

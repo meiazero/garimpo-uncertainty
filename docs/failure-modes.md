@@ -28,7 +28,7 @@ Written before the pipeline, and the origin of the test.
 | 20 | Bootstrap resamples cells instead of groups, or method pairs use different resamples | shared group index matrix in `evaluation.summarize`; the E2E checks the paired point differences, not the resamples |
 | 21 | A method x calibration row is missing from the results | exact row set checked in E2E |
 | 22 | A stage changes the environment under a run in progress | `uv run --no-sync` in every script |
-| 23 | The pod stops and its container disk takes the data or the runs with it | clone and `GARIMPO_DATA_DIR` on the network volume ([README](../README.md#install)); not checked automatically |
+| 23 | The Colab session ends and its disk takes the data or the runs with it | store and `runs/` kept in Drive, `runs/` copied every 30 minutes during a run ([full-run.md](full-run.md)); not checked automatically |
 | 24 | A metric change forces a retrain | stages read persisted files; E2E hashes everything around a metrics rerun |
 | 25 | A changed argument silently reuses an old output | stage fingerprint refuses and fails the pipeline check, E2E; a code change is redone by name with `FORCE_FROM` |
 | 26 | A later stage rebuilds the model on another split | split hash in the checkpoint |

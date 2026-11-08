@@ -3,8 +3,7 @@
 #   cp slurm/full.env.example slurm/unet_scratch-f1.0.env    # fill in; see docs/decisions.md
 #   CUDA_VISIBLE_DEVICES=0 bash slurm/full.sbatch slurm/unet_scratch-f1.0.env
 #
-# One run per GPU: on a pod with several, start one per CUDA_VISIBLE_DEVICES and give each
-# NUM_WORKERS of about the pod's vCPUs divided by the runs.
+# One run per GPU. NUM_WORKERS sets the data loader processes, such as $(nproc) on Colab.
 #
 # The COMPASS-J layer is chosen inside the run, from the validation role (scripts/choose_layer.py).
 set -euo pipefail

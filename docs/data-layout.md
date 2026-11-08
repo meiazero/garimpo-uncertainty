@@ -30,7 +30,7 @@ tile is 58.7 MB. The download writes a tile's 16 slots, flushes, and only then w
 the selection on every call, skip included, and on any difference validates again and fails with
 `slot_hash`. `pipeline_check.py` also recomputes it, last, and fails on `slot_hash`, `store_missing`
 or `sidecars_missing`. Each therefore reads every slot of the selection, up to 69.2 GB per call on the
-full run, in time not measured on a network volume. Other stages' fingerprints read sidecars only: they still skip
+full run, in time not measured on Colab's disk. Other stages' fingerprints read sidecars only: they still skip
 on a damaged store, and these two are what fails. Hashes cover a selection's tiles only, so tiles
 arriving elsewhere leave finished runs valid. If an array is lost while an `ok` sidecar exists, the
 download refuses rather than recreate it as zeros.
@@ -38,8 +38,8 @@ download refuses rather than recreate it as zeros.
 The arrays are created whole, for all 18,864 cells, before the first tile. `np.lib.format.open_memmap`
 extends each file by seeking past its end and writing one byte (`numpy/_core/memmap.py`), so unwritten
 slots stay holes where the filesystem supports them, and only written slots take disk. Where it does
-not, the full 69.2 GB is allocated at creation, even for the pilot. This was not measured on a
-RunPod network volume: after the first `download`, compare `du -h $GARIMPO_DATA_DIR/images.npy` with
+not, the full 69.2 GB is allocated at creation, even for the pilot. This was not measured on
+Colab's disk: after the first `download`, compare `du -h $GARIMPO_DATA_DIR/images.npy` with
 `ls -lh`. A copy that does not preserve holes also takes the full size, so use `rsync --sparse`. A
 full disk under a write to a hole can kill the process with SIGBUS rather than raise; no `ok` is then
 written, so rerun after freeing space. Untested. In all, images 59.3 GB plus masks and SCL 9.9 GB.
