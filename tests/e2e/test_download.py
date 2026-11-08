@@ -377,6 +377,58 @@ def test_ctrl_c_finishes_the_tile_in_progress_and_starts_no_other(
     }
 
 
+def test_second_ctrl_c_quits_without_waiting_and_names_the_abandoned_tile(
+    scratch_download: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tile hangs in progress; the second Ctrl+C must return at once and leave its sidecar."""
+    root = scratch_download
+    held = root / "tiles" / "1.json"
+    before = held.stat().st_mtime_ns
+    second_started, release, ended = threading.Event(), threading.Event(), threading.Event()
+    process_tile = download.process_tile
+
+    def hung_second_tile(root: Path, store: object, source: download.TileSource, *rest: object):
+        if source.tile_id != 1:
+            return process_tile(root, store, source, *rest)
+        second_started.set()
+        release.wait(timeout=60)
+        try:
+            return process_tile(root, store, source, *rest)
+        finally:
+            ended.set()
+
+    info, warning = download.logger.info, download.logger.warning
+    warnings: list[str] = []
+
+    def ctrl_c_on_first_progress(message: str, *args: object) -> None:
+        info(message, *args)
+        if message.startswith("[%s/%s]"):
+            assert second_started.wait(timeout=30)
+            raise KeyboardInterrupt
+
+    def ctrl_c_again_while_waiting(message: str, *args: object) -> None:
+        warning(message, *args)
+        warnings.append(message % args)
+        if message.startswith("\nCtrl+C"):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(download, "process_tile", hung_second_tile)
+    monkeypatch.setattr(download.logger, "info", ctrl_c_on_first_progress)
+    monkeypatch.setattr(download.logger, "warning", ctrl_c_again_while_waiting)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            download.download_scenes(root, SPLIT, SPLIT, 1, BILINEAR, force=True)
+        assert not ended.is_set(), "the second Ctrl+C waited for the tile in progress"
+        assert held.stat().st_mtime_ns == before
+        assert "2 queued tiles will not start" in warnings[0], warnings
+        assert "in progress to save, so their download is kept: [1]" in warnings[0], warnings
+        assert warnings[-1] == "second Ctrl+C: quitting now; tiles [1] are redone on rerun"
+    finally:
+        # The abandoned worker must end before the fixture restores the data root under it.
+        release.set()
+        assert ended.wait(timeout=60)
+
+
 def test_missing_artisanal_tile_and_off_scene_window_fail_validation(
     scratch_download: Path,
 ) -> None:

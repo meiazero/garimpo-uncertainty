@@ -6,6 +6,8 @@
 import argparse
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -134,4 +136,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        # A normal exit joins the worker threads, so after a second Ctrl+C it would wait for the
+        # tiles in progress; the stage status is already written by now.
+        sys.stdout.flush()
+        os._exit(130)
