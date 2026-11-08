@@ -2,13 +2,17 @@
 
 import hashlib
 import json
+import os
 import re
 import runpy
+import signal
+import subprocess
 import sys
 import threading
+import time
 import urllib.error
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import geopandas
@@ -318,33 +322,71 @@ def test_crash_during_a_recut_leaves_no_sidecar_vouching_for_it(scratch_download
     assert sidecar["slots_sha256"] == garimpo_uncertainty.data.slots_sha256(store, slice(0, 16))
 
 
+@dataclass
+class HeldTile:
+    """Tile 1 waits in its worker until released, so Ctrl+C arrives while it is in progress."""
+
+    started: threading.Event = field(default_factory=threading.Event)
+    release: threading.Event = field(default_factory=threading.Event)
+    ended: threading.Event = field(default_factory=threading.Event)
+
+
+def hold_second_tile(monkeypatch: pytest.MonkeyPatch) -> HeldTile:
+    held, process_tile = HeldTile(), download.process_tile
+
+    def held_second_tile(root: Path, store: object, source: download.TileSource, *rest: object):
+        if source.tile_id != 1:
+            return process_tile(root, store, source, *rest)
+        held.started.set()
+        held.release.wait(timeout=60)
+        try:
+            return process_tile(root, store, source, *rest)
+        finally:
+            held.ended.set()
+
+    monkeypatch.setattr(download, "process_tile", held_second_tile)
+    return held
+
+
+def press_ctrl_c_on(
+    monkeypatch: pytest.MonkeyPatch, level: str, starts: str, then: Callable[[], None]
+) -> list[str]:
+    """Run `then` in the main thread right after the first message starting with `starts`.
+
+    Records the formatted messages of that level, so a test can read what the user saw.
+    """
+    original, seen = getattr(download.logger, level), []
+
+    def log(message: str, *args: object) -> None:
+        original(message, *args)
+        seen.append(message % args if args else message)
+        if seen[-1].startswith(starts) and sum(m.startswith(starts) for m in seen) == 1:
+            then()
+
+    monkeypatch.setattr(download.logger, level, log)
+    return seen
+
+
 def test_ctrl_c_finishes_the_tile_in_progress_and_starts_no_other(
     scratch_download: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ctrl+C after the first tile, while one worker holds the second; the rerun does the rest."""
+    """A real SIGINT after the first tile, sent twice at once as `uv run` forwards it.
+
+    One worker holds the second tile; the rerun does the rest.
+    """
     root = scratch_download
     tiles = root / "tiles"
     before = {t: (tiles / f"{t}.json").stat().st_mtime_ns for t in (0, 1)}
-    second_started, release = threading.Event(), threading.Event()
-    process_tile = download.process_tile
+    held = hold_second_tile(monkeypatch)
 
-    def held_second_tile(root: Path, store: object, source: download.TileSource, *rest: object):
-        if source.tile_id == 1:
-            second_started.set()
-            release.wait(timeout=30)
-        return process_tile(root, store, source, *rest)
+    def one_press_twice() -> None:
+        assert held.started.wait(timeout=30)
+        signal.raise_signal(signal.SIGINT)
+        signal.raise_signal(signal.SIGINT)
+        threading.Timer(0.2, held.release.set).start()
 
-    info = download.logger.info
-
-    def ctrl_c_on_first_progress(message: str, *args: object) -> None:
-        info(message, *args)
-        if message.startswith("[%s/%s]"):
-            assert second_started.wait(timeout=30)
-            threading.Timer(0.2, release.set).start()
-            raise KeyboardInterrupt
-
-    monkeypatch.setattr(download, "process_tile", held_second_tile)
-    monkeypatch.setattr(download.logger, "info", ctrl_c_on_first_progress)
+    press_ctrl_c_on(monkeypatch, "info", "[1/4]", one_press_twice)
+    warnings = press_ctrl_c_on(monkeypatch, "warning", "never", lambda: None)
 
     def work() -> dict:
         download.download_scenes(root, SPLIT, SPLIT, 1, BILINEAR, force=True)
@@ -361,6 +403,10 @@ def test_ctrl_c_finishes_the_tile_in_progress_and_starts_no_other(
             force=False,
         )
 
+    assert warnings[0].startswith("Ctrl+C: stopping. 2 queued tiles will not start"), warnings
+    assert warnings[0].endswith("so their download is kept: [1]"), warnings
+    assert "  tile 1 saved: missing_item; 0 still in progress" in warnings, warnings
+    assert warnings[-1].startswith("stopped: every finished tile is saved"), warnings
     after = {t: (tiles / f"{t}.json").stat().st_mtime_ns for t in (0, 1)}
     assert all(after[t] != before[t] for t in (0, 1)), "both tiles must have been redone"
     assert json.loads((tiles / "1.json").read_text())["status"] == "missing_item"
@@ -368,8 +414,8 @@ def test_ctrl_c_finishes_the_tile_in_progress_and_starts_no_other(
     assert not (tiles / "3.json").exists()
     assert json.loads(status.read_text())["status"] == "interrupted"
     assert "completed_fingerprint" not in json.loads(status.read_text())
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
 
-    monkeypatch.setattr(download.logger, "info", info)
     download.download_scenes(root, SPLIT, SPLIT, 1, BILINEAR)
     assert (tiles / "0.json").stat().st_mtime_ns == after[0], "a finished tile was redone"
     assert {json.loads((tiles / f"{t}.json").read_text())["status"] for t in (2, 3)} == {
@@ -381,53 +427,71 @@ def test_ctrl_c_finishes_the_tile_in_progress_and_starts_no_other(
 def test_second_ctrl_c_quits_without_waiting_and_names_the_abandoned_tile(
     scratch_download: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tile hangs in progress; the second Ctrl+C must return at once and leave its sidecar."""
+    """Tile 1 hangs in progress; a later press must return at once and leave its sidecar."""
     root = scratch_download
-    held = root / "tiles" / "1.json"
-    before = held.stat().st_mtime_ns
-    second_started, release, ended = threading.Event(), threading.Event(), threading.Event()
-    process_tile = download.process_tile
+    sidecar = root / "tiles" / "1.json"
+    before = sidecar.stat().st_mtime_ns
+    held = hold_second_tile(monkeypatch)
+    monkeypatch.setattr(download, "SAME_PRESS_S", 0.05)
 
-    def hung_second_tile(root: Path, store: object, source: download.TileSource, *rest: object):
-        if source.tile_id != 1:
-            return process_tile(root, store, source, *rest)
-        second_started.set()
-        release.wait(timeout=60)
-        try:
-            return process_tile(root, store, source, *rest)
-        finally:
-            ended.set()
+    def press() -> None:
+        assert held.started.wait(timeout=30)
+        signal.raise_signal(signal.SIGINT)
 
-    info, warning = download.logger.info, download.logger.warning
-    warnings: list[str] = []
+    def press_again() -> None:
+        time.sleep(0.1)
+        signal.raise_signal(signal.SIGINT)
 
-    def ctrl_c_on_first_progress(message: str, *args: object) -> None:
-        info(message, *args)
-        if message.startswith("[%s/%s]"):
-            assert second_started.wait(timeout=30)
-            raise KeyboardInterrupt
-
-    def ctrl_c_again_while_waiting(message: str, *args: object) -> None:
-        warning(message, *args)
-        warnings.append(message % args)
-        if message.startswith("\nCtrl+C"):
-            raise KeyboardInterrupt
-
-    monkeypatch.setattr(download, "process_tile", hung_second_tile)
-    monkeypatch.setattr(download.logger, "info", ctrl_c_on_first_progress)
-    monkeypatch.setattr(download.logger, "warning", ctrl_c_again_while_waiting)
+    press_ctrl_c_on(monkeypatch, "info", "[1/4]", press)
+    warnings = press_ctrl_c_on(monkeypatch, "warning", "Ctrl+C again", press_again)
     try:
         with pytest.raises(KeyboardInterrupt):
             download.download_scenes(root, SPLIT, SPLIT, 1, BILINEAR, force=True)
-        assert not ended.is_set(), "the second Ctrl+C waited for the tile in progress"
-        assert held.stat().st_mtime_ns == before
-        assert "2 queued tiles will not start" in warnings[0], warnings
-        assert "in progress to save, so their download is kept: [1]" in warnings[0], warnings
+        assert not held.ended.is_set(), "the second Ctrl+C waited for the tile in progress"
+        assert sidecar.stat().st_mtime_ns == before
         assert warnings[-1] == "second Ctrl+C: quitting now; tiles [1] are redone on rerun"
+        assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
     finally:
         # The abandoned worker must end before the fixture restores the data root under it.
-        release.set()
-        assert ended.wait(timeout=60)
+        held.release.set()
+        assert held.ended.wait(timeout=60)
+
+
+SLOW_POOL = """
+import time
+import garimpo_uncertainty.download, garimpo_uncertainty.stages
+garimpo_uncertainty.stages.log_to_stdout()
+def one(tile_id):
+    time.sleep(3)
+    return tile_id, "ok"
+print("ready", flush=True)
+garimpo_uncertainty.download._process_in_pool(one, list(range(8)), 4)
+"""
+
+
+def test_one_ctrl_c_through_uv_run_still_waits_for_the_tiles_in_progress() -> None:
+    """The terminal signals the whole process group and `uv run` forwards it again to python.
+
+    Four tiles run, four wait; one press must keep the four running ones and start no other.
+    """
+    command = ["uv", "run", "--no-sync", "python", "-c", SLOW_POOL]
+    process = subprocess.Popen(  # noqa: S603 - a fixed command
+        command,
+        cwd=support.ROOT,
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    assert process.stdout.readline().strip() == "ready"
+    time.sleep(0.5)
+    os.killpg(process.pid, signal.SIGINT)
+    output, _ = process.communicate(timeout=60)
+    assert process.returncode != 0, output
+    assert "Ctrl+C: stopping. 4 queued tiles will not start" in output, output
+    assert output.count(" saved: ok; ") == 4, output
+    assert "stopped: every finished tile is saved" in output, output
+    assert "second Ctrl+C" not in output, output
 
 
 def test_missing_artisanal_tile_and_off_scene_window_fail_validation(
@@ -508,7 +572,11 @@ def run_scenes_command(patch: pytest.MonkeyPatch, root: Path, tile_list: Path) -
     arguments = ["--split", str(LIST_SPLIT_PATH), "--tiles", str(tile_list)]
     arguments += ["--resampling-20m", "bilinear"]
     patch.setattr(sys, "argv", ["download_data.py", "scenes", *arguments])
-    runpy.run_path(str(support.ROOT / "scripts" / "download_data.py"), run_name="__main__")
+    try:
+        runpy.run_path(str(support.ROOT / "scripts" / "download_data.py"), run_name="__main__")
+    finally:
+        # Drop the command's log file, or later tests in this process would append to it.
+        garimpo_uncertainty.stages.log_to_stdout()
 
 
 def sidecars() -> dict[int, tuple[str, int]]:
