@@ -13,8 +13,8 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 | 7 | GPU pod | Repeat steps 5 and 6 for each other run of the learning curve in [runs.md](runs.md#model-variants), one per GPU, as [below](#several-runs-on-one-pod) |
 | 8 | any pod | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
 
-Steps 2 to 4 need no GPU, so a CPU pod on the same network volume can do them while no GPU is
-billed. Every script uses `uv run --no-sync`, so a run never changes the environment under the
+Steps 2 to 4 need no GPU: where the volume's data center offers CPU pods with network volumes, one
+can do them while no GPU is billed; not every data center does. Every script uses `uv run --no-sync`, so a run never changes the environment under the
 others. Create `outputs/logs` once before step 6.
 
 ## Download a larger fraction

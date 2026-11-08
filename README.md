@@ -35,8 +35,8 @@ container disk of a pod.
 
 ## Quick start
 
-The pilot, the 1% training fraction. The download needs no GPU, so a CPU pod on the same volume
-can do it:
+The pilot, the 1% training fraction. The download needs no GPU: where the volume's data center
+offers CPU pods with network volumes, one can do it while no GPU is billed.
 
 ```bash
 bash slurm/pilot.sbatch download
