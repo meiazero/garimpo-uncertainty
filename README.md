@@ -30,33 +30,37 @@ DATA = "/content/garimpo-data"                              # always this path: 
 TOKEN = userdata.get("GH_TOKEN")
 os.environ["GARIMPO_DATA_DIR"] = DATA
 os.environ["PATH"] = "/root/.local/bin:" + os.environ["PATH"]
-!apt-get -qq install -y rsync > /dev/null
+!apt-get -qq install -y rsync zstd > /dev/null
 !curl -LsSf https://astral.sh/uv/install.sh | sh
 !git clone --recurse-submodules https://{TOKEN}@{REPO} /content/garimpo-uncertainty
 %cd /content/garimpo-uncertainty
 !uv sync
-!mkdir -p {DRIVE}/data {DRIVE}/runs {DATA} runs outputs/logs
-!rsync -a {DRIVE}/data/ {DATA}/ && rsync -a {DRIVE}/runs/ runs/
+!mkdir -p {DRIVE}/runs {DATA} runs outputs/logs
+!tar -I zstd -xf {DRIVE}/data.tar.zst -C {DATA}
+!rsync -a {DRIVE}/runs/ runs/
 ```
 
-The runtime's disk is erased when the session ends, so the store and `runs/` live in Drive and are
-copied to the local disk first: reading the store's memmaps through Drive would make every cell a
-remote read. A `!` line mixing a Python `{name}` with a shell `$name` is passed on unexpanded, so the
-cells use Python names only and write `$$` for the shell's `$`. `rsync -a` keeps modification times, which the stages' fingerprints compare. Check that
+The runtime's disk is erased when the session ends, so the store lives in Drive as one archive,
+`data.tar.zst`, extracted to the local disk at every session, and `runs/` is copied from Drive: reading
+the store's memmaps through Drive would make every cell a remote read. Before the archive exists,
+the `tar` line prints an error and the cell goes on. A `!` line mixing a Python `{name}` with a shell `$name` is passed on unexpanded, so the
+cells use Python names only and write `$$` for the shell's `$`. `tar` and `rsync -a` keep modification times, which the stages' fingerprints compare. Check that
 `df -h /content` leaves room for the 69.2 GB store, `.venv` (6.9 GB) and the runs.
 
 ## Quick start
 
 The data, once, on a CPU runtime, after the session cell. The 1% list comes first: the time between its two `date` lines
 says whether the 100% list fits the session, since a session that ends mid-download loses what the
-local disk held:
+local disk held. The archive uses zstd level 3 here, as higher levels compress far slower on the
+runtime's 2 CPUs; any level extracts with the same command. `--format=posix` keeps the modification
+times to the nanosecond, where tar's default format keeps whole seconds:
 
 ```python
 !date; uv run --no-sync python scripts/download_data.py metadata; date
 !date; uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_1pct.json --resampling-20m bilinear; date
 !date; uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m bilinear; date
 !uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco
-!rsync -a {DATA}/ {DRIVE}/data/
+!tar --format=posix -I 'zstd -3 -T0' -cf {DRIVE}/data.tar.zst -C {DATA} .
 from google.colab import runtime; runtime.unassign()
 ```
 
