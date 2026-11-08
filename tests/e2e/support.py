@@ -33,6 +33,8 @@ CELL_PX = 32
 CELLS_PER_TILE = (TILE_PX // CELL_PX) ** 2
 EPSG = 32721
 BOUNDARY_TOLERANCE = 2.0
+# 80 samples at batch 8, more than the 60 training cells: an epoch is updates, not a pass.
+STEPS_PER_EPOCH = "10"
 # Literal copy of tab:combinacoes plus the SVM direction, kept apart from the pipeline's constant.
 EXPECTED_ROWS = {
     ("independent_pixels", "none"),
@@ -232,6 +234,7 @@ def train_args(
     lr: str = "1e-3",
     epochs: str = "3",
     *,
+    steps_per_epoch: str = STEPS_PER_EPOCH,
     split_path: Path = SPLIT_PATH,
     fraction: str = "1.0",
     subset_seed: str = "0",
@@ -250,6 +253,8 @@ def train_args(
         subset_seed,
         "--epochs",
         epochs,
+        "--steps-per-epoch",
+        steps_per_epoch,
         "--batch-size",
         batch_size,
         "--lr",

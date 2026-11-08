@@ -131,7 +131,7 @@ def report_store(
 
 def print_run_tables(run_dir: Path) -> None:
     print_table(
-        "validation Dice, timings, data wait and GPU peaks per epoch",
+        "updates, validation Dice, timings, data wait and GPU peaks per epoch",
         run_dir / "history.csv",
         lambda f: f.set_index("epoch"),
     )
