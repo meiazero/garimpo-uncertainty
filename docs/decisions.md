@@ -12,7 +12,7 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 | Value | Set to | Source |
 |---|---|---|
 | Training budget across fractions | Same `EPOCHS` and `STEPS_PER_EPOCH` in every run, so every fraction gets the same updates and is validated at the same steps | Bornschein et al. 2020, arXiv:2009.12583, §3.3: an epoch is "always 1.28M/256 = 5000 gradient steps, regardless of the size of the actual training set used"; with fixed epochs the 1% run would get 100× fewer updates than the 100% run |
-| `EPOCHS` | 100, every run | User decision, 2026-11-08: 25,000 updates of 16 cells. The ResNet-18 U-Net trained 139.8 cells/s in fp32 on a Colab A100 (batch 16, 512 pixels, data already on the GPU), so ~48 min of compute before data loading and validation |
+| `EPOCHS` | 100, every run | User decision, 2026-11-08: 25,000 updates of 16 cells. The time per update is what the pilot measures |
 | `STEPS_PER_EPOCH` | 250 | nnU-Net, Isensee et al. 2021, arXiv:1904.08128: "each epoch is defined as 250 training iterations" |
 | `BATCH_SIZE` | 16 | Jasansky et al., same dataset and 512-pixel chips: `configs/cnn/cnn_segment_config_gpu_L4.yaml` of github.com/SimonJasansky/mine-segmentation. COMPASS used 32 on 128-pixel images (Appendix E) |
 | `LR` | 1e-4, AdamW | Cheung et al. 2026, COMPASS, Appendix E; `2D/datasets/kvasir/run_nn.py:58` of github.com/matthewyccheung/compass |
