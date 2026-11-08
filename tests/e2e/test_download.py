@@ -408,9 +408,12 @@ def test_tile_without_a_mask_polygon_never_disappears_silently(
         assert sidecar["status"] == "no_mask_polygon", sidecar
 
     report, _ = garimpo_uncertainty.validation.validate(
-        root, SPLIT, TILE_IDS, CELL_PX, None, workers=2
+        root, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, workers=2
     )
     assert "missing_scenes: 1 cases, for example [0]" in report["problems"], report["problems"]
+    # The industrial tile counts as excluded; only the artisanal one is unaccounted for.
+    counts = "split_counts: 1 cases, for example ['Artisanal/test: expected 1, accounted for 0']"
+    assert counts in report["problems"], report["problems"]
     assert not any(p.startswith("industrial_download_errors") for p in report["problems"])
     assert report["industrial_tiles_excluded"] == 1
     assert {(r["tile_id"], r["status"]) for r in report["tiles_not_ok"]} == {

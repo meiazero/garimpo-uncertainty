@@ -16,7 +16,7 @@ last column names a guard that a test in `tests/e2e/` exercises.
 | 7 | Processing baseline 04.00 adds a radiometric offset, so scenes across 2022 differ by construction | `boa_offset` in the sidecar of each tile, applied by `CellDataset`, E2E |
 | 8 | The mask is rasterized on a grid other than the image's | Not checked automatically: raster versus vector area and NDVI contrast are diagnostics, with no threshold, to read in the report |
 | 9 | Cell size is not what the area metric assumes | `validate_data.py` (`store_layout`, `pixel_size`) |
-| 10 | `g(f(x))` differs from `model(x)`: wrong layer, skip connection lost, batch norm in train mode | E2E for the layer and the skip connection; eval mode is set by `checkpoints.load_model`, E2E on a trained checkpoint: each cell's output is the same alone or in a batch |
+| 10 | `g(f(x))` differs from `model(x)`: wrong layer, skip connection lost, batch norm in train mode | E2E for the layer and the skip connection; eval mode is set by `checkpoints.load_model`, E2E on a trained checkpoint: no module left in train mode, and each cell's output is the same alone or in a batch |
 | 11 | A library upgrade renames the U-Net decoder modules | `models.common.feature_layers` raises, E2E |
 | 12 | Empty cells have zero Jacobians and normalization gives NaN | `directions._scale` raises; mean term in the PCA direction; E2E on the fitted directions of a run, with a zero Jacobian and with no mean |
 | 13 | The SVM normal points to less area | orientation against the mean Jacobian, E2E |
