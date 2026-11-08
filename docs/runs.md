@@ -92,8 +92,8 @@ ask for a tile the download did not fetch, and the E2E asserts that each version
 | `convnet` | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
 
 The learning curve is 3 U-Net variants x 4 fractions plus the ConvNet at 100%: 13 runs, one env file
-each, and 13 x 31 = 403 method and calibration rows: 17 main rows and 14 of the sensitivity
-analysis above. The code does not refuse a ConvNet at a lower
+each, and 13 x 31 = 403 method and calibration rows, 17 main rows and 14 of the sensitivity
+analysis above, each at the three levels alpha = 0.05, 0.10 and 0.15: 1,209 rows. The code does not refuse a ConvNet at a lower
 fraction; it is simply not among these runs. Each run is one training, so differences between
 variants have no replication behind them and the comparison is descriptive only.
 `merge_results.py` identifies a run by `(model, train_fraction)` and refuses a repeated pair; each

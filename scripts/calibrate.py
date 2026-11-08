@@ -1,8 +1,8 @@
 """Stage: per-test-cell quantile of every method x calibration situation; no model, no GPU.
 
 Reads persisted areas and scores. Writes calibration/quantiles.npz: quantile and output-space terms
-as [K, N], K indexing COMBINATIONS and N the test cells (NaN terms on COMPASS rows, whose endpoints
-come from the decoder), and the score counts and saturation of each row as [K].
+as [A, K, N], A indexing ALPHAS, K COMBINATIONS and N the test cells (NaN terms on COMPASS rows,
+whose endpoints come from the decoder), and the score counts and saturation of each row as [A, K].
 """
 
 import argparse
@@ -191,26 +191,20 @@ def fill_output_space_row(
     rows.n_scores[k] = len(problem.test if own_region else problem.calibration)
 
 
-def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dict:
-    cells = garimpo_uncertainty.data.read_predictions(root, args.run_dir)
-    if args.cells == "nonempty":
-        cells = cells[cells.v > 0]
-    calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
-    test_cells = cells[cells.role == "test"].reset_index(drop=True)
-    scores, density_ratio = read_scores(calibration_cells, test_cells, args)
-    problem = CalibrationProblem(
-        calibration_cells, test_cells, density_ratio, args.alpha, args.seed
-    )
-    cqr_models = garimpo_uncertainty.intervals.fit_cqr(
-        cells[cells.role == "train"], args.alpha, args.seed
-    )
-
+def rows_at(
+    problem: CalibrationProblem,
+    scores: CompassScores,
+    train_cells: pd.DataFrame,
+    args: argparse.Namespace,
+) -> Rows:
+    """Every method x calibration row at problem.alpha; CQR fits its quantiles at that level."""
+    cqr_models = garimpo_uncertainty.intervals.fit_cqr(train_cells, problem.alpha, args.seed)
     combinations = garimpo_uncertainty.intervals.COMBINATIONS
-    rows = Rows.allocate(len(combinations), len(test_cells))
+    rows = Rows.allocate(len(combinations), len(problem.test))
     for k, (method, calibration) in enumerate(combinations):
         if method == "independent_pixels":
             rows.lower_term[k], rows.upper_term[k] = (
-                garimpo_uncertainty.intervals.independent_pixel_terms(test_cells, args.alpha)
+                garimpo_uncertainty.intervals.independent_pixel_terms(problem.test, problem.alpha)
             )
             rows.quantile[k], rows.scale[k] = 0.0, 1.0
         elif method in garimpo_uncertainty.intervals.COMPASS_METHODS:
@@ -225,23 +219,46 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
                 score_floor_ha=args.score_floor_ha,
                 cqr_models=cqr_models,
             )
+    return rows
+
+
+def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dict:
+    cells = garimpo_uncertainty.data.read_predictions(root, args.run_dir)
+    if args.cells == "nonempty":
+        cells = cells[cells.v > 0]
+    calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
+    test_cells = cells[cells.role == "test"].reset_index(drop=True)
+    scores, density_ratio = read_scores(calibration_cells, test_cells, args)
+    by_alpha = [
+        rows_at(
+            CalibrationProblem(calibration_cells, test_cells, density_ratio, alpha, args.seed),
+            scores,
+            cells[cells.role == "train"],
+            args,
+        )
+        for alpha in garimpo_uncertainty.intervals.ALPHAS
+    ]
+
+    def stacked(field: str) -> np.ndarray:
+        return np.stack([getattr(rows, field) for rows in by_alpha])
 
     garimpo_uncertainty.stages.write_arrays(
         quantiles_path,
         cell_index=test_cells.cell_index.to_numpy(),
-        quantile=rows.quantile,
-        lower_term=rows.lower_term,
-        upper_term=rows.upper_term,
-        scale=rows.scale,
-        alpha=np.array(args.alpha),
-        n_calibration_scores=rows.n_scores,
-        n_saturated_calibration=rows.n_saturated,
-        quantile_saturated_fraction=rows.saturated_fraction,
+        quantile=stacked("quantile"),
+        lower_term=stacked("lower_term"),
+        upper_term=stacked("upper_term"),
+        scale=stacked("scale"),
+        alpha=np.array(garimpo_uncertainty.intervals.ALPHAS),
+        n_calibration_scores=stacked("n_scores"),
+        n_saturated_calibration=stacked("n_saturated"),
+        quantile_saturated_fraction=stacked("saturated_fraction"),
     )
     return {
         "calibration_cells": len(calibration_cells),
         "test_cells": len(test_cells),
-        "rows": len(combinations),
+        "rows": len(garimpo_uncertainty.intervals.COMBINATIONS),
+        "alphas": list(garimpo_uncertainty.intervals.ALPHAS),
         "density_ratio_max": float(density_ratio.max()),
     }
 
@@ -261,7 +278,6 @@ def main() -> None:
         required=True,
         help="denominator floor of the relative and local scores",
     )
-    parser.add_argument("--alpha", type=float, default=0.1, help="0.1 is 90 percent coverage")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--lightgbm-jobs", type=int, default=1)
     parser.add_argument("--force", action="store_true")

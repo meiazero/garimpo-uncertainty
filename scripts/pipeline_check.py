@@ -165,20 +165,21 @@ def print_run_tables(run_dir: Path) -> None:
         run_dir / "metrics" / "results.csv",
         lambda f: f.dropna(subset=["n_saturated_calibration"])[
             [
+                "alpha",
                 "method",
                 "calibration",
                 "n_calibration_scores",
                 "n_saturated_calibration",
                 "quantile_saturated_fraction",
             ]
-        ].set_index(["method", "calibration"]),
+        ].set_index(["alpha", "method", "calibration"]),
     )
     print_table(
         "PICP and MPIW per method (pipeline check only)",
         run_dir / "metrics" / "results.csv",
-        lambda f: f[["method", "calibration", "n_cells", "n_groups", "picp", "mpiw"]].set_index(
-            ["method", "calibration"]
-        ),
+        lambda f: f[
+            ["alpha", "method", "calibration", "n_cells", "n_groups", "picp", "mpiw"]
+        ].set_index(["alpha", "method", "calibration"]),
     )
 
 
@@ -187,9 +188,13 @@ def results_failures(results_path: Path) -> list[dict]:
         return []
     results = pd.read_csv(results_path)
     failures = []
-    found = set(zip(results.method, results.calibration, strict=True))
-    absent = set(garimpo_uncertainty.intervals.COMBINATIONS) - found
-    if absent:
+    found = set(zip(results.alpha, results.method, results.calibration, strict=True))
+    expected = {
+        (alpha, method, calibration)
+        for alpha in garimpo_uncertainty.intervals.ALPHAS
+        for method, calibration in garimpo_uncertainty.intervals.COMBINATIONS
+    }
+    if absent := expected - found:
         failures.append({"stage": f"results rows absent: {sorted(absent)}"})
     if results[["picp", "mpiw"]].isna().any(axis=None):
         failures.append({"stage": "results contain NaN in PICP or MPIW"})

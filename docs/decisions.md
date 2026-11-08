@@ -22,7 +22,7 @@ name the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 | `BETA_RANGE_LOGITS`, `BETA_RANGE_FEATURES`, `SEARCH_THRESHOLD_LOGITS` | 100, 1000, 1e-2 | Upstream's active runner, `2D/run_cp.py:488-492`. The paper gives none of them |
 | `CELLS` | `all` | Calibration must come from the test cells' distribution (Mossina et al. 2024, Algorithm 1). `nonempty` selects by the reference, unknown when an interval is used |
 | `BOUNDARY_TOLERANCE_PX` | 5.43 | 0.75% of the image diagonal, Csurka et al. 2013, BMVC; also MATLAB `bfscore`'s default. A 512-pixel cell's diagonal is 724 pixels |
-| `alpha` | 0.1, 90% coverage | `calibrate.py`'s default; COMPASS's weighted runs use 0.1 (Figure 3) |
+| `alpha` | 0.05, 0.1 and 0.15, every run | Cheung et al. 2026, COMPASS, Table 1; the constant `intervals.ALPHAS`, no flag |
 
 ## Open
 

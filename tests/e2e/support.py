@@ -33,6 +33,8 @@ CELL_PX = 32
 CELLS_PER_TILE = (TILE_PX // CELL_PX) ** 2
 EPSG = 32721
 BOUNDARY_TOLERANCE = 2.0
+# Cheung et al. (2026), Table 1, kept apart from the pipeline's constant.
+ALPHAS = (0.05, 0.1, 0.15)
 # 80 samples at batch 8, more than the 60 training cells: an epoch is updates, not a pass.
 STEPS_PER_EPOCH = "10"
 # Literal copy of tab:combinacoes plus the SVM direction, kept apart from the pipeline's constant.
@@ -135,9 +137,10 @@ def group_tiles() -> list[dict]:
     plan += [("Asia/Oceania", "calibration", 6, 6)]
     plan += [("Asia/Oceania", "calibration", g, 1) for g in range(7, 14)]
     plan += [("Amazonia BR", "test", g, 2) for g in range(14, 22)]
-    # Repeated subsampling needs k > 1/alpha - 1 = 9 groups, and own region leaves one out.
-    plan += [("Asia/Oceania", "calibration", g, 1) for g in range(22, 25)]
-    plan += [("Amazonia BR", "test", g, 2) for g in range(25, 28)]
+    # Repeated subsampling needs k > 1/alpha - 1 groups, 19 at alpha 0.05, and own region leaves
+    # one out: 20 calibration and 21 test groups.
+    plan += [("Asia/Oceania", "calibration", g, 1) for g in range(22, 34)]
+    plan += [("Amazonia BR", "test", g, 1) for g in range(34, 47)]
     rows, tile_id = [], 0
     for region, role, group, n_tiles in plan:
         for _ in range(n_tiles):

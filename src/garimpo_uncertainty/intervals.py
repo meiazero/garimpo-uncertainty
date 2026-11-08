@@ -39,6 +39,7 @@ COMBINATIONS += tuple(
     if calibration in {"external", "own_region"}
 )
 SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
+ALPHAS = (0.05, 0.1, 0.15)  # Cheung et al. (2026), Table 1
 COMPASS_METHODS = ("compass_l", "compass_j_pca", "compass_j_svm")  # the rows of scores/scores.npz
 # Upstream's values, also in Cheung et al. (2026), Appendix E.
 CQR_PARAMETERS = {
