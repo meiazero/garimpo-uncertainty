@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Download the full store, the metadata and both starting weights to GARIMPO_DATA_DIR, on a machine
 # outside Colab. Stops before downloading when the disk cannot hold the store. Rerun to resume.
+# The Python steps also append their lines to $GARIMPO_DATA_DIR/logs/download.log.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -5,10 +5,12 @@ flushed. Tiles that fail keep their reason in the sidecar; nothing is dropped si
 """
 
 import concurrent.futures
+import dataclasses
 import hashlib
 import http
 import json
 import logging
+import signal
 import threading
 import time
 import urllib.error
@@ -442,23 +444,139 @@ def _refuse_other_resampling(
         )
 
 
+# `uv run` forwards the terminal's SIGINT to its child, so one key press can arrive twice.
+SAME_PRESS_S = 1.0
+POLL_S = 0.5
+QUIET_S = 15.0
+
+
+def _duration(seconds: float) -> str:
+    hours, minutes = divmod(round(seconds / 60), 60)
+    return f"{hours} h {minutes:02d} min" if hours or minutes else "< 1 min"
+
+
+def _outcome(future: concurrent.futures.Future) -> str:
+    error = future.exception()
+    return f"{type(error).__name__}: {error}" if error else future.result()[1]
+
+
+@dataclass
+class _Presses:
+    """Ctrl+C presses: the handler only records them, so no exception lands mid-statement."""
+
+    first: float | None = None
+    quit_now: bool = False
+
+    def press(self, *_: object) -> None:
+        now = time.monotonic()
+        if self.first is None:
+            self.first = now
+        elif now - self.first > SAME_PRESS_S:
+            self.quit_now = True
+
+
+@dataclass
+class _Progress:
+    total: int
+    workers: int
+    started: float = dataclasses.field(default_factory=time.monotonic)
+    count: int = 0
+    not_ok: int = 0
+
+    def line(self, tile_id: int, status: str) -> str:
+        self.count += 1
+        self.not_ok += status != "ok"
+        elapsed = time.monotonic() - self.started
+        # The first wave of tiles ends together, so the rate means nothing before it does.
+        left = (
+            _duration(elapsed / self.count * (self.total - self.count))
+            if self.count >= min(self.workers, self.total)
+            else f"known after the first {self.workers} tiles"
+        )
+        return (
+            f"[{self.count}/{self.total}] tile {tile_id}: {status} | {self.not_ok} not ok so far"
+            f" | {self.count / elapsed * 60:.1f} tiles/min | time left: {left}"
+        )
+
+
+def _cancel_queued(running: set[concurrent.futures.Future], futures: dict) -> set:
+    """Cancel the tiles not started yet and say which are still in progress."""
+    in_progress = {f for f in running if not f.cancel()}
+    logger.warning(
+        "Ctrl+C: stopping. %s queued tiles will not start. Waiting for the %s in progress to "
+        "save, so their download is kept: %s",
+        len(running) - len(in_progress),
+        len(in_progress),
+        sorted(futures[f] for f in in_progress),
+    )
+    logger.warning("Ctrl+C again, after a second, quits now; those tiles are then redone on rerun.")
+    return in_progress
+
+
+def _log_ended(
+    done: set[concurrent.futures.Future], futures: dict, left: int, progress: _Progress | None
+) -> None:
+    """Log the tiles that just ended: as progress, or, once stopping, as saved (`progress` None)."""
+    for future in done:
+        if progress is not None:
+            logger.info(progress.line(*future.result()))
+        else:
+            tile_id = futures[future]
+            logger.warning(
+                "  tile %s saved: %s; %s still in progress", tile_id, _outcome(future), left
+            )
+
+
+def _drain(futures: dict, presses: _Presses, progress: _Progress) -> set:
+    """Wait for the tiles, reacting to Ctrl+C; return those still running when told to quit."""
+    running, stopping, news = set(futures), False, time.monotonic()
+    while running and not presses.quit_now:
+        done, running = concurrent.futures.wait(
+            running, timeout=POLL_S, return_when=concurrent.futures.FIRST_COMPLETED
+        )
+        _log_ended(done, futures, len(running), None if stopping else progress)
+        news = time.monotonic() if done else news
+        if presses.first is not None and not stopping:
+            running, stopping = _cancel_queued(running, futures), True
+        elif stopping and time.monotonic() - news > QUIET_S:
+            logger.warning("  still waiting for tiles %s", sorted(futures[f] for f in running))
+            news = time.monotonic()
+    return running
+
+
 def _process_in_pool(
     one: Callable[[int], tuple[int, str]], pending: list[int], workers: int
 ) -> None:
-    """Run `one` over the pending tiles; on Ctrl+C, start no queued tile, finish those running."""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        try:
-            for count, (tile_id, status) in enumerate(pool.map(one, pending), start=1):
-                logger.info("[%s/%s] tile %s: %s", count, len(pending), tile_id, status)
-        except KeyboardInterrupt:
-            # Explicit, whatever the interpreter does with the map's queued futures.
-            logger.warning(
-                "interrupted: no queued tile starts; waiting for up to %s tiles in progress to "
-                "write their sidecars. Killing the process loses only those, redone on rerun.",
-                workers,
-            )
-            pool.shutdown(cancel_futures=True)
-            raise
+    """Run `one` over the pending tiles, logging each as it ends.
+
+    The first Ctrl+C starts no queued tile and waits for those in progress, naming each as it
+    saves; a later one quits at once. Either way it ends in KeyboardInterrupt, so the stage
+    records `interrupted`.
+    """
+    presses = _Presses()
+    previous = signal.signal(signal.SIGINT, presses.press)
+    # No `with`: its exit waits for the running tiles, which quitting at once must not do.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    progress = _Progress(len(pending), workers)
+    try:
+        futures = {pool.submit(one, tile_id): tile_id for tile_id in pending}
+        running = _drain(futures, presses, progress)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+        signal.signal(signal.SIGINT, previous)
+    if presses.quit_now:
+        abandoned = sorted(futures[f] for f in running)
+        logger.warning("second Ctrl+C: quitting now; tiles %s are redone on rerun", abandoned)
+        raise KeyboardInterrupt
+    if presses.first is not None:
+        logger.warning("stopped: every finished tile is saved. Rerun the same command to resume.")
+        raise KeyboardInterrupt
+    logger.info(
+        "done: %s tiles in %s, %s not ok",
+        progress.count,
+        _duration(time.monotonic() - progress.started),
+        progress.not_ok,
+    )
 
 
 def download_scenes(

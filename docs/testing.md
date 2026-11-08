@@ -29,7 +29,7 @@ uv run ruff format --check . && uv run ruff check .
 | `test_models.py` | f/g decomposition of each architecture; ImageNet and Sentinel-2 starting weights |
 | `test_tile_lists.py` | Counts and nesting on the real `outputs/split.csv`; the versioned lists regenerated and compared by bytes, tiles and `select_tiles` |
 | `test_store.py` | The store's tiles written in shuffled order and compared by bytes; the dataset reading slots |
-| `test_download.py` | The download code on local rasters, including `lists` and `scenes --tiles` from a small list to a larger one, the refusals of a list, and Ctrl+C finishing the tile in progress with status `interrupted` |
+| `test_download.py` | The download code on local rasters, including `lists` and `scenes --tiles` from a small list to a larger one, the refusals of a list, Ctrl+C finishing the tile in progress with status `interrupted`, a second Ctrl+C quitting without waiting, and the log file kept across runs |
 | `test_validation.py` | Defects in the store and the split against the validation |
 | `test_damaged_store.py` | A store damaged under a finished run: stages may skip, the validation and the report may not |
 | `test_training.py` | What training writes and every refusal |

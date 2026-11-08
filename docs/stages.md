@@ -74,9 +74,11 @@ the input is back a finished stage skips again.
 
 An `interrupted` status keeps no completed fingerprint, so a rerun runs the stage's work again
 instead of skipping it. `train.py` continues from `last.pt`, written after every epoch. The
-download starts no queued tile after Ctrl+C, waits for the tiles in progress to write their
-sidecars, and on rerun fetches only the tiles without an `ok` sidecar. Other stages start their
-work over.
+download starts no queued tile after Ctrl+C, names the tiles in progress and logs each as it
+writes its sidecar, and on rerun fetches only the tiles without an `ok` sidecar. Presses within
+a second of the first count as one, since `uv run` forwards the terminal's Ctrl+C to its child.
+A later Ctrl+C quits without waiting; the tiles still in progress then have no `ok` sidecar and are fetched again.
+Other stages start their work over.
 
 ## Run identity
 
