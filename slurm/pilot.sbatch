@@ -27,6 +27,7 @@
 #   all-zero Jacobians at temperature 10,000, and fit_directions stops; whether 40 updates avoid
 #   that is unknown.
 # The pipeline check prints the seconds and peak memory per stage that size the full run.
+set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # ---- PILOT VALUES: the decided ones of docs/decisions.md where it has one, so the pilot measures
