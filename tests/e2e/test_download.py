@@ -1,6 +1,9 @@
 """The download code on local rasters, with a fake Planetary Computer serving them."""
 
+import email.message
 import hashlib
+import http
+import io
 import json
 import os
 import re
@@ -738,3 +741,71 @@ def test_list_naming_tiles_outside_the_split_stops(
         run_scenes_command(monkeypatch, stale, edited)
     assert not (stale / "images.npy").exists()
     assert sidecars() == before
+
+
+class FakeClock:
+    """Monotonic time that moves only when a test or a sleep moves it."""
+
+    def __init__(self) -> None:
+        self.now = 1_000.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def fake_planetary_computer(
+    patch: pytest.MonkeyPatch, answers: list[int | dict]
+) -> tuple[FakeClock, list[str]]:
+    """Serve each request the next answer: a JSON body, or an HTTP status raised as an error."""
+    clock, requested = FakeClock(), []
+    patch.setattr(download.time, "monotonic", clock.monotonic)
+    patch.setattr(download.time, "sleep", clock.sleep)
+
+    def urlopen(url: str, timeout: float) -> io.BytesIO:
+        assert timeout > 0
+        requested.append(url)
+        answer = answers.pop(0)
+        if isinstance(answer, int):
+            headers = email.message.Message()
+            if answer == http.HTTPStatus.TOO_MANY_REQUESTS:
+                headers["Retry-After"] = "3"
+            raise urllib.error.HTTPError(url, answer, "fake", headers, None)
+        return io.BytesIO(json.dumps(answer).encode())
+
+    patch.setattr(download.urllib.request, "urlopen", urlopen)
+    return clock, requested
+
+
+def test_sas_token_is_renewed_during_a_long_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hrefs signed through one shared token, an hour of download apart."""
+    answers: list[int | dict] = [{"token": "sig=first"}, {"token": "sig=second"}]
+    clock, requested = fake_planetary_computer(monkeypatch, answers)
+    token = download._Token()
+    assert download._signed("a.tif", token) == "a.tif?sig=first"
+    clock.now += download.TOKEN_REFRESH_S - 1
+    assert download._signed("b.tif", token) == "b.tif?sig=first"
+    clock.now += 2
+    assert download._signed("c.tif", token) == "c.tif?sig=second"
+    assert requested == [download.TOKEN_URL] * 2
+
+
+def test_rate_limit_waits_as_told_and_other_errors_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock, requested = fake_planetary_computer(monkeypatch, [429, 429, {"id": "S2"}])
+    assert download._get_json(download.STAC + "S2") == {"id": "S2"}
+    assert clock.sleeps == [3, 3]
+    assert len(requested) == 3
+
+    clock, requested = fake_planetary_computer(monkeypatch, [503])
+    with pytest.raises(urllib.error.HTTPError):
+        download._get_json(download.STAC + "S2")
+    assert clock.sleeps == []
+
+    clock, requested = fake_planetary_computer(monkeypatch, [429] * 8)
+    with pytest.raises(TimeoutError, match="still rate limited"):
+        download._get_json(download.STAC + "S2")
+    assert len(requested) == 8

@@ -1,11 +1,13 @@
-"""The two group-level quantile rules on synthetic scores, with no pipeline around them."""
+"""The group-level quantile rules, the density ratio and its weights, with no pipeline around."""
 
 import json
 
 import compass2d.calibration
 import numpy as np
+import pandas as pd
 import pytest
 
+import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
 from tests.e2e import support
 
@@ -101,3 +103,102 @@ def test_coverage_of_a_new_group() -> None:
     )
     standard_error = np.sqrt(0.8 * 0.2 / repetitions)
     assert coverage["subsampled"] >= 1 - 2 * ALPHA - 3 * standard_error, coverage
+
+
+def density_ratio(
+    calibration_features: np.ndarray,
+    test_features: np.ndarray,
+    calibration_groups: np.ndarray,
+    test_groups: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    return compass2d.calibration.density_ratio(
+        calibration_features,
+        test_features,
+        calibration_groups,
+        test_groups,
+        n_folds=garimpo_uncertainty.intervals.DENSITY_RATIO_FOLDS,
+        seed=0,
+        n_jobs=1,
+    )
+
+
+def test_density_ratio_never_scores_a_cell_with_its_own_group() -> None:
+    """No shift, but every group sits at its own point.
+
+    Only a classifier that saw a group can tell its population, so a cell-level split would rank
+    test cells above calibration cells.
+    """
+    rng = np.random.default_rng(0)
+    n_groups, n_cells = 40, 20
+
+    def population() -> tuple[np.ndarray, np.ndarray]:
+        centers = rng.normal(0, 3, (n_groups, 4))
+        groups = np.repeat(np.arange(n_groups), n_cells)
+        return centers[groups] + rng.normal(0, 0.05, (len(groups), 4)), groups
+
+    (calibration, calibration_groups), (test, test_groups) = population(), population()
+    calibration_ratio, test_ratio = density_ratio(
+        calibration, test, calibration_groups, test_groups
+    )
+    # Mann-Whitney AUC of test over calibration ratios, by counting pairs.
+    above = (test_ratio[:, None] > calibration_ratio[None, :]).mean()
+    ties = (test_ratio[:, None] == calibration_ratio[None, :]).mean()
+    assert above + ties / 2 < 0.75
+
+
+def test_density_ratio_fits_on_the_real_split_groups() -> None:
+    """The real calibration and test groups, 16 cells per tile, under a mild shift.
+
+    Every fold must train on both populations, and every ratio must be usable as a weight.
+    """
+    split = pd.read_csv(support.ROOT / "outputs" / "split.csv")
+    cells_per_tile = (garimpo_uncertainty.data.TILE_PX // garimpo_uncertainty.data.CELL_PX) ** 2
+    groups = {
+        role: np.repeat(
+            split[(split.role == role) & (split.scale == "Artisanal")].cluster_50km.to_numpy(),
+            cells_per_tile,
+        )
+        for role in ("calibration", "test")
+    }
+    rng = np.random.default_rng(0)
+    calibration_ratio, test_ratio = density_ratio(
+        rng.normal(0, 1, (len(groups["calibration"]), 8)),
+        rng.normal(0.5, 1, (len(groups["test"]), 8)),
+        groups["calibration"],
+        groups["test"],
+    )
+    ratio = np.concatenate([calibration_ratio, test_ratio])
+    assert np.isfinite(ratio).all()
+    assert (ratio > 0).all()
+    assert np.median(test_ratio) > np.median(calibration_ratio)
+
+
+def test_density_ratio_refuses_a_fold_with_no_calibration_cell() -> None:
+    """One calibration group lands whole in one fold, whose classifier then sees only test cells."""
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError, match="lacks one population"):
+        density_ratio(
+            rng.normal(size=(10, 3)),
+            rng.normal(size=(200, 3)),
+            np.zeros(10, dtype=int),
+            np.repeat(np.arange(20), 10),
+        )
+
+
+@pytest.mark.parametrize(
+    ("weights", "test_weights"),
+    [
+        ([1.0, np.nan, 1.0], [1.0]),
+        ([1.0, -0.5, 1.0], [1.0]),
+        ([1.0, 1.0, 1.0], [np.inf]),
+        ([0.0, 0.0, 0.0], [1.0]),
+    ],
+    ids=["nan", "negative", "infinite_test", "all_zero"],
+)
+def test_weighted_quantiles_refuse_weights_that_are_no_distribution(
+    weights: list[float], test_weights: list[float]
+) -> None:
+    with pytest.raises(ValueError, match="weights must be"):
+        compass2d.calibration.weighted_quantiles(
+            np.array([1.0, 2.0, 3.0]), np.array(weights), np.array(test_weights), ALPHA
+        )

@@ -35,15 +35,15 @@ uv run ruff format --check . && uv run ruff check .
 | `test_models.py` | f/g decomposition of each architecture; ImageNet and Sentinel-2 starting weights |
 | `test_tile_lists.py` | Counts and nesting on the real `outputs/split.csv`; the versioned lists regenerated and compared by bytes, tiles and `select_tiles` |
 | `test_store.py` | The store's tiles written in shuffled order and compared by bytes; the dataset reading slots |
-| `test_download.py` | The download code on local rasters, including `lists` and `scenes --tiles` from a small list to a larger one, the refusals of a list, Ctrl+C finishing the tile in progress with status `interrupted`, a second Ctrl+C quitting without waiting, and the log file kept across runs |
+| `test_download.py` | The download code on local rasters, including `lists` and `scenes --tiles` from a small list to a larger one, the refusals of a list, Ctrl+C finishing the tile in progress with status `interrupted`, a second Ctrl+C quitting without waiting, the log file kept across runs, and the SAS token renewal and HTTP 429 wait on a fake clock and HTTP |
 | `test_validation.py` | Defects in the store and the split against the validation |
 | `test_damaged_store.py` | A store damaged under a finished run: stages may skip, the validation and the report may not |
 | `test_training.py` | What training writes and every refusal |
 | `test_sentinel2_training.py` | The identity of the Sentinel-2 weights file, present, absent and replaced |
 | `test_results.py` | PICP, MPIW, interval score and Dice recomputed one cell at a time against `results.csv`; every COMPASS row with its own loader against the one pass in `generate_intervals.py`, with no tolerance; the population of each subsampled row; every alpha level; coverage by stratum and the score relation |
 | `test_choose_layer.py` | The layer choice on hand-written diagnostics: validation role only, both directions, threshold, a missing direction, no qualifying layer, ties, a changed threshold, a refused rerun |
-| `test_calibration_rules.py` | Repeated subsampling reduced to split conformal at one cell per group, its draws within and across groups, its seed, its refusal, and simulated coverage at k = 25 in `tests/artifacts/calibration_rules/coverage_k25.json` |
-| `test_stages.py` | Reruns, refusals, saturation, absent cells, merge, peak memory records and `pipeline_check.py` |
+| `test_calibration_rules.py` | Repeated subsampling reduced to split conformal at one cell per group, its draws within and across groups, its seed, its refusal, and simulated coverage at k = 25 in `tests/artifacts/calibration_rules/coverage_k25.json`; the density ratio's cross-fit by group, on the real split's groups and with a fold lacking a population; weights refused by the weighted quantile |
+| `test_stages.py` | Reruns, refusals, saturation, an asymmetric quantile past its upper censoring, absent and misaligned cells, another data root, the score floors, the SVM orientation and a direction fit with no gradient, merge, peak memory records and `pipeline_check.py`, including an incomplete results table |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
 | `test_shell.py` | `slurm/full.sbatch` and `slurm/pilot.sbatch` run as a job runs them, from a root linking the real `slurm/` and `scripts/`: a full job to PASS, every `--flag "$NAME"` of `stages.sh` receiving NAME's value in the `bash -x` trace, with no two values of one command equal, and the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `FORCE_FROM` and `FORCE_VALIDATE`, an unknown `FORCE_FROM`, a failed stage stopping both jobs, every value of `full.env.example` left empty |
 | `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
@@ -69,7 +69,8 @@ yet.
 ## Not covered
 
 - `--cells nonempty`
-- real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real Sentinel-2 scenes
+- real HTTP (STAC, SAS tokens, 429 retries, Zenodo; token renewal and the 429 wait run against a fake
+  clock and HTTP), remote reads, real Sentinel-2 scenes
 - `slurm/download.sh` and `bash slurm/pilot.sbatch download`
 - the pilot's own values: `test_shell.py` runs the pilot only up to a failed `train`
 - `download_data.py metadata` and `weights`

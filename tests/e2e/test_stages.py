@@ -2,15 +2,19 @@
 
 import json
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import NamedTuple
 
+import compass2d.directions
+import compass2d.metrics
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
@@ -434,3 +438,219 @@ def test_metrics_stage_names_an_absent_cell_index(
     error = json.loads((run_dir / "status" / "compute_metrics.json").read_text())["error"]
     assert "cell_index" in error, error
     assert str(beyond) in error, error
+
+
+def test_asymmetric_quantile_past_the_upper_censoring_gives_the_whole_cell(
+    private_convnet: support.FinishedRun, data_root: Path
+) -> None:
+    """A quantile under beta_range, but past beta_range / side_ratio, where the upper side stopped.
+
+    Validation cells need 8 times more beta above than below, so side_ratio is 8; calibration and
+    test cells need half the search range below. The joint quantile, half the range, then sends
+    the upper endpoint 4 times past the range that was searched.
+    """
+    run_dir = private_convnet.run_dir
+    path = run_dir / "scores" / "scores.npz"
+    arrays = stored_arrays(path)
+    cells = garimpo_uncertainty.data.read_predictions(data_root, run_dir)
+    validation = np.isin(arrays["cell_index"], cells[cells.role == "validation"].cell_index)
+    m = garimpo_uncertainty.intervals.COMPASS_METHODS.index("compass_l")
+    beta_range = 1e-3
+    arrays["beta_range"][m] = beta_range
+    for name, (on_validation, elsewhere) in {
+        "lower": (0.1, 0.5),
+        "upper": (0.8, 0.5),
+        "score": (0.5, 0.5),
+    }.items():
+        arrays[name][m] = beta_range * np.where(validation, on_validation, elsewhere)
+    for name in ("saturated", "lower_saturated", "upper_saturated"):
+        arrays[name][m] = False
+    np.savez(path, **arrays)
+    for command in (calibrate_command, generate_command):
+        script, _, args = command(run_dir)
+        support.run(script, *args, data_root=data_root)
+
+    rows = [
+        k
+        for k, (method, _) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS)
+        if method == "a_compass_l"
+    ]
+    with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
+        assert np.allclose(stored["side_ratio"][:, rows], 8)
+    with np.load(run_dir / "intervals" / "intervals.npz") as stored:
+        cell_index, quantile = stored["cell_index"], stored["quantile"][:, rows]
+        lower, upper = stored["lower"][:, rows], stored["upper"][:, rows]
+    assert np.allclose(quantile, beta_range / 2)
+    cell_ha = cells.set_index("cell_index").cell_ha.loc[cell_index].to_numpy()
+    assert (lower == 0).all()
+    assert np.array_equal(upper, np.broadcast_to(cell_ha, upper.shape))
+
+
+def test_misaligned_predictions_stop_the_stage(
+    private_convnet: support.FinishedRun, data_root: Path
+) -> None:
+    """Two cells swapped in cells.npz would give each the other's areas, with no other symptom."""
+    run_dir = private_convnet.run_dir
+    path = run_dir / "predictions" / "cells.npz"
+    arrays = stored_arrays(path)
+    arrays["cell_index"][[0, 1]] = arrays["cell_index"][[1, 0]]
+    np.savez(path, **arrays)
+    script, stage, args = calibrate_command(run_dir)
+    result = support.run(script, *args, data_root=data_root, check=False)
+    assert result.returncode != 0
+    error = json.loads((run_dir / "status" / f"{stage}.json").read_text())["error"]
+    assert "does not align" in error, error
+
+
+def test_a_data_root_missing_a_tile_refuses_the_checkpoint(
+    private_convnet: support.FinishedRun, private_data_root: Path
+) -> None:
+    """Another data root, where one test tile failed to download, must not rebuild the run."""
+    split = pd.read_csv(support.SPLIT_PATH)
+    test_tile = split[split.role == "test"].tile_id.iloc[0]
+    sidecar = private_data_root / "tiles" / f"{test_tile}.json"
+    sidecar.write_text(json.dumps(json.loads(sidecar.read_text()) | {"status": "missing_item"}))
+    run_dir = private_convnet.run_dir
+    result = support.run(
+        "infer.py",
+        *support.checkpoint_args(run_dir),
+        "--force",
+        data_root=private_data_root,
+        check=False,
+    )
+    assert result.returncode != 0
+    error = json.loads((run_dir / "status" / "infer.json").read_text())["error"]
+    assert "wrong GARIMPO_DATA_DIR or another subset" in error, error
+
+
+def test_calibration_requires_a_score_floor(data_root: Path, tmp_path: Path) -> None:
+    """Relative and local scores divide by an area, zero on empty cells; no default may hide it."""
+    missing = support.run(
+        "calibrate.py",
+        "--run-dir",
+        str(tmp_path / "never_read"),
+        "--cells",
+        "all",
+        data_root=data_root,
+        check=False,
+    )
+    assert missing.returncode == 2
+    assert "--score-floor-ha" in missing.stderr
+
+
+def test_local_score_floors_a_confident_model(
+    private_convnet: support.FinishedRun, data_root: Path
+) -> None:
+    """A confident model has no pixel variance on the cells it predicts empty.
+
+    The local score would then divide by zero there; the floor of 0.01 ha must stand in.
+    """
+    run_dir = private_convnet.run_dir
+    path = run_dir / "predictions" / "cells.npz"
+    arrays = stored_arrays(path)
+    arrays["pixel_var"] = np.where(arrays["vhat"] == 0, 0.0, arrays["pixel_var"])
+    np.savez(path, **arrays)
+    script, _, args = calibrate_command(run_dir)
+    support.run(script, *args, data_root=data_root)
+    cells = garimpo_uncertainty.data.read_predictions(data_root, run_dir)
+    calibration = cells[cells.role == "calibration"]
+    assert (calibration.pixel_var == 0).any()
+    floor_ha = 0.01
+    scale = np.maximum(calibration.pixel_var * garimpo_uncertainty.data.PIXEL_HA, floor_ha)
+    scores = (np.abs(calibration.v - calibration.vhat) / scale).to_numpy()
+    groups = calibration.group.to_numpy()
+    # Pooled group CDFs, one candidate at a time, at the paper's level.
+    level = 1 - 0.1
+    expected = next(
+        candidate
+        for candidate in np.sort(scores)
+        if np.mean([np.mean(scores[groups == g] <= candidate) for g in np.unique(groups)])
+        >= level - 1e-12
+    )
+    k = garimpo_uncertainty.intervals.COMBINATIONS.index(("conformal_local", "external"))
+    with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
+        quantile = stored["quantile"][garimpo_uncertainty.intervals.ALPHAS.index(0.1), k]
+    assert np.allclose(quantile, expected)
+
+
+def fit_directions(
+    run: support.FinishedRun, data_root: Path, *extra: str
+) -> subprocess.CompletedProcess:
+    return support.run(
+        "fit_directions.py",
+        *support.checkpoint_args(run.run_dir),
+        "--layers",
+        run.layer,
+        "--svm-c",
+        "1.0",
+        "--svm-class-weight",
+        "balanced",
+        "--svm-pixels-per-cell",
+        "50",
+        "--force",
+        *extra,
+        data_root=data_root,
+        check=False,
+    )
+
+
+def test_svm_normal_is_turned_toward_more_area() -> None:
+    """Features that encode mining with the sign opposite to what grows the area.
+
+    Mining pixels sit at high z0 while the decoder predicts mining where z0 is low, as a model may
+    early in training, so the SVM's raw normal points to less area. On the synthetic runs it never
+    does, even with inverted masks, which leaves the orientation unexercised there.
+    """
+    rng = np.random.default_rng(0)
+    labels = (rng.random(2000) < 0.3).astype(int)
+    features = rng.normal(0, 1, (2000, 3))
+    features[:, 0] += 3 * labels
+    z = torch.from_numpy(features).view(-1, 3, 1, 1)
+
+    def decode(z: torch.Tensor) -> torch.Tensor:
+        return -z[:, :1] + 0.2 * z[:, 1:2]
+
+    def area(logits: torch.Tensor) -> torch.Tensor:
+        return compass2d.metrics.soft_area(logits, garimpo_uncertainty.data.PIXEL_HA, 1.0)
+
+    mean_jacobian = compass2d.directions.jacobian_sum(decode, z, area).mean(0).numpy()
+    w = compass2d.directions.fit_svm(features, labels, mean_jacobian, 1.0, "balanced", 1000, 0)
+    delta = torch.from_numpy(w).view(1, 3, 1, 1)
+    assert (area(decode(z + delta)) - area(decode(z - delta))).sum() > 0
+
+
+def test_a_model_with_no_gradient_stops_the_direction_fit(
+    private_convnet: support.FinishedRun, data_root: Path
+) -> None:
+    """At this temperature every sigmoid saturates, so every Jacobian is exactly zero.
+
+    No direction can then be oriented toward more area, and none may be written.
+    """
+    result = fit_directions(private_convnet, data_root, "--direction-temperature", "1e30")
+    assert result.returncode != 0
+    status = private_convnet.run_dir / "status" / "fit_directions.json"
+    error = json.loads(status.read_text())["error"]
+    assert "mean Jacobian is orthogonal to w" in error, error
+
+
+@pytest.mark.parametrize("damage", ["row_absent", "nan_picp", "nan_mpiw"])
+def test_pipeline_check_fails_on_an_incomplete_results_table(
+    private_convnet: support.FinishedRun, data_root: Path, damage: str
+) -> None:
+    """Every status says ok here: only the table shows that a row is gone or empty."""
+    path = private_convnet.run_dir / "metrics" / "results.csv"
+    results = pd.read_csv(path)
+    expected = {
+        "row_absent": "results rows absent",
+        "nan_picp": "NaN in PICP or MPIW",
+        "nan_mpiw": "NaN in PICP or MPIW",
+    }[damage]
+    if damage == "row_absent":
+        results = results.drop(index=len(results) // 2)
+    else:
+        results.loc[3, damage.removeprefix("nan_")] = np.nan
+    results.to_csv(path, index=False)
+    report = support.pipeline_check(private_convnet.run_dir, data_root, check=False)
+    assert report.returncode == 1
+    assert expected in report.stdout
+    assert "PIPELINE CHECK: PASS" not in report.stdout

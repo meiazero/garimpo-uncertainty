@@ -106,3 +106,23 @@ def test_cell_dataset_applies_the_offset(data_root: Path) -> None:
     expected = np.maximum(raw - 1000, 0) / garimpo_uncertainty.data.REFLECTANCE_SCALE
     assert np.allclose(image.numpy(), expected)
     assert np.array_equal(mask[0].numpy() > 0, store.masks[cell_index] > 0)
+
+
+def test_sidecar_offset_reaches_the_cells_of_its_tile(private_data_root: Path) -> None:
+    """A baseline 04.00 scene among older ones: only its own tile's cells may shift."""
+    split = pd.read_csv(support.SPLIT_PATH)
+    shifted_tile = int(split[split.role == "train"].tile_id.iloc[0])
+    sidecar = private_data_root / "tiles" / f"{shifted_tile}.json"
+    sidecar.write_text(json.dumps(json.loads(sidecar.read_text()) | {"boa_offset": -1000}))
+    cells = garimpo_uncertainty.data.cell_table(private_data_root, split, split.tile_id.tolist())
+    shifted = cells.tile_id == shifted_tile
+    assert (cells.boa_offset[shifted] == -1000).all()
+    assert (cells.boa_offset[~shifted] == 0).all()
+    dataset = garimpo_uncertainty.cell_dataset.CellDataset(private_data_root, cells, None)
+    store = garimpo_uncertainty.data.open_store(private_data_root)
+    for position in (int(np.flatnonzero(shifted)[0]), int(np.flatnonzero(~shifted)[0])):
+        image, _, cell_index = dataset[position]
+        raw = store.images[cell_index].astype(np.float32)
+        offset = -1000 if shifted.iloc[position] else 0
+        expected = np.maximum(raw + offset, 0) / garimpo_uncertainty.data.REFLECTANCE_SCALE
+        assert np.allclose(image.numpy(), expected), position
