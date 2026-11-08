@@ -1,36 +1,62 @@
-# Pilot: adjust the code on a Colab GPU
+# Run the pilot
 
 Read before the first run on a GPU.
 
 The pilot is the 1% training fraction, run through the same scripts as the full run: 186 tiles and
 2,976 cells, since validation, calibration and test stay whole. It downloads the versioned list
-`outputs/tiles/tiles_1pct.json`. It exists to debug the
-implementation, and its numbers say nothing about any method. Its values are in `slurm/pilot.sbatch`,
-the decided ones from [decisions.md](decisions.md) and the rest labeled pilot-only. Results go to `runs/pilot/`, never to `outputs/`.
+`outputs/tiles/tiles_1pct.json`. Its purpose is to debug the implementation, and its numbers say
+nothing about any method. Its values are set in `slurm/pilot.sbatch`: the decided ones from
+[decisions.md](decisions.md), the rest marked there as pilot-only. Results go to `runs/pilot/`,
+never to `outputs/`.
 
-Run the data cell of the [quick start](../README.md#quick-start) once, then the pilot cell on an
-L4 runtime, each after the session cell of the [install](../README.md#install). The variants run
-one after another on the one GPU, the runs and logs reach Drive, and `runtime.unassign()` releases
-the GPU even when a variant fails.
+## Steps
 
-Each variant writes to `runs/pilot/unet-<weights>/`. A run stopped midway keeps its finished stages,
-which skip on the next start once `runs/` is restored from Drive with its modification times.
+1. On a CPU runtime, run the session cell of the README's [install](../README.md#install), then the
+   data cell of the [quick start](../README.md#quick-start). This is needed once.
+2. On an L4 runtime, run the session cell, then the pilot cell of the quick start.
+3. Read the pipeline check at the end of each variant's log, `outputs/logs/pilot-<weights>.log`,
+   also copied to `logs/` in Drive.
 
-The run ends with `scripts/pipeline_check.py`: status, seconds, peak memory and shapes per stage, slot hashes,
-the failing stage with its error, scenes missing, cells per role, Dice, percent monotonic per
-direction, the chosen layer with every candidate's fractions, `|cos(v1, w)|`, saturated searches, PICP and MPIW per method. It receives the script's exit
-code, so an error outside every stage also reads FAIL.
+The three variants (`none`, `imagenet`, `sentinel2_moco`) run one after another on the one GPU.
+Each writes to `runs/pilot/unet-<weights>/` and merges its tables into
+`runs/pilot/tables-<weights>/`. The runs and logs reach Drive and `runtime.unassign()` releases the
+GPU even when a variant fails.
 
-After fixing the code, commit and push it from your machine, since the session's token is read-only; the next session's clone picks it up. Finished stages skip
-themselves. A stage whose inputs or arguments changed stops with status `refused`, which fails the
-check. Commits are recorded in the metadata but stay out of the fingerprint, so a code fix alone
-invalidates nothing: name the first stage it affects.
+Outside Colab, `bash slurm/pilot.sbatch download` downloads the pilot's data once (add
+`ENCODER_WEIGHTS=imagenet` or `sentinel2_moco` for that variant's weights), and
+`ENCODER_WEIGHTS=<weights> bash slurm/pilot.sbatch` runs one variant.
 
-```python
-!for w in none imagenet sentinel2_moco; do FORCE_FROM=calibrate ENCODER_WEIGHTS=$$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$$w.log; done
-```
+## The check report
 
-`FORCE_FROM` takes a name from `STAGE_ORDER` in `slurm/stages.sh` and redoes that stage and those
-after it. Earlier stages skip, and `train` runs again only with `FORCE_FROM=train`. The validation
-sits outside that order: redo it with `FORCE_VALIDATE=1`. The same variables work with
-`slurm/full.sbatch`.
+Every run ends with `scripts/pipeline_check.py`, which prints:
+
+- status, seconds, peak memory and shapes per stage;
+- the failing stage with its error;
+- scenes missing and cells per role;
+- the training history, with Dice, timings, data wait and GPU peaks per epoch;
+- percent monotonic per direction, and the chosen layer with every candidate's fractions;
+- `|cos(v1, w)|`, saturated searches, and PICP and MPIW per method;
+- the run's slots against the hashes in their sidecars.
+
+It receives the script's exit code, so an error outside every stage also reads FAIL. Which statuses
+fail the check: [stages.md](stages.md#statuses).
+
+## Rerun after a code fix
+
+1. Commit and push the fix from your machine. The session's token is read-only, and the next
+   session's clone picks the fix up.
+2. Name the first stage the fix affects in `FORCE_FROM` and run the pilot cell with it:
+
+   ```python
+   !for w in none imagenet sentinel2_moco; do FORCE_FROM=calibrate ENCODER_WEIGHTS=$$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$$w.log; done
+   ```
+
+Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
+invalidates nothing; that is why the stage has to be named. `FORCE_FROM` takes a name from
+`STAGE_ORDER` in `slurm/stages.sh` and redoes that stage and every stage after it. Earlier stages
+skip, and `train` runs again only with `FORCE_FROM=train`. The data validation is outside that
+order: redo it with `FORCE_VALIDATE=1`. Both variables work the same way with `slurm/full.sbatch`.
+
+A stage whose inputs or arguments changed without being forced stops with status `refused`, which
+fails the check. A run stopped midway keeps its finished stages, and they skip on the next start
+once `runs/` is restored from Drive with its modification times.

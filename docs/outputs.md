@@ -2,14 +2,21 @@
 
 Read to trace a number in the dissertation back to its script.
 
-Run from the repository root. The split scripts read `data/zenodo`: after
-`download_data.py metadata`, link it with `mkdir -p data && ln -s "$GARIMPO_DATA_DIR/zenodo" data/zenodo`.
+## Regenerate the split
+
+Run from the repository root. The split scripts read `data/zenodo`, so after
+`download_data.py metadata` link it with
+`mkdir -p data && ln -s "$GARIMPO_DATA_DIR/zenodo" data/zenodo`.
 
 ```bash
 scripts/split/get_biomes.sh                 # IBGE biomes into data/biomes, sha256 checked
 uv run python -I scripts/split/frame.py
 uv run python -I scripts/split/make_split.py   # writes outputs/split.csv; a changed tile order or set then refuses the store
 ```
+
+Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Amazon groups).
+
+## Number to script
 
 | Number | Script | Output |
 |---|---|---|
@@ -28,4 +35,9 @@ uv run python -I scripts/split/make_split.py   # writes outputs/split.csv; a cha
 | Layer chosen per run and the threshold it met | `scripts/choose_layer.py`, `merge_results.py` | `outputs/chosen_layers.csv` |
 | Monotonic fraction of the chosen layer, calibration and test roles | `scripts/verify_monotonicity.py`, `merge_results.py` | `outputs/monotonicity_endpoint.csv` |
 
-Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Amazon groups).
+## Metric rules
+
+Boundary F1 has a rule for a mask with no boundary, such as one filling the cell. With no boundary
+in either mask, F1 is 1 for identical masks and 0 otherwise; with a boundary in only one, F1 is 0.
+`n_cells_boundary_by_rule` in `results.csv` counts these cells. Cells with no reference mining stay
+NaN and out of the means.
