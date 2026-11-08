@@ -259,7 +259,13 @@ def run(
 ) -> subprocess.CompletedProcess:
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
     command = [sys.executable, f"scripts/{script}", *args]
-    return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
+    result = subprocess.run(  # noqa: S603 - arguments come from the tests
+        command, check=False, cwd=ROOT, env=env, capture_output=True, text=True
+    )
+    # CalledProcessError's message omits stderr, which is all CI shows of a failing stage.
+    if check and result.returncode != 0:
+        raise AssertionError(f"{script} exited {result.returncode}:\n{result.stderr[-4000:]}")
+    return result
 
 
 def train_args(
