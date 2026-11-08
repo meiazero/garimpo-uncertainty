@@ -39,15 +39,15 @@ STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel
 TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"  # noqa: S105 - a URL, not a password
 TOKEN_REFRESH_S = 20 * 60
 SENTINEL2_MOCO_URL = (
-    "https://hf.co/torchgeo/resnet50_sentinel2_all_moco/resolve/"
-    "da4f3c9dbe09272eb902f3b37f46635fa4726879/resnet50_sentinel2_all_moco-df8b932e.pth"
+    "https://hf.co/torchgeo/resnet18_sentinel2_all_moco/resolve/"
+    "5b8cddc9a14f3844350b7f40b85bcd32aed75918/resnet18_sentinel2_all_moco-59bfdff9.pth"
 )
-SENTINEL2_MOCO_HASH = "df8b932e"
+SENTINEL2_MOCO_HASH = "59bfdff9"
 IMAGENET_URL = (
-    "https://huggingface.co/smp-hub/resnet50.imagenet/resolve/"
-    "00cb74e366966d59cd9a35af57e618af9f88efe9/model.safetensors"
+    "https://huggingface.co/smp-hub/resnet18.imagenet/resolve/"
+    "2342da24790e8544df7e13341baea94680e6dee1/model.safetensors"
 )
-IMAGENET_HASH = "df1aad85"
+IMAGENET_HASH = "b1d1d36f"
 ASSETS_10M = {"B02", "B03", "B04", "B08"}
 BASELINE_WITH_OFFSET = 4.0
 BOA_OFFSET_DN = -1000

@@ -10,7 +10,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 | 4 | login | `uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco` |
 | 5 | login | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, then fill in every value (see [decisions.md](decisions.md)) |
 | 6 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env` (the job chooses the layer from the validation role and continues; `chosen_layer.json` records why) |
-| 7 | both | Repeat steps 5 and 6 for each other run of the learning curve in [runs.md](runs.md#model-variants) |
+| 7 | both | Repeat steps 5 and 6 for the other three runs in [runs.md](runs.md#model-variants) |
 | 8 | login | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
 
 Compute nodes have no internet, so `uv sync` and steps 2 to 4 only run on the login node; every job

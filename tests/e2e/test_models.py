@@ -64,7 +64,7 @@ def test_imagenet_weights_cycle_and_rescale_rgb(
     for band in range(6):
         cycled = state["conv1.weight"][:, band % 3] * 0.5
         assert torch.equal(loaded["conv1.weight"][:, band], cycled)
-    assert torch.equal(loaded["layer4.2.conv3.weight"], state["layer4.2.conv3.weight"])
+    assert torch.equal(loaded["layer4.1.conv2.weight"], state["layer4.1.conv2.weight"])
 
 
 def test_imagenet_weights_refuse_another_band_count(
@@ -102,8 +102,9 @@ def test_sentinel2_weights_keep_our_bands_in_order(
     for key in copied:
         assert torch.equal(loaded[key], state[key]), key
 
-    # Bottleneck keys, which only a ResNet-50 layout has at this depth.
-    assert "layer4.2.conv3.weight" in copied
+    # Basic blocks, two per stage: a ResNet-18 layout, which a deeper ResNet's keys would not match.
+    assert "layer4.1.conv2.weight" in copied
+    assert not any(".conv3." in key for key in copied)
 
 
 def test_layer_names_stay_valid_across_starting_weights(
@@ -129,7 +130,7 @@ def test_sentinel2_weights_refuse_a_broken_file(
 ) -> None:
     _, state = sentinel2_file
     broken = {
-        "missing": {key: value for key, value in state.items() if key != "layer4.2.bn3.weight"},
+        "missing": {key: value for key, value in state.items() if key != "layer4.1.bn2.weight"},
         "unexpected": state | {"layer5.0.conv1.weight": torch.zeros(1)},
         "wrong_bands": state | {"conv1.weight": state["conv1.weight"][:, :6]},
     }[defect]
