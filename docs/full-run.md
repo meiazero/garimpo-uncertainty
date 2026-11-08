@@ -9,7 +9,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 | 3 | any pod | `uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m bilinear` (from the versioned list, so `lists` need not run first; resumable; contains every smaller fraction of that list's seed; sizes in [runs.md](runs.md#training-fractions); another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar, so later stages refuse until redone; a re-cut with identical content changes nothing) |
 | 4 | any pod | `uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco` |
 | 5 | any pod | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, then fill in every value (see [decisions.md](decisions.md)) |
-| 6 | GPU pod | `CUDA_VISIBLE_DEVICES=0 nohup bash slurm/full.sbatch slurm/unet_scratch-f1.0.env > outputs/logs/unet_scratch-f1.0.log 2>&1 &` (the run chooses the layer from the validation role and continues; `chosen_layer.json` records why) |
+| 6 | GPU pod | Inside `tmux`: `CUDA_VISIBLE_DEVICES=0 bash slurm/full.sbatch slurm/unet_scratch-f1.0.env 2>&1 \| tee outputs/logs/unet_scratch-f1.0.log`, or with the pod stopping at the end as [below](#several-runs-on-one-pod) (the run chooses the layer from the validation role and continues; `chosen_layer.json` records why) |
 | 7 | GPU pod | Repeat steps 5 and 6 for each other run of the learning curve in [runs.md](runs.md#model-variants), one per GPU, as [below](#several-runs-on-one-pod) |
 | 8 | any pod | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
 
@@ -43,13 +43,19 @@ byte, so commit the regenerated files with whatever changed them.
 Each run uses one GPU, chosen with `CUDA_VISIBLE_DEVICES`. On a pod with four, start four runs, and
 give each `NUM_WORKERS` of about the pod's vCPUs divided by four (default 16):
 
+`wait` holds until the four end, failed or not, and then the pod stops, since it bills by the hour
+until it does; check `runpodctl` first, as in [pilot.md](pilot.md):
+
 ```bash
+tmux new -s full
 for gpu_env in 0:unet_scratch-f1.0 1:unet_imagenet-f1.0 2:unet_sentinel2-f1.0 3:convnet-f1.0; do
     gpu=${gpu_env%%:*}; env=${gpu_env#*:}
-    CUDA_VISIBLE_DEVICES=$gpu NUM_WORKERS=<N> nohup bash slurm/full.sbatch slurm/$env.env \
+    CUDA_VISIBLE_DEVICES=$gpu NUM_WORKERS=<N> bash slurm/full.sbatch slurm/$env.env \
         > outputs/logs/$env.log 2>&1 &
-done
+done; wait; runpodctl pod stop "$RUNPOD_POD_ID"
 ```
+
+`tail -f outputs/logs/<run>.log` follows one run from another `tmux` window.
 
 Training and the later stages write only to their own `RUN_DIR`. Runs of one fraction share the
 validation report and its status, written atomically. Each run hashes every slot of its selection

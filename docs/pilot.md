@@ -16,15 +16,20 @@ ENCODER_WEIGHTS=imagenet bash slurm/pilot.sbatch download           # data, then
 ENCODER_WEIGHTS=sentinel2_moco bash slurm/pilot.sbatch download
 ```
 
-Then on the GPU pod, under `nohup` so a dropped SSH session does not stop it:
+Then on the GPU pod, inside `tmux` so a dropped SSH session does not stop it. The pod bills by the hour until it stops, so the chain below stops it when the last variant ends,
+failed or not; the data and runs stay on the volume. The variants run one after another, since they
+would share one GPU. First check that `command -v runpodctl && echo "$RUNPOD_POD_ID"` prints both
+(RunPod's docs spell the command `runpodctl pod stop`; older versions take `runpodctl stop pod`):
 
 ```bash
+tmux new -s pilot                                  # apt-get install -y tmux if missing
 mkdir -p outputs/logs
-nohup bash slurm/pilot.sbatch > outputs/logs/pilot-none.log 2>&1 &  # U-Net from scratch
-ENCODER_WEIGHTS=imagenet nohup bash slurm/pilot.sbatch > outputs/logs/pilot-imagenet.log 2>&1 &
-ENCODER_WEIGHTS=sentinel2_moco nohup bash slurm/pilot.sbatch > outputs/logs/pilot-sentinel2_moco.log 2>&1 &
-tail -f outputs/logs/pilot-none.log
+for w in none imagenet sentinel2_moco; do
+    ENCODER_WEIGHTS=$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$w.log
+done; runpodctl pod stop "$RUNPOD_POD_ID"
 ```
+
+Detach with `Ctrl-b d` and reattach with `tmux attach -t pilot`.
 
 Each command writes to `runs/pilot/unet-<weights>/`. A run stopped midway, by a crash or a stopped
 pod, keeps its finished stages, which skip on the next start.
@@ -40,7 +45,9 @@ check. Commits are recorded in the metadata but stay out of the fingerprint, so 
 invalidates nothing: name the first stage it affects.
 
 ```bash
-FORCE_FROM=calibrate nohup bash slurm/pilot.sbatch > outputs/logs/pilot-none.log 2>&1 &
+for w in none imagenet sentinel2_moco; do
+    FORCE_FROM=calibrate ENCODER_WEIGHTS=$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$w.log
+done; runpodctl pod stop "$RUNPOD_POD_ID"
 ```
 
 `FORCE_FROM` takes a name from `STAGE_ORDER` in `slurm/stages.sh` and redoes that stage and those

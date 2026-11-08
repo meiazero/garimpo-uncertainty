@@ -44,16 +44,23 @@ ENCODER_WEIGHTS=imagenet bash slurm/pilot.sbatch download           # data, then
 ENCODER_WEIGHTS=sentinel2_moco bash slurm/pilot.sbatch download
 ```
 
-Then on the GPU pod, under `nohup` so a dropped SSH session does not stop it:
+Then on the GPU pod, inside `tmux` so a dropped SSH session does not stop it. The pod bills by the hour until it stops, so the chain below stops it when the last variant ends,
+failed or not; the data and runs stay on the volume. The variants run one after another, since they
+would share one GPU. First check that `command -v runpodctl && echo "$RUNPOD_POD_ID"` prints both
+(RunPod's docs spell the command `runpodctl pod stop`; older versions take `runpodctl stop pod`):
 
 ```bash
+tmux new -s pilot                                  # apt-get install -y tmux if missing
 mkdir -p outputs/logs
-nohup bash slurm/pilot.sbatch > outputs/logs/pilot-none.log 2>&1 &  # U-Net from scratch
-tail -f outputs/logs/pilot-none.log
-ENCODER_WEIGHTS=imagenet nohup bash slurm/pilot.sbatch > outputs/logs/pilot-imagenet.log 2>&1 &
-ENCODER_WEIGHTS=sentinel2_moco nohup bash slurm/pilot.sbatch > outputs/logs/pilot-sentinel2_moco.log 2>&1 &
-FORCE_FROM=calibrate nohup bash slurm/pilot.sbatch > outputs/logs/pilot-none.log 2>&1 &  # after a code fix
+for w in none imagenet sentinel2_moco; do
+    ENCODER_WEIGHTS=$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$w.log
+done; runpodctl pod stop "$RUNPOD_POD_ID"
 ```
+
+Detach with `Ctrl-b d` and reattach with `tmux attach -t pilot`.
+
+After a code fix, the same chain with `FORCE_FROM=calibrate` before `bash slurm/pilot.sbatch`
+redoes each variant from that stage.
 
 Results go to `runs/pilot/`, never to `outputs/`. How a run goes and how to restart it:
 [docs/pilot.md](docs/pilot.md).
