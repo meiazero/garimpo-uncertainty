@@ -51,3 +51,6 @@ Written before the pipeline, and the origin of the test.
 | 43 | The store changes under finished stages, which skip on sidecars alone | `slots_sha256` recomputed by `validate_data.py` and `pipeline_check.py`, E2E zeroes and deletes on the real stages |
 | 44 | A changed split reads another tile's slots | `tile_index` in the sidecar and `N == n_tiles * cells_per_tile`, E2E reorders, drops and adds tiles |
 | 45 | A lookup of an absent cell returns a neighbor | `data.positions_of` raises naming the `cell_index`, E2E on calibrate, generate_intervals and compute_metrics |
+| 46 | Repeated subsampling draws per cell, so a large group dominates as under no group weighting | one 30-cell group among 24 single-cell groups, E2E |
+| 47 | Too few groups give an unbounded subsampled quantile that reads as the largest score | `subsampled_quantile` refuses at k ≤ 1/α - 1, E2E at k = 9 and 10 |
+| 48 | The subsampled rule loses the finite-sample +1 or reads the global RNG | one cell per group must equal split conformal's ⌈(k+1)(1-α)⌉-th score; the seed alone fixes the draws, E2E |

@@ -32,6 +32,13 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("compass_j_svm", "external"),
     ("compass_j_svm", "own_region"),
 )
+# Sensitivity analysis: the pooled external and own-region rows again, by repeated subsampling.
+COMBINATIONS += tuple(
+    (method, f"{calibration}_subsampled")
+    for method, calibration in COMBINATIONS
+    if calibration in {"external", "own_region"}
+)
+SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
 COMPASS_METHODS = ("compass_l", "compass_j_pca", "compass_j_svm")  # the rows of scores/scores.npz
 # Upstream's values, also in Cheung et al. (2026), Appendix E.
 CQR_PARAMETERS = {

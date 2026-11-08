@@ -22,7 +22,7 @@
 #   call, which this count leaves out.
 # - compass_scores adds, per cell, 80 g(z) evaluations (20 steps x 2 endpoints x 2 directions) and
 #   one Jacobian, on the layers after LAYER; at decoder.blocks.4 that is the head alone.
-#   generate_intervals adds 8 g(z) per test cell (4 COMPASS-J rows x 2 endpoints); compass_l needs
+#   generate_intervals adds 16 g(z) per test cell (8 COMPASS-J rows x 2 endpoints); compass_l needs
 #   no decoder.
 # - EPOCHS=2 x STEPS_PER_EPOCH=20 is 40 updates on 160 cells. A model still predicting nothing has
 #   all-zero Jacobians at temperature 10,000, and fit_directions stops; whether 40 updates avoid

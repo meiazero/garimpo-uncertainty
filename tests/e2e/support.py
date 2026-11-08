@@ -55,6 +55,12 @@ EXPECTED_ROWS = {
     ("compass_j_svm", "external"),
     ("compass_j_svm", "own_region"),
 }
+# The sensitivity analysis: every pooled external and own-region row again, by repeated subsampling.
+EXPECTED_ROWS |= {
+    (method, f"{calibration}_subsampled")
+    for method, calibration in EXPECTED_ROWS
+    if calibration in {"external", "own_region"}
+}
 RUN_ORDER = {
     "convnet": (["--channels", "8", "16", "32"], "up.1", "up.0"),
     "unet": (
@@ -129,6 +135,9 @@ def group_tiles() -> list[dict]:
     plan += [("Asia/Oceania", "calibration", 6, 6)]
     plan += [("Asia/Oceania", "calibration", g, 1) for g in range(7, 14)]
     plan += [("Amazonia BR", "test", g, 2) for g in range(14, 22)]
+    # Repeated subsampling needs k > 1/alpha - 1 = 9 groups, and own region leaves one out.
+    plan += [("Asia/Oceania", "calibration", g, 1) for g in range(22, 25)]
+    plan += [("Amazonia BR", "test", g, 2) for g in range(25, 28)]
     rows, tile_id = [], 0
     for region, role, group, n_tiles in plan:
         for _ in range(n_tiles):
