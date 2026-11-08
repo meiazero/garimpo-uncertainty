@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 
+import compass2d.calibration
 import compass2d.compass
 import compass2d.directions
 import compass2d.metrics
@@ -23,6 +24,9 @@ import garimpo_uncertainty.models
 from tests.e2e import support
 
 ALPHA = 0.1
+SUBSAMPLES = garimpo_uncertainty.intervals.SUBSAMPLES
+# calibrate.py's default, which the shared runs keep.
+CALIBRATE_SEED = 0
 
 
 @dataclass(frozen=True)
@@ -185,6 +189,27 @@ def test_own_region_calibration_excludes_the_evaluated_group(evaluation: Evaluat
         assert np.allclose(own[groups == group], expected), group
 
 
+def test_subsampled_rows_draw_from_their_own_population(evaluation: Evaluation) -> None:
+    """External draws from the calibration groups, own region from every test group but one."""
+    subsampled = compass2d.calibration.subsampled_quantile
+    calibration = evaluation.cells[evaluation.cells.role == "calibration"]
+    calibration_scores = np.abs(calibration.v - calibration.vhat).to_numpy()
+    external = evaluation.quantile[evaluation.row("conformal_simple", "external_subsampled")]
+    expected = subsampled(
+        calibration_scores, calibration.group.to_numpy(), ALPHA, SUBSAMPLES, CALIBRATE_SEED
+    )
+    assert np.allclose(external, expected)
+    groups = evaluation.groups
+    own = evaluation.quantile[evaluation.row("conformal_simple", "own_region_subsampled")]
+    test_scores = np.abs(evaluation.v - evaluation.vhat)
+    for group in np.unique(groups):
+        others = groups != group
+        expected = subsampled(
+            test_scores[others], groups[others], ALPHA, SUBSAMPLES, CALIBRATE_SEED
+        )
+        assert np.allclose(own[groups == group], expected), group
+
+
 @pytest.mark.parametrize("method", ["conformal_simple", "compass_l"])
 def test_conformal_does_not_collapse_on_exchangeable_regions(
     evaluation: Evaluation, method: str
@@ -319,7 +344,7 @@ def test_each_compass_row_alone_matches_the_one_pass(
     pixel_ha = garimpo_uncertainty.data.PIXEL_HA
     model, test = compass_inputs.model, compass_inputs.test
     compass_rows = compass_inputs.compass_rows
-    assert len(compass_rows) == 7
+    assert len(compass_rows) == 13
 
     def soft(logits: torch.Tensor) -> torch.Tensor:
         return compass2d.metrics.soft_area(logits, pixel_ha, compass2d.metrics.UPSTREAM_TEMPERATURE)

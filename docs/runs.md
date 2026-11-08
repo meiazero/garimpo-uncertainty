@@ -30,6 +30,30 @@ The written sizes hold where the filesystem keeps holes; see [data-layout.md](da
 `$DATA/status/fraction-<F>-seed-<S>/`. Another `--train-fraction` or `--subset-seed` under the same
 `RUN_DIR` refuses.
 
+## Quantile rule and its sensitivity analysis
+
+The main rows take the group quantile by CDF pooling (Dunn et al. 2022, §3.2), which weighs every
+group equally but is valid only as k grows and for a continuous response. Their unsupervised
+simulation undercovers at k ≤ 35; their residual simulation, closer to this one, stays near 1 - α
+(§4.4). Calibration has 25 groups and own region 23, and the areas are far from continuous: 372 of the
+864 Amazon cells have no mining (`chips_amazon_nonempty` in `outputs/frame.json`). So every `external` and `own_region` row is repeated
+as `external_subsampled` and `own_region_subsampled`, by repeated subsampling (§4.3, B = 100): one
+score per group per subsample, coverage at least 1 - 2α for a new group at any k (Theorem 10), and
+a refusal at k ≤ 1/α - 1, where no interval is bounded. `external_weighted` has no subsampled row,
+since subsampling has no definition with density-ratio weights.
+
+A run calibrated before these rows existed skips `calibrate` with 17 rows, and the pipeline check
+fails on the absent ones: resubmit with `FORCE_FROM=calibrate`.
+
+Both rules see the same scores, so `coverage_comparisons.csv` and `width_comparisons.csv` already
+pair them. The reading is fixed before the data:
+
+1. Robust: each method's Q2 verdict and the width order of the methods that pass are the same under
+   both rules.
+2. Pooling's own undercoverage: own-region coverage below 0.90 by pooling and not by subsampling.
+   Then the geographic effect is read as external minus own region within one rule.
+3. Geographic shift: external coverage falls under both rules and own region does not.
+
 ## Tile lists
 
 `outputs/tiles/tiles_{1,5,10,100}pct.json` are versioned and are the source of every download, so a
@@ -66,7 +90,8 @@ ask for a tile the download did not fetch, and the E2E asserts that each version
 | `convnet` | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
 
 The learning curve is 3 U-Net variants x 4 fractions plus the ConvNet at 100%: 13 runs, one env file
-each, and 13 x 17 = 221 method and calibration rows. The code does not refuse a ConvNet at a lower
+each, and 13 x 31 = 403 method and calibration rows: 17 main rows and 14 of the sensitivity
+analysis above. The code does not refuse a ConvNet at a lower
 fraction; it is simply not among these runs. Each run is one training, so differences between
 variants have no replication behind them and the comparison is descriptive only.
 `merge_results.py` identifies a run by `(model, train_fraction)` and refuses a repeated pair; each

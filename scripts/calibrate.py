@@ -6,6 +6,7 @@ come from the decoder), and the score counts and saturation of each row as [K].
 """
 
 import argparse
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
@@ -19,6 +20,17 @@ import garimpo_uncertainty.intervals
 import garimpo_uncertainty.stages
 
 
+def quantile_rule(
+    calibration: str, alpha: float, seed: int
+) -> Callable[[np.ndarray, np.ndarray], float]:
+    """CDF pooling, the main rule, or repeated subsampling for the sensitivity rows."""
+    if calibration.endswith("_subsampled"):
+        return lambda scores, groups: compass2d.calibration.subsampled_quantile(
+            scores, groups, alpha, garimpo_uncertainty.intervals.SUBSAMPLES, seed
+        )
+    return lambda scores, groups: compass2d.calibration.group_quantile(scores, groups, alpha)
+
+
 def quantile_per_cell(
     calibration: str,
     calibration_scores: np.ndarray,
@@ -28,17 +40,19 @@ def quantile_per_cell(
     *,
     density_ratio: np.ndarray,
     alpha: float,
+    seed: int,
 ) -> np.ndarray:
-    if calibration == "external":
-        value = compass2d.calibration.group_quantile(calibration_scores, calibration_groups, alpha)
-        return np.full(len(test_scores), value)
+    rule = quantile_rule(calibration, alpha, seed)
+    situation = calibration.removesuffix("_subsampled")
+    if situation == "external":
+        return np.full(len(test_scores), rule(calibration_scores, calibration_groups))
     if calibration == "external_weighted":
         value = compass2d.calibration.group_quantile(
             calibration_scores, calibration_groups, alpha, density_ratio
         )
         return np.full(len(test_scores), value)
-    if calibration == "own_region":
-        return compass2d.calibration.leave_one_group_out_quantiles(test_scores, test_groups, alpha)
+    if situation == "own_region":
+        return compass2d.calibration.leave_one_group_out_quantiles(test_scores, test_groups, rule)
     raise ValueError(f"unknown calibration: {calibration!r}")
 
 
@@ -50,6 +64,7 @@ class CalibrationProblem:
     test: pd.DataFrame
     density_ratio: np.ndarray
     alpha: float
+    seed: int
 
     def quantile(
         self, calibration: str, calibration_scores: np.ndarray, test_scores: np.ndarray
@@ -62,6 +77,7 @@ class CalibrationProblem:
             self.test.group.to_numpy(),
             density_ratio=self.density_ratio,
             alpha=self.alpha,
+            seed=self.seed,
         )
 
 
@@ -139,7 +155,7 @@ def fill_compass_row(
         calibration, scores.score[m, scores.calibration_at], scores.score[m, scores.test_at]
     )
     rows.scale[k] = np.nan
-    at = scores.test_at if calibration == "own_region" else scores.calibration_at
+    at = scores.test_at if calibration.startswith("own_region") else scores.calibration_at
     flags = scores.saturated[m, at]
     rows.n_scores[k] = len(flags)
     rows.n_saturated[k] = flags.sum()
@@ -171,7 +187,8 @@ def fill_output_space_row(
             problem.test.v.to_numpy(), rows.lower_term[k], rows.upper_term[k], rows.scale[k]
         ),
     )
-    rows.n_scores[k] = len(problem.test if calibration == "own_region" else problem.calibration)
+    own_region = calibration.startswith("own_region")
+    rows.n_scores[k] = len(problem.test if own_region else problem.calibration)
 
 
 def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dict:
@@ -181,7 +198,9 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
     calibration_cells = cells[cells.role == "calibration"].reset_index(drop=True)
     test_cells = cells[cells.role == "test"].reset_index(drop=True)
     scores, density_ratio = read_scores(calibration_cells, test_cells, args)
-    problem = CalibrationProblem(calibration_cells, test_cells, density_ratio, args.alpha)
+    problem = CalibrationProblem(
+        calibration_cells, test_cells, density_ratio, args.alpha, args.seed
+    )
     cqr_models = garimpo_uncertainty.intervals.fit_cqr(
         cells[cells.role == "train"], args.alpha, args.seed
     )
