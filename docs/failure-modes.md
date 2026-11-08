@@ -58,3 +58,7 @@ Written before the pipeline, and the origin of the test.
 | 50 | Comparisons pair rows of different levels | `alpha` in every comparison row, pair counts per level, E2E |
 | 51 | Cells without mining hide a shortfall in the cells with it | `coverage_by_stratum.csv`, by reference area with cells without mining apart and by predicted mining, recomputed per cell in E2E |
 | 52 | Zero or saturated scores enter the log-log fit | both left out, `n_saturated` reported, fit recomputed in E2E |
+| 53 | The layer is chosen on calibration or test cells | `choose_layer.py` reads the validation rows only, E2E with test rows that would change the choice |
+| 54 | A layer whose sweep is not ascending is calibrated, or one direction passes for both | a layer qualifies only when the `pca` and `svm` rows both reach `MIN_FRACTION_ASCENDING`; one missing refuses, E2E |
+| 55 | No layer qualifies and one is taken anyway, or an earlier choice survives a refusal | `choose_layer` fails naming the best layer and its fraction, so the job stops; it deletes any earlier `chosen_layer.json` first, E2E |
+| 56 | A layer is chosen with no sweep behind it, or a new threshold keeps the old choice | layers must match between `directions/diagnostics.csv` and the sweep; the threshold is in the fingerprint, so a change refuses until `FORCE_FROM=choose_layer`, E2E |

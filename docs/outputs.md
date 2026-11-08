@@ -25,6 +25,7 @@ uv run python -I scripts/split/make_split.py   # writes outputs/split.csv; a cha
 | Log-log slope of COMPASS scores on split-conformal scores, calibration cells, zero and saturated scores left out (Cheung et al. 2026, Figure 4) | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/score_relation.csv` |
 | PCA explained variance and `\|cos(v1, w)\|` per layer | `scripts/fit_directions.py`, `merge_results.py` | `outputs/layer_diagnostics.csv` |
 | Monotonic fraction per layer and direction, validation role, for choosing the layer | `scripts/verify_monotonicity.py`, `merge_results.py` | `outputs/monotonicity_layer.csv` |
+| Layer chosen per run and the threshold it met | `scripts/choose_layer.py`, `merge_results.py` | `outputs/chosen_layers.csv` |
 | Monotonic fraction of the chosen layer, calibration and test roles | `scripts/verify_monotonicity.py`, `merge_results.py` | `outputs/monotonicity_endpoint.csv` |
 
 Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Amazon groups).

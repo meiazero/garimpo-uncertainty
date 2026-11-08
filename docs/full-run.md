@@ -8,12 +8,10 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 | 2 | login | `uv run --no-sync python scripts/download_data.py metadata` |
 | 3 | login | `uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m <nearest\|bilinear>` (from the versioned list, so `lists` need not run first; resumable; contains every smaller fraction of that list's seed; sizes in [runs.md](runs.md#training-fractions); another resampling refuses; `--force` redoes every selected tile, then rerun with `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash in its sidecar, so later stages refuse until redone; a re-cut with identical content changes nothing) |
 | 4 | login | `uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco` |
-| 5 | login | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, then fill in every value (see [decisions.md](decisions.md)) except `LAYER`, with `STOP_AFTER_DIAGNOSTICS=1` |
-| 6 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env` (stops after the layer diagnostics) |
-| 7 | login | Read `runs/unet_scratch-f1.0/directions/diagnostics.csv` and `runs/unet_scratch-f1.0/monotonicity_layer.csv` (validation role only); set `LAYER`, clear `STOP_AFTER_DIAGNOSTICS` |
-| 8 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env` (finished stages skip, so nothing retrains) |
-| 9 | both | Repeat steps 5 to 8 for each other run of the learning curve in [runs.md](runs.md#model-variants) |
-| 10 | login | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
+| 5 | login | `cp slurm/full.env.example slurm/unet_scratch-f1.0.env`, then fill in every value (see [decisions.md](decisions.md)) |
+| 6 | `sbatch` | `slurm/submit.sh slurm/full.sbatch slurm/unet_scratch-f1.0.env` (the job chooses the layer from the validation role and continues; `chosen_layer.json` records why) |
+| 7 | both | Repeat steps 5 and 6 for each other run of the learning curve in [runs.md](runs.md#model-variants) |
+| 8 | login | `uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs` |
 
 Compute nodes have no internet, so `uv sync` and steps 2 to 4 only run on the login node; every job
 uses `uv run --no-sync`. The data root is `$GARIMPO_DATA_DIR`, default

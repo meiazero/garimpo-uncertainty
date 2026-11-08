@@ -27,6 +27,7 @@ run of `test_fractions.py` fails `fit_directions.py` at 2 threads.
 | `test_training.py` | What training writes and every refusal |
 | `test_sentinel2_training.py` | The identity of the Sentinel-2 weights file, present, absent and replaced |
 | `test_results.py` | PICP, MPIW, interval score and Dice recomputed one cell at a time against `results.csv`; every COMPASS row with its own loader against the one pass in `generate_intervals.py`, with no tolerance; the population of each subsampled row; every alpha level; coverage by stratum and the score relation |
+| `test_choose_layer.py` | The layer choice on hand-written diagnostics: validation role only, both directions, threshold, a missing direction, no qualifying layer, ties, a changed threshold, a refused rerun |
 | `test_calibration_rules.py` | Repeated subsampling reduced to split conformal at one cell per group, its draws within and across groups, its seed, its refusal, and simulated coverage at k = 25 in `tests/artifacts/calibration_rules/coverage_k25.json` |
 | `test_stages.py` | Reruns, refusals, saturation, absent cells, merge and `pipeline_check.py` |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
