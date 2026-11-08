@@ -41,7 +41,7 @@ def collect_samples(
 
     def metric(logits: torch.Tensor) -> torch.Tensor:
         pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
+        return compass2d.metrics.soft_area(logits, pixel_ha, args.direction_temperature)
 
     jacobians, features, labels = [], [], []
     feature_shape = None
@@ -148,7 +148,13 @@ def main() -> None:
     parser.add_argument("--svm-pixels-per-cell", type=int, required=True)
     parser.add_argument("--svm-max-iter", type=int, default=1000, help="sklearn's default")
     parser.add_argument("--n-components", type=int, default=1, help="paper: L = 1 for area")
-    parser.add_argument("--temperature", type=float, default=compass2d.metrics.UPSTREAM_TEMPERATURE)
+    parser.add_argument(
+        "--direction-temperature",
+        type=float,
+        default=compass2d.metrics.UPSTREAM_TEMPERATURE,
+        help="sigmoid temperature of the area whose Jacobian sets the direction; at 1e4 the "
+        "gradient vanishes beyond |logit| ~ 5e-3, so cells predicted empty get the mean direction",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")

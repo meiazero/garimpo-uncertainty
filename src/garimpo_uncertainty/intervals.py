@@ -32,6 +32,27 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("compass_j_svm", "external"),
     ("compass_j_svm", "own_region"),
 )
+# Mondrian calibration by predicted mining, the stratum known when an interval is used: one quantile
+# for cells predicted empty, one for the rest. conformal_simple here is classic Mondrian CP.
+MONDRIAN_METHODS = (
+    "conformal_simple",
+    "conformal_local",
+    "cqr",
+    "compass_l",
+    "compass_j_pca",
+    "compass_j_svm",
+)
+COMBINATIONS += tuple(
+    (method, f"{situation}_mondrian")
+    for method in MONDRIAN_METHODS
+    for situation in ("external", "own_region")
+)
+# Asymmetric COMPASS (Cheung et al., 2026, Algorithm 6) through one joint score: each a_ row reads
+# the one-sided scores of the COMPASS method named after the prefix.
+ASYMMETRIC_METHODS = ("a_compass_l", "a_compass_j_pca", "a_compass_j_svm")
+COMBINATIONS += tuple(
+    (method, situation) for method in ASYMMETRIC_METHODS for situation in ("external", "own_region")
+)
 # Sensitivity analysis: the pooled external and own-region rows again, by repeated subsampling.
 COMBINATIONS += tuple(
     (method, f"{calibration}_subsampled")
@@ -39,6 +60,7 @@ COMBINATIONS += tuple(
     if calibration in {"external", "own_region"}
 )
 SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
+DENSITY_RATIO_FOLDS = 5  # group folds of the cross-fitted domain classifier
 ALPHAS = (0.05, 0.1, 0.15)  # Cheung et al. (2026), Table 1
 COMPASS_METHODS = ("compass_l", "compass_j_pca", "compass_j_svm")  # the rows of scores/scores.npz
 # Upstream's values, also in Cheung et al. (2026), Appendix E.
@@ -62,6 +84,11 @@ def fit_cqr(
         for level in (alpha / 2, 1 - alpha / 2)
     ]
     return models[0], models[1]
+
+
+def mondrian_stratum(cells: pd.DataFrame) -> np.ndarray:
+    """1 where the model predicts mining, 0 elsewhere."""
+    return (cells.vhat.to_numpy() > 0).astype(int)
 
 
 def uncertainty_ha(cells: pd.DataFrame) -> np.ndarray:

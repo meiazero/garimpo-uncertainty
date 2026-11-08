@@ -5,9 +5,10 @@ and quantile as [A, K, N] arrays, A indexing ALPHAS, K COMBINATIONS and N the te
 """
 
 import argparse
+import itertools
 from collections.abc import Callable
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, Self
 
 import compass2d.compass
 import compass2d.directions
@@ -23,6 +24,10 @@ import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models
 import garimpo_uncertainty.stages
 
+COMPASS_ROWS = (
+    garimpo_uncertainty.intervals.COMPASS_METHODS + garimpo_uncertainty.intervals.ASYMMETRIC_METHODS
+)
+
 
 class SearchSpace(NamedTuple):
     """What one COMPASS method perturbs: the point, its direction, and how to read an area."""
@@ -34,6 +39,9 @@ class SearchSpace(NamedTuple):
 
     def endpoints(self, beta: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         return compass2d.compass.endpoints(self.decode, self.metric, self.z, self.delta, beta)
+
+    def shifted(self, beta: torch.Tensor) -> torch.Tensor:
+        return compass2d.compass.shifted(self.decode, self.metric, self.z, self.delta, beta)
 
 
 def search_spaces(
@@ -72,10 +80,35 @@ def search_spaces(
     return spaces
 
 
+class Calibrated(NamedTuple):
+    """Quantiles and, per level and row, the censoring point and side ratio, from quantiles.npz.
+
+    censor_at is NaN on output-space rows and side_ratio on every row but the asymmetric ones.
+    """
+
+    quantile: np.ndarray
+    censor_at: np.ndarray
+    side_ratio: np.ndarray
+
+    @classmethod
+    def read(cls, run_dir: Path) -> Self:
+        with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
+            return cls(stored["quantile"], stored["censor_at"], stored["side_ratio"])
+
+
+def row_endpoints(
+    space: SearchSpace, method: str, beta: torch.Tensor, ratio: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Symmetric endpoints, or [m(z - beta delta), m(z + ratio beta delta)] for an a_ row."""
+    if method in garimpo_uncertainty.intervals.ASYMMETRIC_METHODS:
+        return space.shifted(-beta), space.shifted(ratio * beta)
+    return space.endpoints(beta)
+
+
 @torch.no_grad()
 def compass_endpoints(
     model: torch.nn.Module,
-    quantile: np.ndarray,
+    calibrated: Calibrated,
     cells: pd.DataFrame,
     jacobians: np.ndarray,
     fitted: compass2d.directions.Directions,
@@ -94,7 +127,7 @@ def compass_endpoints(
     rows = [
         (k, method)
         for k, (method, _) in enumerate(garimpo_uncertainty.intervals.COMBINATIONS)
-        if method in garimpo_uncertainty.intervals.COMPASS_METHODS
+        if method in COMPASS_ROWS
     ]
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
@@ -105,13 +138,29 @@ def compass_endpoints(
         features = garimpo_uncertainty.models.encode(model, images.to(device))
         batch_jacobians = jacobians[first:last].astype(np.float64)
         spaces = search_spaces(model, features, batch_jacobians, fitted, args)
-        for a in range(len(quantile)):
-            for k, method in rows:
-                beta = torch.as_tensor(quantile[a, k, first:last], device=device)
-                low, high = spaces[method].endpoints(beta)
-                lower[a, k, first:last] = low.cpu().numpy()
-                upper[a, k, first:last] = high.cpu().numpy()
+        for a, (k, method) in itertools.product(range(len(calibrated.quantile)), rows):
+            beta = torch.as_tensor(calibrated.quantile[a, k, first:last], device=device)
+            # Censored rows become the whole cell in widen_saturated; 0 keeps inf from the decoder.
+            beta = torch.where(beta >= float(calibrated.censor_at[a, k]), 0.0, beta)
+            low, high = row_endpoints(
+                spaces[method.removeprefix("a_")], method, beta, float(calibrated.side_ratio[a, k])
+            )
+            lower[a, k, first:last] = low.cpu().numpy()
+            upper[a, k, first:last] = high.cpu().numpy()
         first = last
+
+
+def widen_saturated(
+    calibrated: Calibrated, cell_ha: np.ndarray, lower: np.ndarray, upper: np.ndarray
+) -> None:
+    """Turn every COMPASS interval whose quantile reached its censoring point into the whole cell.
+
+    Such a quantile is censored: the true one may be any larger, so nothing narrower is supported.
+    Output-space rows have no censoring point (NaN), so the comparison leaves them alone.
+    """
+    trivial = calibrated.quantile >= calibrated.censor_at[:, :, None]
+    lower[trivial] = 0.0
+    upper[:] = np.where(trivial, cell_ha, upper)
 
 
 def read_jacobians(run_dir: Path, cell_index: np.ndarray) -> np.ndarray:
@@ -127,19 +176,19 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
         args.checkpoint, predictions, device
     )
     fitted = compass2d.directions.Directions.load(args.run_dir / "directions" / f"{args.layer}.npz")
+    calibrated = Calibrated.read(args.run_dir)
     with np.load(args.run_dir / "calibration" / "quantiles.npz") as stored:
         cell_index = stored["cell_index"]
-        quantile = stored["quantile"]
         alpha = stored["alpha"]
         # Terms are NaN on COMPASS rows, which compass_endpoints then fills.
-        lower = stored["lower_term"] - quantile * stored["scale"]
-        upper = stored["upper_term"] + quantile * stored["scale"]
+        lower = stored["lower_term"] - calibrated.quantile * stored["scale"]
+        upper = stored["upper_term"] + calibrated.quantile * stored["scale"]
     test = predictions.iloc[
         garimpo_uncertainty.data.positions_of(predictions.cell_index.to_numpy(), cell_index)
     ]
     compass_endpoints(
         model,
-        quantile,
+        calibrated,
         test,
         read_jacobians(args.run_dir, cell_index),
         fitted,
@@ -150,13 +199,14 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
         lower=lower,
         upper=upper,
     )
+    widen_saturated(calibrated, test.cell_ha.to_numpy(), lower, upper)
     lower, upper = garimpo_uncertainty.intervals.clip_to_cell(lower, upper, test.cell_ha.to_numpy())
     garimpo_uncertainty.stages.write_arrays(
         output,
         cell_index=cell_index,
         lower=lower,
         upper=upper,
-        quantile=quantile,
+        quantile=calibrated.quantile,
         alpha=alpha,
         layer=np.array(args.layer),
     )

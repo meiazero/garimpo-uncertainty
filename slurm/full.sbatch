@@ -23,6 +23,7 @@ source "${1:?usage: slurm/submit.sh slurm/full.sbatch <values.env>}"
 : "${EPOCHS:?}" "${STEPS_PER_EPOCH:?}" "${BATCH_SIZE:?}" "${LR:?}" "${WEIGHT_DECAY:?}"
 : "${EVAL_BATCH_SIZE:?}" "${LOSS:?}" "${SEED:?}" "${SVM_C:?}" "${SVM_CLASS_WEIGHT:?}" "${SVM_PIXELS_PER_CELL:?}"
 : "${SWEEP_STEPS:?}" "${SWEEP_CELLS:?}" "${BETA_RANGE_LOGITS:?}" "${BETA_RANGE_FEATURES:?}"
+: "${DIRECTION_TEMPERATURE:?}"
 [ "$ARCH" != unet ] || : "${ENCODER_WEIGHTS:?}"
 [ "$ARCH" != convnet ] || [ "${#ARCH_ARGS[@]}" -gt 0 ] || { echo "ARCH_ARGS is empty" >&2; exit 1; }
 : "${MIN_FRACTION_ASCENDING:?}" "${SEARCH_THRESHOLD_LOGITS:?}" "${SEARCH_THRESHOLD_FEATURES:?}"
