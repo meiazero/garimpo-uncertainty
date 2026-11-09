@@ -4,6 +4,7 @@ No hyperparameter has a default, so a run states every value it uses.
 """
 
 import argparse
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -109,6 +110,28 @@ def read_resume(args: argparse.Namespace) -> dict | None:
     return resume
 
 
+def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
+    """Refuse --force over an unfinished run's last.pt, which training from scratch overwrites.
+
+    FORCE_FROM=train left in a Colab cell would otherwise restart after every lost session. A
+    finished run's last.pt goes instead, so a forced redo cut short never resumes from its end.
+    """
+    last = run_dir / "last.pt"
+    if not force or not last.exists():
+        return
+    status_path = run_dir / "status" / "train.json"
+    status = json.loads(status_path.read_text()) if status_path.exists() else {}
+    # Starting the work drops completed_fingerprint, so only a finished training still has it.
+    if "completed_fingerprint" not in status:
+        garimpo_uncertainty.stages.fail_stage(
+            run_dir / "status",
+            "train",
+            f"{last} holds an unfinished training (status {status.get('status', 'absent')}): "
+            f"run without --force (FORCE_FROM=train) to resume it, or delete {last} to start over",
+        )
+    last.unlink()
+
+
 def new_metadata(
     args: argparse.Namespace,
     root: Path,
@@ -169,6 +192,8 @@ def start_training(
     model.load_state_dict(resume["model"])
     optimizer.load_state_dict(resume["optimizer"])
     torch.set_rng_state(resume["rng"])
+    if resume["cuda_rng"]:
+        torch.cuda.set_rng_state_all(resume["cuda_rng"])
     return TrainingState(
         model,
         optimizer,
@@ -234,6 +259,8 @@ def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice:
             "best_dice": state.best_dice,
             "history": state.history,
             "rng": torch.get_rng_state(),
+            # The DeepLabV3 head's dropout draws on the GPU, so a resume must restore that too.
+            "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else [],
         },
     )
 
@@ -395,6 +422,7 @@ def main() -> None:
     tile_ids = garimpo_uncertainty.data.select_tiles(
         split, args.train_fraction, args.subset_seed
     ).tile_id.tolist()
+    keep_unfinished_training(args.run_dir, force=args.force)
     garimpo_uncertainty.stages.run_stage(
         args.run_dir / "status",
         "train",

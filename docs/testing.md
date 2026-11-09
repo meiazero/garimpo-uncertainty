@@ -46,7 +46,7 @@ uv run ruff format --check . && uv run ruff check .
 | `test_stages.py` | Reruns, refusals, saturation, absent cells, merge, peak memory records and `pipeline_check.py` |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
 | `test_shell.py` | `slurm/full.sbatch` and `slurm/pilot.sbatch` run as a job runs them, from a root linking the real `slurm/` and `scripts/`: a full job to PASS, every `--flag "$NAME"` of `stages.sh` receiving NAME's value in the `bash -x` trace, with no two values of one command equal, and the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `FORCE_FROM` and `FORCE_VALIDATE`, an unknown `FORCE_FROM`, a failed stage stopping both jobs, every value of `full.env.example` left empty |
-| `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance |
+| `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
 | `test_workers.py` | Two DataLoader workers on CPU: two trainings with one seed give one model, band statistics and every prediction equal those read without workers |
 
 ## On a GPU

@@ -5,6 +5,7 @@ A refused resume under other arguments is in test_training.py.
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -105,3 +106,55 @@ def test_training_resumes_after_the_last_finished_epoch(
     # On a GPU, kernels are not deterministic and last.pt keeps only the CPU generator.
     if support.DEVICE == "cpu":
         assert_same_training(run_dir, uninterrupted)
+
+
+def finished_epoch_zero(run_dir: Path, data_root: Path) -> None:
+    stop_after_first_epoch(start_training(run_dir, data_root), run_dir, signal.SIGKILL)
+
+
+def test_a_resume_keeps_the_best_dice_so_far(data_root: Path, tmp_path: Path) -> None:
+    """With last.pt's best Dice raised to 1, which no epoch reaches, epoch 1 must not replace it."""
+    run_dir = tmp_path / "convnet"
+    finished_epoch_zero(run_dir, data_root)
+    last = torch.load(run_dir / "last.pt", weights_only=True)
+    torch.save(last | {"best_dice": 1.0}, run_dir / "last.pt")
+    support.run("train.py", *training_args(run_dir), data_root=data_root)
+    assert torch.load(run_dir / "best_model.pt", weights_only=True)["epoch"] == 0
+
+
+def test_force_refuses_to_discard_an_unfinished_training(data_root: Path, tmp_path: Path) -> None:
+    """FORCE_FROM=train left in a cell must not restart a training a lost session cut short."""
+    run_dir = tmp_path / "convnet"
+    finished_epoch_zero(run_dir, data_root)
+    before = (run_dir / "last.pt").stat().st_mtime_ns
+    args = training_args(run_dir)
+    forced = support.run("train.py", *args, "--force", data_root=data_root, check=False)
+    assert forced.returncode != 0
+    status = json.loads((run_dir / "status" / "train.json").read_text())
+    assert status["status"] == "failed"
+    assert "holds an unfinished training (status running)" in status["error"], status
+    assert (run_dir / "last.pt").stat().st_mtime_ns == before
+    assert "resuming after epoch 0" in support.run("train.py", *args, data_root=data_root).stdout
+
+
+def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
+    uninterrupted: Path, data_root: Path, tmp_path: Path
+) -> None:
+    """A forced redo cut short before its first epoch must start over, not resume the old run."""
+    run_dir = tmp_path / "convnet"
+    shutil.copytree(uninterrupted, run_dir)
+    status = run_dir / "status" / "train.json"
+    env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
+    command = [sys.executable, "scripts/train.py", *training_args(run_dir), "--force"]
+    process = subprocess.Popen(command, cwd=support.ROOT, env=env)  # noqa: S603 - test arguments
+    deadline = time.monotonic() + LAST_PT_TIMEOUT_SECONDS
+    while json.loads(status.read_text())["status"] != "running":
+        assert process.poll() is None
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
+    process.kill()
+    process.wait(timeout=60)
+    assert not (run_dir / "last.pt").exists()
+    rerun = support.run("train.py", *training_args(run_dir), data_root=data_root)
+    assert "resuming" not in rerun.stdout
+    assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]
