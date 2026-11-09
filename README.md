@@ -20,7 +20,9 @@ reports their coverage and width.
 ## Install
 
 Run this cell at the start of every Colab session. The repository is private, so save a read-only
-GitHub token as the Colab secret `GH_TOKEN` first.
+GitHub token as the Colab secret `GH_TOKEN` first. `colab.ipynb` runs the whole workflow on Colab,
+step by step and explained: tests, data, pilot, full runs and merge. Change it together with these
+cells.
 
 ```python
 import os
