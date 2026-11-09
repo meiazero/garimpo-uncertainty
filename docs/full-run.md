@@ -4,22 +4,26 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 
 ## Steps
 
-1. Start every Colab session with the session cell of the README's
-   [install](../README.md#install).
+1. Start every Colab session with the session setup of `colab.ipynb`.
 2. Download the store once, either on your own machine or on a Colab CPU runtime
    ([below](#download-the-store)).
 3. Copy the values file with `cp slurm/full.env.example slurm/unet_scratch-f1.0.env` and fill in
-   every value, using [decisions.md](decisions.md). Commit and push it from your machine: each
-   session starts from a fresh clone with a read-only token.
-4. On a GPU runtime, run the session cell and then the run cell ([below](#the-run-cell)), one run
-   per session. The run chooses the layer from the validation role and continues;
-   `chosen_layer.json` records why.
-5. Repeat steps 3 and 4 for the other three runs in [runs.md](runs.md#model-variants).
-6. Merge the four runs' tables into `outputs/`:
+   every value, using [decisions.md](decisions.md), with `RUN_DIR=runs/unet_scratch-f1.0`: the
+   merge reads the runs from those paths. Commit and push it from your machine: each session
+   starts from a fresh clone with a read-only token.
+4. On a GPU runtime, run the session setup and then the notebook's Full run step
+   ([below](#the-run-cells)), one run per session. The run chooses the layer from the validation
+   role and continues; `chosen_layer.json` records why.
+5. Repeat the two items above for the other three runs in [runs.md](runs.md#model-variants).
+6. Merge the four runs' tables into `outputs/` with the notebook's Merge step, on a CPU runtime.
+   It runs the command below; on your own machine, copy `runs/` from Drive first.
 
    ```bash
-   uv run --no-sync python scripts/merge_results.py --runs runs/unet_*-f* runs/convnet-f1.0 --out outputs
+   uv run --no-sync python scripts/merge_results.py --out outputs --runs runs/unet_scratch-f1.0 runs/unet_imagenet-f1.0 runs/unet_sentinel2-f1.0 runs/convnet-f1.0
    ```
+
+7. On Colab, the Merge step copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit
+   it from your own machine: these are the tables the dissertation reports.
 
 ## Download the store
 
@@ -39,8 +43,8 @@ and the time left, and the download's own lines are also appended, timestamped, 
 `<DIR>/status/download_scenes.json` instead. Without `GARIMPO_DATA_DIR` it writes to
 `~/Experiments/datasets/garimpo`. The `tar` line needs free disk for the archive as well.
 
-On Colab, run the data cell of the [quick start](../README.md#quick-start) on a CPU runtime:
-metadata, the 1% and 100% lists, both weights, then the archive to Drive.
+On Colab, run step 2 of the notebook on a CPU runtime: metadata, the 1% and 100% lists, both
+weights, then the archive to Drive.
 
 Either way:
 
@@ -53,32 +57,31 @@ Either way:
   `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash
   in its sidecar.
 
-## The run cell
+## The run cells
 
-Run it after the session cell. `NUM_WORKERS` follows the runtime's CPUs.
+The notebook's Full run step runs one model, in this order:
 
-```python
-ENV = "unet_scratch-f1.0"
-!(while sleep 1800; do rsync -a --exclude '*.tmp' runs/ {DRIVE}/runs/; done) > /dev/null 2>&1 &
-!NUM_WORKERS={os.cpu_count()} bash slurm/full.sbatch slurm/{ENV}.env 2>&1 | tee outputs/logs/{ENV}.log
-!rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
-from pathlib import Path
-VERDICTS = ("PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL")
-# The cell succeeds whatever the jobs did; their verdicts say how they went. Nothing here may
-# raise, or the GPU would stay assigned.
-for log in [Path(f"outputs/logs/{ENV}.log")]:
-    text = log.read_text(errors="replace") if log.exists() else ""
-    verdict = [line for line in text.splitlines() if line.startswith(VERDICTS)]
-    print(log.name, verdict[-1] if verdict else "NO VERDICT: the job or its check died; see the log")
-from google.colab import runtime; runtime.unassign()
-```
+1. Start the copy of `runs/` and the logs to Drive every 30 minutes.
+2. Run the model: choose `ENV` in the cell's option, and leave `FORCE_FROM` and `FORCE_VALIDATE`
+   empty on a first run. `NUM_WORKERS` follows the runtime's CPUs. Colab saves a form option in
+   the notebook, so empty `FORCE_FROM` again after a forced rerun; left set, it redoes those
+   stages in every later session instead of resuming.
+3. Stop the copy, then save the runs and the logs in Drive.
+4. Print the verdict, then release the GPU.
 
-The background `rsync` copies `runs/` to Drive every 30 minutes, so a session that ends mid-run
-keeps the finished stages and the last checkpoint. `tests/e2e/test_resume.py` kills training after
+With the copy every 30 minutes, a session that ends mid-run keeps the finished stages and the
+last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
 its first epoch and requires the rerun to end where an uninterrupted run ends, on CPU; on a GPU the
 kernels are not deterministic, so only the resume itself is the same. Rerun without `FORCE_FROM=train`
 to resume: with it, `train.py` refuses to discard an unfinished training and says so. Every script
 runs with `uv run --no-sync`, so a run never changes the environment under itself.
+
+Outside Colab, one run is one job:
+
+```bash
+mkdir -p outputs/logs
+NUM_WORKERS=$(nproc) bash slurm/full.sbatch slurm/unet_scratch-f1.0.env 2>&1 | tee -a outputs/logs/unet_scratch-f1.0.log
+```
 
 ## Regenerate the tile lists
 

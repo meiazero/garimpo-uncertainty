@@ -19,74 +19,41 @@ reports their coverage and width.
 
 ## Install
 
-Run this cell at the start of every Colab session. The repository is private, so save a read-only
-GitHub token as the Colab secret `GH_TOKEN` first. `colab.ipynb` runs the whole workflow on Colab,
-step by step and explained: tests, data, pilot, full runs and merge. Change it together with these
-cells.
+The experiment runs on Google Colab through `colab.ipynb`, which explains each of its cells.
 
-```python
-import os
-from google.colab import drive, userdata
-drive.mount("/content/drive")
-REPO = "github.com/<OWNER>/garimpo-uncertainty.git"         # the repository's path on GitHub
-DRIVE = "/content/drive/MyDrive/garimpo"                    # store and runs between sessions
-DATA = "/content/garimpo-data"                              # always this path: runs record it
-TOKEN = userdata.get("GH_TOKEN")
-os.environ["GARIMPO_DATA_DIR"] = DATA
-os.environ["PATH"] = "/root/.local/bin:" + os.environ["PATH"]
-!apt-get -qq install -y rsync zstd > /dev/null
-!curl -LsSf https://astral.sh/uv/install.sh | sh
-!git clone --recurse-submodules https://{TOKEN}@{REPO} /content/garimpo-uncertainty
-%cd /content/garimpo-uncertainty
-!uv sync
-!mkdir -p {DRIVE}/runs {DATA} runs outputs/logs
-!tar -I zstd -xf {DRIVE}/data.tar.zst -C {DATA}
-!rsync -a {DRIVE}/runs/ runs/
-```
+1. On GitHub, create a fine-grained token for this repository with Contents: Read-only, since the
+   repository is private.
+2. In Colab, add it as the secret `GH_TOKEN`, with Notebook access on.
+3. Open the notebook with File > Upload notebook.
+4. In every session, run the cells of its "Session setup" in order. They mount Drive, clone the
+   code, run `uv sync`, and restore the data and earlier runs from Drive. Skip the unpack cell in
+   steps 1 and 5, which do not read the data.
 
-Until the archive exists, the `tar` line prints an error and the cell carries on. Check that
-`df -h /content` has room for the 69.2 GB store, `.venv` (6.9 GB) and the runs. Why the cell is
-written this way: [docs/colab.md](docs/colab.md).
+Why the cells are written as they are: [docs/colab.md](docs/colab.md).
 
 ## Quick start
 
-Download the data once, on a CPU runtime, after the session cell:
+After the session setup, run the cells of one step of the notebook, in order:
 
-```python
-!date; uv run --no-sync python scripts/download_data.py metadata; date
-!date; uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_1pct.json --resampling-20m bilinear; date
-!date; uv run --no-sync python scripts/download_data.py scenes --tiles outputs/tiles/tiles_100pct.json --resampling-20m bilinear; date
-!uv run --no-sync python scripts/download_data.py weights --encoder-weights imagenet sentinel2_moco
-!tar --format=posix -I 'zstd -3 -T0' -cf {DRIVE}/data.tar.zst -C {DATA} .
-from google.colab import runtime; runtime.unassign()
-```
+| Step | Runtime | When |
+|---|---|---|
+| 1. Tests | GPU | Once, before the first paid run |
+| 2. Data | CPU | Once; writes `data.tar.zst` to Drive |
+| 3. Pilot | L4 GPU | Until all three variants pass |
+| 4. Full run | GPU | Once per model, one model per session |
+| 5. Merge | CPU | Once, after the four full runs pass |
 
-Then run the pilot, the 1% training fraction, on an L4 runtime, after the session cell:
-
-```python
-!for w in none imagenet sentinel2_moco; do ENCODER_WEIGHTS=$$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$$w.log; done
-!rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
-from pathlib import Path
-VERDICTS = ("PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL")
-# The cell succeeds whatever the jobs did; their verdicts say how they went. Nothing here may
-# raise, or the GPU would stay assigned.
-for log in [Path(f"outputs/logs/pilot-{w}.log") for w in ("none", "imagenet", "sentinel2_moco")]:
-    text = log.read_text(errors="replace") if log.exists() else ""
-    verdict = [line for line in text.splitlines() if line.startswith(VERDICTS)]
-    print(log.name, verdict[-1] if verdict else "NO VERDICT: the job or its check died; see the log")
-from google.colab import runtime; runtime.unassign()
-```
-
-Results go to `runs/pilot/`, never to `outputs/`. Reading the report and rerunning after a fix:
-[docs/pilot.md](docs/pilot.md).
+Each step ends by releasing the runtime. Pilot results go to `runs/pilot/`, never to `outputs/`.
+Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot.md). The full run:
+[docs/full-run.md](docs/full-run.md).
 
 ## Documentation
 
 | Document | Covers |
 |---|---|
-| [docs/colab.md](docs/colab.md) | Why the Colab cells are written as they are: the Drive archive, `$$`, modification times, zstd level, releasing the GPU |
+| [docs/colab.md](docs/colab.md) | Why the cells of `colab.ipynb` are written as they are: the Drive archive, one command per cell, modification times, the data step, releasing the runtime, the job verdicts, the copy every 30 minutes |
 | [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `FORCE_FROM` |
-| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading on your own machine, the run cell, regenerating tile lists, rerunning one stage |
+| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, their sources, and where each is set |
 | [docs/runs.md](docs/runs.md) | Dataset size by role, training fractions, tile lists, model variants, starting weights, layer names |
 | [docs/design.md](docs/design.md) | What the model comparison can and cannot show, limits of the starting weights, the quantile rule and its sensitivity analysis |
