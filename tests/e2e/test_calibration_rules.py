@@ -134,7 +134,10 @@ def test_density_ratio_never_scores_a_cell_with_its_own_group() -> None:
     def population() -> tuple[np.ndarray, np.ndarray]:
         centers = rng.normal(0, 3, (n_groups, 4))
         groups = np.repeat(np.arange(n_groups), n_cells)
-        return centers[groups] + rng.normal(0, 0.05, (len(groups), 4)), groups
+        # Shuffled: with each group's cells contiguous, an unshuffled cell-level KFold would split
+        # by group too, and pass for the wrong reason.
+        order = rng.permutation(len(groups))
+        return (centers[groups] + rng.normal(0, 0.05, (len(groups), 4)))[order], groups[order]
 
     (calibration, calibration_groups), (test, test_groups) = population(), population()
     calibration_ratio, test_ratio = density_ratio(

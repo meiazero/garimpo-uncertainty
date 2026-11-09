@@ -561,6 +561,24 @@ def brute_force_boundary_by_rule(root: Path, run_dir: Path, test_index: np.ndarr
     return count
 
 
+def test_a_mask_filling_the_cell_has_no_boundary_to_match(tmp_path: Path) -> None:
+    """The cell's edge cuts the image; it is no boundary of the mining area.
+
+    So a reference filling the cell counts by rule, with F1 1 when the prediction is the same,
+    while a square inside the cell has a boundary and does not.
+    """
+    full, square = np.ones((16, 16), np.uint8), np.zeros((16, 16), np.uint8)
+    square[4:12, 4:12] = 1
+    np.save(tmp_path / "masks.npy", np.stack([full, square]))
+    (tmp_path / "predictions").mkdir()
+    np.save(tmp_path / "predictions" / "test.npy", np.stack([full, square]) * 255)
+    metrics = garimpo_uncertainty.evaluation.segmentation_metrics(
+        tmp_path, np.array([0, 1]), tmp_path / "predictions", tolerance_px=1.0
+    )
+    assert metrics["boundary_by_rule"].tolist() == [True, False]
+    assert metrics["boundary_f1"].tolist() == [1.0, 1.0]
+
+
 def test_q1_spearman_on_cells_with_mining(evaluation: Evaluation) -> None:
     """Q1 recomputed apart from the pipeline."""
     run_dir, v, vhat = evaluation.run_dir, evaluation.v, evaluation.vhat
