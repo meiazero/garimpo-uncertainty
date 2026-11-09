@@ -321,6 +321,18 @@ def test_full_job_refuses_an_empty_value_before_any_stage(shell_root: Path, name
     assert "PIPELINE CHECK" not in result.stdout
 
 
+@pytest.mark.parametrize("floor", ["0", "-0.01", "nan", "inf", "0.01ha"])
+def test_full_job_refuses_a_bad_score_floor_before_any_stage(shell_root: Path, floor: str) -> None:
+    """`calibrate.py` refuses these too, but only after training; the job must not get that far."""
+    run_dir = f"runs/floor_{floor.replace('.', '_')}"
+    env = write_env(f"floor_{floor}", RUN_DIR=run_dir, SCORE_FLOOR_HA=floor)
+    result = run_job("slurm/full.sbatch", str(env), timeout=60)
+    assert result.returncode != 0
+    assert f"SCORE_FLOOR_HA must be a positive finite number, got '{floor}'" in result.stderr
+    assert not (shell_root / run_dir).exists()
+    assert "PIPELINE CHECK" not in result.stdout
+
+
 def test_full_job_needs_an_env_file(shell_root: Path) -> None:
     result = run_job("slurm/full.sbatch", timeout=30)
     assert result.returncode != 0

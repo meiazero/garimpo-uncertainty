@@ -538,11 +538,11 @@ def test_calibration_requires_a_score_floor(data_root: Path, tmp_path: Path) -> 
     assert "--score-floor-ha" in missing.stderr
 
 
-@pytest.mark.parametrize("floor", ["0", "-0.01", "nan"])
-def test_calibration_refuses_a_floor_that_is_not_positive(
+@pytest.mark.parametrize("floor", ["0", "-0.01", "nan", "inf"])
+def test_calibration_refuses_a_floor_that_is_not_positive_and_finite(
     floor: str, data_root: Path, tmp_path: Path
 ) -> None:
-    """A floor of 0 lets an empty cell divide by zero; a negative one flips the score's sign."""
+    """0 divides an empty cell by zero, a negative floor flips the sign, inf gives NaN margins."""
     run_dir = tmp_path / "never_read"
     refused = support.run(
         "calibrate.py",
@@ -555,7 +555,7 @@ def test_calibration_refuses_a_floor_that_is_not_positive(
         check=False,
     )
     assert refused.returncode == 2
-    assert "--score-floor-ha must be positive" in refused.stderr
+    assert "--score-floor-ha must be positive and finite" in refused.stderr
     assert not run_dir.exists()
 
 
@@ -580,14 +580,7 @@ def test_local_score_floors_a_confident_model(
     scale = np.maximum(calibration.pixel_var * garimpo_uncertainty.data.PIXEL_HA, floor_ha)
     scores = (np.abs(calibration.v - calibration.vhat) / scale).to_numpy()
     groups = calibration.group.to_numpy()
-    # Pooled group CDFs, one candidate at a time, at the paper's level.
-    level = 1 - 0.1
-    expected = next(
-        candidate
-        for candidate in np.sort(scores)
-        if np.mean([np.mean(scores[groups == g] <= candidate) for g in np.unique(groups)])
-        >= level - 1e-12
-    )
+    expected = support.pooled_quantile(scores, groups, 1 - 0.1)
     k = garimpo_uncertainty.intervals.COMBINATIONS.index(("conformal_local", "external"))
     with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
         quantile = stored["quantile"][garimpo_uncertainty.intervals.ALPHAS.index(0.1), k]

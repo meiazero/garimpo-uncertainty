@@ -101,15 +101,6 @@ def evaluation(finished_run: support.FinishedRun, data_root: Path) -> Evaluation
     )
 
 
-def pooled_quantile(scores: np.ndarray, groups: np.ndarray, level: float) -> float:
-    """Brute-force Dunn et al. pooling: return the smallest score whose mean ECDF reaches level."""
-    for candidate in np.sort(scores):
-        ecdfs = [np.mean(scores[groups == group] <= candidate) for group in np.unique(groups)]
-        if np.mean(ecdfs) >= level - 1e-12:
-            return float(candidate)
-    return float(scores.max())
-
-
 def brute_force_metrics(
     lower: float,
     upper: float,
@@ -231,14 +222,14 @@ def test_every_level_is_calibrated_at_its_own_alpha(evaluation: Evaluation, alph
     simple = evaluation.row("conformal_simple", "external")
     scores = np.abs(calibration.v - calibration.vhat).to_numpy()
     assert np.allclose(
-        evaluation.all_quantile[level, simple], pooled_quantile(scores, groups, 1 - alpha)
+        evaluation.all_quantile[level, simple], support.pooled_quantile(scores, groups, 1 - alpha)
     )
     models = intervals.fit_cqr(evaluation.cells[evaluation.cells.role == "train"], alpha, 0)
     low, high, _ = intervals.method_terms("cqr", calibration, 0.01, models)
     cqr_scores = np.maximum(low - calibration.v.to_numpy(), calibration.v.to_numpy() - high)
     cqr = evaluation.row("cqr", "external")
     assert np.allclose(
-        evaluation.all_quantile[level, cqr], pooled_quantile(cqr_scores, groups, 1 - alpha)
+        evaluation.all_quantile[level, cqr], support.pooled_quantile(cqr_scores, groups, 1 - alpha)
     )
     control = evaluation.row("independent_pixels", "none")
     lower, upper = intervals.clip_to_cell(
@@ -253,7 +244,7 @@ def test_quantile_weighs_groups_equally(evaluation: Evaluation) -> None:
     """The big calibration group makes this bite."""
     calibration = evaluation.cells[evaluation.cells.role == "calibration"]
     scores = np.abs(calibration.v - calibration.vhat).to_numpy()
-    expected = pooled_quantile(scores, calibration.group.to_numpy(), 1 - ALPHA)
+    expected = support.pooled_quantile(scores, calibration.group.to_numpy(), 1 - ALPHA)
     simple = evaluation.row("conformal_simple", "external")
     assert np.allclose(evaluation.quantile[simple], expected)
     # Output-space rows are plain arithmetic on the quantile, recomputed here apart from the stage.
@@ -307,7 +298,7 @@ def test_relative_scores_floor_their_denominator(evaluation: Evaluation) -> None
     assert (calibration.vhat == 0).any(), "the floor must bite"
     scale = np.maximum(calibration.vhat.to_numpy(), SCORE_FLOOR_HA)
     scores = np.abs(calibration.v - calibration.vhat).to_numpy() / scale
-    expected = pooled_quantile(scores, calibration.group.to_numpy(), 1 - ALPHA)
+    expected = support.pooled_quantile(scores, calibration.group.to_numpy(), 1 - ALPHA)
     k = evaluation.row("conformal_relative", "external")
     assert np.allclose(evaluation.quantile[k], expected)
     margin = expected * np.maximum(evaluation.vhat, SCORE_FLOOR_HA)
@@ -344,11 +335,13 @@ def test_mondrian_rows_calibrate_each_predicted_stratum_alone(evaluation: Evalua
     own = evaluation.quantile[evaluation.row("conformal_simple", "own_region_mondrian")]
     for i in range(len(evaluation.v)):
         same = strata == test_strata[i]
-        expected = pooled_quantile(scores[same], groups[same], 1 - ALPHA) if same.any() else np.inf
+        expected = (
+            support.pooled_quantile(scores[same], groups[same], 1 - ALPHA) if same.any() else np.inf
+        )
         assert np.isclose(external[i], expected), i
         others = (test_strata == test_strata[i]) & (evaluation.groups != evaluation.groups[i])
         expected = (
-            pooled_quantile(test_scores[others], evaluation.groups[others], 1 - ALPHA)
+            support.pooled_quantile(test_scores[others], evaluation.groups[others], 1 - ALPHA)
             if others.any()
             else np.inf
         )
@@ -373,12 +366,12 @@ def test_asymmetric_rows_calibrate_one_joint_score(evaluation: Evaluation) -> No
     k = evaluation.row("a_compass_l", "external")
     level = 1 - ALPHA / 2
     groups = validation.group.to_numpy()
-    expected_ratio = pooled_quantile(upper[at_validation], groups, level) / pooled_quantile(
-        lower[at_validation], groups, level
-    )
+    expected_ratio = support.pooled_quantile(
+        upper[at_validation], groups, level
+    ) / support.pooled_quantile(lower[at_validation], groups, level)
     assert np.isclose(ratio[k], expected_ratio)
     joint = np.maximum(lower[at_calibration], upper[at_calibration] / expected_ratio)
-    expected = pooled_quantile(joint, calibration.group.to_numpy(), 1 - ALPHA)
+    expected = support.pooled_quantile(joint, calibration.group.to_numpy(), 1 - ALPHA)
     assert np.allclose(evaluation.quantile[k], expected)
     assert np.isnan(ratio[evaluation.row("compass_l", "external")])
 
@@ -389,7 +382,7 @@ def test_own_region_calibration_excludes_the_evaluated_group(evaluation: Evaluat
     test_scores = np.abs(evaluation.v - evaluation.vhat)
     for group in np.unique(groups):
         others = groups != group
-        expected = pooled_quantile(test_scores[others], groups[others], 1 - ALPHA)
+        expected = support.pooled_quantile(test_scores[others], groups[others], 1 - ALPHA)
         assert np.allclose(own[groups == group], expected), group
 
 
