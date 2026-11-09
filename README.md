@@ -71,7 +71,7 @@ VERDICTS = ("PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL")
 for log in [Path(f"outputs/logs/pilot-{w}.log") for w in ("none", "imagenet", "sentinel2_moco")]:
     text = log.read_text(errors="replace") if log.exists() else ""
     verdict = [line for line in text.splitlines() if line.startswith(VERDICTS)]
-    print(log.name, verdict[-1] if verdict else "NO VERDICT: the job died before its check")
+    print(log.name, verdict[-1] if verdict else "NO VERDICT: the job or its check died; see the log")
 from google.colab import runtime; runtime.unassign()
 ```
 
