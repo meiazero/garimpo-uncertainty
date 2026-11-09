@@ -4,6 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -43,6 +44,10 @@ def broken_validation(data_root: Path) -> tuple[int, str]:
     explained, misaligned = cells[cells.role == "train"].tile_id.unique()[:2]
     edit_sidecar(explained, tile_offset_m=15.6, tile_box_excess_m=31.0)
     edit_sidecar(misaligned, tile_offset_m=26.6, tile_box_excess_m=31.0)
+    # A 20 m grid: every cell would cover four times the area the metric assumes.
+    coarse = cells[cells.role == "validation"].tile_id.unique()[0]
+    transform = json.loads((broken / "tiles" / f"{coarse}.json").read_text())["transform"]
+    edit_sidecar(coarse, transform=[20.0, *transform[1:4], -20.0, transform[5]])
     store = garimpo_uncertainty.data.open_store(broken, "r+")
     calibration = cells[cells.role == "calibration"].cell_index.to_numpy()
     bad_cell = calibration[store.stats["mask_ha"][calibration] > 0][0]
@@ -55,7 +60,15 @@ def broken_validation(data_root: Path) -> tuple[int, str]:
 
 
 @pytest.mark.parametrize(
-    "check", ["group_leakage", "held_out_leak", "missing_scenes", "partial_group", "mask_area"]
+    "check",
+    [
+        "group_leakage",
+        "held_out_leak",
+        "missing_scenes",
+        "partial_group",
+        "mask_area",
+        "pixel_size",
+    ],
 )
 def test_validation_names_each_defect(broken_validation: tuple[int, str], check: str) -> None:
     returncode, problems = broken_validation
@@ -76,3 +89,39 @@ def test_validation_refuses_a_split_that_moved_a_tile(
     report = tmp_path / f"validation_split_{name}.json"
     assert support.validate(private_data_root, path, report, check=False).returncode != 0
     assert message in " ".join(json.loads(report.read_text())["problems"]), name
+
+
+@pytest.mark.parametrize("defect", ["cell_px", "stats_length"])
+def test_validation_names_a_store_of_another_layout(
+    private_data_root: Path, tmp_path: Path, defect: str
+) -> None:
+    """Cells of another size, or a stats array of another store, misstate every cell's area."""
+    cell_px = str(support.CELL_PX)
+    if defect == "cell_px":
+        cell_px, named = (
+            str(support.CELL_PX // 2),
+            "3 cases, for example ['images', 'masks', 'scl']",
+        )
+    else:
+        stats = np.load(private_data_root / "stats.npy")
+        np.save(private_data_root / "stats.npy", np.concatenate([stats, stats[:4]]))
+        named = "1 cases, for example ['stats']"
+    report = tmp_path / "validation.json"
+    result = support.run(
+        "validate_data.py",
+        "--split",
+        str(support.SPLIT_PATH),
+        "--train-fraction",
+        "1.0",
+        "--subset-seed",
+        "0",
+        "--cell-px",
+        cell_px,
+        "--report",
+        str(report),
+        data_root=private_data_root,
+        check=False,
+    )
+    assert result.returncode != 0
+    problems = json.loads(report.read_text())["problems"]
+    assert f"store_layout: {named}" in problems, problems

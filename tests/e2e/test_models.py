@@ -44,6 +44,25 @@ def test_decomposition_reproduces_the_model(arch: str) -> None:
     assert len(encoder_passes) == 1, f"{arch}: g reran the encoder"
 
 
+@pytest.mark.parametrize(
+    ("arch", "moved"),
+    [("convnet", ["decoder.aspp", "decoder.relu"]), ("unet", ["decoder.blocks"])],
+)
+def test_renamed_decoder_modules_refuse_instead_of_offering_only_the_logits(
+    arch: str, moved: list[str]
+) -> None:
+    """A library upgrade that renames the decoder's modules, simulated by moving each one."""
+    model = garimpo_uncertainty.models.common.build(arch, in_channels=6)
+    for path in moved:
+        parent_name, _, name = path.rpartition(".")
+        parent = model.get_submodule(parent_name)
+        module = parent.get_submodule(name)
+        delattr(parent, name)
+        parent.add_module(f"renamed_{name}", module)
+    with pytest.raises(ValueError, match="no decoder layer matches"):
+        garimpo_uncertainty.models.common.feature_layers(model)
+
+
 @pytest.fixture(scope="module")
 def imagenet_file() -> tuple[Path, dict[str, torch.Tensor]]:
     IMAGENET_ARTIFACTS.mkdir(parents=True)

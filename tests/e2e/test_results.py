@@ -1,6 +1,7 @@
 """The numbers of a finished run, recomputed apart from the pipeline."""
 
 import argparse
+import json
 import runpy
 from dataclasses import dataclass
 from itertools import combinations
@@ -292,6 +293,42 @@ def test_weighted_rows_put_the_test_cell_at_infinity(evaluation: Evaluation) -> 
     assert (test_ratio > 0).all()
 
 
+# support.run_scores_and_intervals passes it to calibrate.py.
+SCORE_FLOOR_HA = 0.01
+
+
+def test_relative_scores_floor_their_denominator(evaluation: Evaluation) -> None:
+    """Cells predicted empty have no area to divide by; the floor must stand in for it.
+
+    The local score's denominator never falls under the floor in these runs; test_stages.py
+    covers it.
+    """
+    calibration = evaluation.cells[evaluation.cells.role == "calibration"]
+    assert (calibration.vhat == 0).any(), "the floor must bite"
+    scale = np.maximum(calibration.vhat.to_numpy(), SCORE_FLOOR_HA)
+    scores = np.abs(calibration.v - calibration.vhat).to_numpy() / scale
+    expected = pooled_quantile(scores, calibration.group.to_numpy(), 1 - ALPHA)
+    k = evaluation.row("conformal_relative", "external")
+    assert np.allclose(evaluation.quantile[k], expected)
+    margin = expected * np.maximum(evaluation.vhat, SCORE_FLOOR_HA)
+    cell_ha = evaluation.test.cell_ha.to_numpy()
+    assert np.allclose(evaluation.lower[k], np.clip(evaluation.vhat - margin, 0, cell_ha))
+    assert np.allclose(evaluation.upper[k], np.clip(evaluation.vhat + margin, 0, cell_ha))
+
+
+def test_weighted_group_ess_is_reported(evaluation: Evaluation) -> None:
+    """Kish's ESS of the calibration groups, each weighing the mean density ratio of its cells."""
+    with np.load(evaluation.run_dir / "calibration" / "quantiles.npz") as stored:
+        ratio = stored["density_ratio_calibration"]
+    groups = evaluation.cells[evaluation.cells.role == "calibration"].group.to_numpy()
+    masses = [ratio[groups == group].mean() for group in np.unique(groups)]
+    expected = sum(masses) ** 2 / sum(mass**2 for mass in masses)
+    status = json.loads((evaluation.run_dir / "status" / "calibrate.json").read_text())
+    assert np.isclose(status["shapes"]["weighted_group_ess"], expected)
+    assert status["shapes"]["calibration_groups"] == len(masses)
+    assert expected < len(masses), "equal masses would not tell group weights from cell weights"
+
+
 def test_mondrian_rows_calibrate_each_predicted_stratum_alone(evaluation: Evaluation) -> None:
     """Calibrate each stratum of predicted mining alone, external and own region.
 
@@ -416,9 +453,54 @@ def test_direction_diagnostics(evaluation: Evaluation) -> None:
         assert np.isclose(fitted["svm_w"].std(ddof=1), 1.0)
 
 
-def comparisons_at(run_dir: Path, name: str) -> pd.DataFrame:
+def test_bootstrap_resamples_groups_and_pairs_rows_on_one_resample(evaluation: Evaluation) -> None:
+    """The run's test groups, with intervals built so each bootstrap mistake widens a known CI.
+
+    Each group covers every other cell, so only a cell resample moves coverage off 0.5. Widths
+    differ by group and the second row is the first widened by 1 ha on each side, so only
+    unpaired resamples move the width difference off -2.
+    """
+    test = evaluation.test
+    sizes = test.groupby("group").size()
+    assert (sizes % 2 == 0).all(), "every group must cover exactly half its cells"
+    covered = (test.groupby("group").cumcount() % 2 == 0).to_numpy()
+    n_rows = len(garimpo_uncertainty.intervals.COMBINATIONS)
+    lower = np.broadcast_to(np.where(covered, 0.0, 0.5), (n_rows, len(test))).copy()
+    upper = lower + 1 + np.unique(test.group, return_inverse=True)[1]
+    lower[1], upper[1] = lower[0] - 1, upper[0] + 1
+    nothing = np.full(len(test), np.nan)
+    cells = garimpo_uncertainty.evaluation.EvaluatedCells(
+        np.zeros(len(test)),
+        np.zeros(len(test)),
+        test.group.to_numpy(),
+        test.region.to_numpy(),
+        {"dice": nothing, "boundary_f1": nothing, "boundary_by_rule": np.zeros(len(test), bool)},
+    )
+    results, widths, _ = garimpo_uncertainty.evaluation.summarize(
+        lower,
+        upper,
+        cells,
+        saturation={},
+        identity={},
+        layer="none",
+        alpha=ALPHA,
+        n_bootstrap=200,
+        seed=0,
+    )
+    assert results.picp[0] == results.picp_ci_low[0] == results.picp_ci_high[0] == 0.5
+    first, second = garimpo_uncertainty.intervals.COMBINATIONS[:2]
+    pair = widths[
+        (widths.method_a == first[0])
+        & (widths.calibration_a == first[1])
+        & (widths.method_b == second[0])
+        & (widths.calibration_b == second[1])
+    ].iloc[0]
+    assert pair.mean_difference == pair.ci_low == pair.ci_high == -2
+
+
+def comparisons_at(run_dir: Path, name: str, alpha: float) -> pd.DataFrame:
     table = pd.read_csv(run_dir / "metrics" / f"{name}.csv")
-    return table[table.alpha == ALPHA]
+    return table[table.alpha == alpha]
 
 
 def test_comparisons_never_cross_levels(evaluation: Evaluation) -> None:
@@ -428,10 +510,18 @@ def test_comparisons_never_cross_levels(evaluation: Evaluation) -> None:
         assert table.groupby("alpha").size().to_dict() == dict.fromkeys(ALPHAS, pairs), name
 
 
-def test_width_comparisons_subtract_the_results(evaluation: Evaluation) -> None:
-    comparisons = comparisons_at(evaluation.run_dir, "width_comparisons")
+def results_at(evaluation: Evaluation, alpha: float) -> pd.DataFrame:
+    return evaluation.all_results[evaluation.all_results.alpha == alpha].set_index(
+        ["method", "calibration"]
+    )
+
+
+@pytest.mark.parametrize("alpha", support.ALPHAS)
+def test_width_comparisons_subtract_the_results(evaluation: Evaluation, alpha: float) -> None:
+    """Every level against its own rows, so a comparison built from another level shows."""
+    comparisons = comparisons_at(evaluation.run_dir, "width_comparisons", alpha)
     assert len(comparisons) == len(list(combinations(support.EXPECTED_ROWS, 2)))
-    rows = evaluation.results.set_index(["method", "calibration"]).mpiw
+    rows = results_at(evaluation, alpha).mpiw
     for pair in comparisons.itertuples():
         difference = rows[(pair.method_a, pair.calibration_a)]
         difference -= rows[(pair.method_b, pair.calibration_b)]
@@ -439,15 +529,54 @@ def test_width_comparisons_subtract_the_results(evaluation: Evaluation) -> None:
         assert pair.ci_low <= pair.ci_high
 
 
-def test_coverage_comparisons_subtract_the_results(evaluation: Evaluation) -> None:
-    comparisons = comparisons_at(evaluation.run_dir, "width_comparisons")
-    coverage = comparisons_at(evaluation.run_dir, "coverage_comparisons")
+@pytest.mark.parametrize("alpha", support.ALPHAS)
+def test_coverage_comparisons_subtract_the_results(evaluation: Evaluation, alpha: float) -> None:
+    comparisons = comparisons_at(evaluation.run_dir, "width_comparisons", alpha)
+    coverage = comparisons_at(evaluation.run_dir, "coverage_comparisons", alpha)
     assert len(coverage) == len(comparisons)
-    picp = evaluation.results.set_index(["method", "calibration"]).picp
+    picp = results_at(evaluation, alpha).picp
     for pair in coverage.itertuples():
         difference = picp[(pair.method_a, pair.calibration_a)]
         difference -= picp[(pair.method_b, pair.calibration_b)]
         assert np.isclose(pair.mean_difference, difference)
+
+
+def has_boundary(mask: np.ndarray) -> bool:
+    """Find a mining pixel with a 4-neighbor outside the mining area; the cell edge is none."""
+    padded = np.pad(mask, 1, constant_values=True)
+    neighbors = [padded[:-2, 1:-1], padded[2:, 1:-1], padded[1:-1, :-2], padded[1:-1, 2:]]
+    return any((mask & ~neighbor).any() for neighbor in neighbors)
+
+
+def brute_force_boundary_by_rule(root: Path, run_dir: Path, test_index: np.ndarray) -> int:
+    """Count the cells with mining whose reference or prediction has no boundary to match."""
+    masks = np.load(root / "masks.npy", mmap_mode="r")
+    probabilities = np.load(run_dir / "predictions" / "test.npy", mmap_mode="r")
+    count = 0
+    for position, cell_index in enumerate(test_index.tolist()):
+        reference = masks[cell_index] > 0
+        prediction = probabilities[position] >= 128
+        if reference.any() and not (has_boundary(reference) and has_boundary(prediction)):
+            count += 1
+    return count
+
+
+def test_a_mask_filling_the_cell_has_no_boundary_to_match(tmp_path: Path) -> None:
+    """The cell's edge cuts the image; it is no boundary of the mining area.
+
+    So a reference filling the cell counts by rule, with F1 1 when the prediction is the same,
+    while a square inside the cell has a boundary and does not.
+    """
+    full, square = np.ones((16, 16), np.uint8), np.zeros((16, 16), np.uint8)
+    square[4:12, 4:12] = 1
+    np.save(tmp_path / "masks.npy", np.stack([full, square]))
+    (tmp_path / "predictions").mkdir()
+    np.save(tmp_path / "predictions" / "test.npy", np.stack([full, square]) * 255)
+    metrics = garimpo_uncertainty.evaluation.segmentation_metrics(
+        tmp_path, np.array([0, 1]), tmp_path / "predictions", tolerance_px=1.0
+    )
+    assert metrics["boundary_by_rule"].tolist() == [True, False]
+    assert metrics["boundary_f1"].tolist() == [1.0, 1.0]
 
 
 def test_q1_spearman_on_cells_with_mining(evaluation: Evaluation) -> None:
@@ -467,7 +596,10 @@ def test_q1_spearman_on_cells_with_mining(evaluation: Evaluation) -> None:
         (spearman.area_error == "abs_error_ha") & (spearman.segmentation_quality == "dice")
     ].iloc[0]
     assert np.isclose(row.spearman, expected, equal_nan=True)
-    boundary_cells = segmentation["boundary_by_rule"].sum()
+    boundary_cells = brute_force_boundary_by_rule(
+        evaluation.data_root, run_dir, evaluation.interval_index
+    )
+    assert boundary_cells > 0, "the fixture needs a cell without a boundary"
     assert (evaluation.results.n_cells_boundary_by_rule == boundary_cells).all()
 
 
