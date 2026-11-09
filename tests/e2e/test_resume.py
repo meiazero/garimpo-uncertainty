@@ -103,7 +103,7 @@ def test_training_resumes_after_the_last_finished_epoch(
     assert "resuming after epoch 0" in resumed.stdout
     assert json.loads(status.read_text())["status"] == "ok"
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]
-    # On a GPU, kernels are not deterministic and last.pt keeps only the CPU generator.
+    # On a GPU, kernels are not deterministic.
     if support.DEVICE == "cpu":
         assert_same_training(run_dir, uninterrupted)
 
@@ -140,9 +140,14 @@ def test_force_refuses_to_discard_an_unfinished_training(data_root: Path, tmp_pa
 def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
     uninterrupted: Path, data_root: Path, tmp_path: Path
 ) -> None:
-    """A forced redo cut short before its first epoch must start over, not resume the old run."""
-    run_dir = tmp_path / "convnet"
+    """A forced redo cut short before its first epoch must start over, not resume the old run.
+
+    The run goes to Drive and back between the sessions as the Colab cells copy it, with no
+    --delete, so a last.pt removed only locally would return.
+    """
+    run_dir, drive = tmp_path / "convnet", tmp_path / "drive"
     shutil.copytree(uninterrupted, run_dir)
+    shutil.copytree(run_dir, drive)
     status = run_dir / "status" / "train.json"
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
     command = [sys.executable, "scripts/train.py", *training_args(run_dir), "--force"]
@@ -154,7 +159,9 @@ def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
         time.sleep(0.005)
     process.kill()
     process.wait(timeout=60)
-    assert not (run_dir / "last.pt").exists()
+    shutil.copytree(run_dir, drive, dirs_exist_ok=True)
+    shutil.rmtree(run_dir)
+    shutil.copytree(drive, run_dir)
     rerun = support.run("train.py", *training_args(run_dir), data_root=data_root)
     assert "resuming" not in rerun.stdout
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]

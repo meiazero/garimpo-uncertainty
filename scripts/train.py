@@ -96,16 +96,25 @@ class TrainingState:
     first_epoch: int
 
 
+# What a forced redo leaves in place of a finished run's last.pt.
+DISCARDED = {"discarded": True}
+
+
 def read_resume(args: argparse.Namespace) -> dict | None:
     """Return last.pt when this run continues it; refuse one written with other arguments."""
     last_path = args.run_dir / "last.pt"
     if not last_path.exists() or args.force:
         return None
     resume = torch.load(last_path, map_location="cpu", weights_only=True)
+    if resume == DISCARDED:
+        return None
     arguments = result_arguments(args)
     if resume["arguments"] != arguments:
         different = sorted(k for k in arguments if resume["arguments"].get(k) != arguments[k])
-        raise ValueError(f"last.pt was written with other values of {different}; use --force")
+        raise ValueError(
+            f"last.pt was written with other values of {different}: rerun with those values to "
+            "resume it, or delete last.pt to start over with these"
+        )
     print(f"resuming after epoch {resume['epoch']}")
     return resume
 
@@ -114,10 +123,14 @@ def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
     """Refuse --force over an unfinished run's last.pt, which training from scratch overwrites.
 
     FORCE_FROM=train left in a Colab cell would otherwise restart after every lost session. A
-    finished run's last.pt goes instead, so a forced redo cut short never resumes from its end.
+    finished run's last.pt is marked discarded instead, so a forced redo cut short never resumes
+    from its end: a deleted file would come back with the next restore from Drive, whose rsync
+    has no --delete, where the mark replaces it.
     """
     last = run_dir / "last.pt"
     if not force or not last.exists():
+        return
+    if torch.load(last, map_location="cpu", weights_only=True) == DISCARDED:
         return
     status_path = run_dir / "status" / "train.json"
     status = json.loads(status_path.read_text()) if status_path.exists() else {}
@@ -129,7 +142,7 @@ def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
             f"{last} holds an unfinished training (status {status.get('status', 'absent')}): "
             f"run without --force (FORCE_FROM=train) to resume it, or delete {last} to start over",
         )
-    last.unlink()
+    garimpo_uncertainty.checkpoints.save(last, DISCARDED)
 
 
 def new_metadata(
@@ -192,8 +205,8 @@ def start_training(
     model.load_state_dict(resume["model"])
     optimizer.load_state_dict(resume["optimizer"])
     torch.set_rng_state(resume["rng"])
-    if resume["cuda_rng"]:
-        torch.cuda.set_rng_state_all(resume["cuda_rng"])
+    if resume["cuda_rng"] is not None:
+        torch.cuda.set_rng_state(resume["cuda_rng"])
     return TrainingState(
         model,
         optimizer,
@@ -259,8 +272,9 @@ def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice:
             "best_dice": state.best_dice,
             "history": state.history,
             "rng": torch.get_rng_state(),
-            # The DeepLabV3 head's dropout draws on the GPU, so a resume must restore that too.
-            "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else [],
+            # The DeepLabV3 head's dropout draws on the GPU, so a resume must restore that too;
+            # only the device in use, so a run from a 2-GPU host resumes on a 1-GPU runtime.
+            "cuda_rng": torch.cuda.get_rng_state() if torch.cuda.is_initialized() else None,
         },
     )
 
