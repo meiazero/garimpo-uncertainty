@@ -538,6 +538,27 @@ def test_calibration_requires_a_score_floor(data_root: Path, tmp_path: Path) -> 
     assert "--score-floor-ha" in missing.stderr
 
 
+@pytest.mark.parametrize("floor", ["0", "-0.01", "nan"])
+def test_calibration_refuses_a_floor_that_is_not_positive(
+    floor: str, data_root: Path, tmp_path: Path
+) -> None:
+    """A floor of 0 lets an empty cell divide by zero; a negative one flips the score's sign."""
+    run_dir = tmp_path / "never_read"
+    refused = support.run(
+        "calibrate.py",
+        "--run-dir",
+        str(run_dir),
+        "--cells",
+        "all",
+        f"--score-floor-ha={floor}",
+        data_root=data_root,
+        check=False,
+    )
+    assert refused.returncode == 2
+    assert "--score-floor-ha must be positive" in refused.stderr
+    assert not run_dir.exists()
+
+
 def test_local_score_floors_a_confident_model(
     private_convnet: support.FinishedRun, data_root: Path
 ) -> None:

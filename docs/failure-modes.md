@@ -25,7 +25,7 @@ last column names a guard that a test in `tests/e2e/` exercises.
 | 16 | The search stops at `beta_range` and a width comparison is meaningless | `saturated` flag reported per row, E2E forces it |
 | 17 | A group with many cells dominates the quantile | group-weighted quantile checked by brute force in E2E |
 | 18 | Own-region calibration uses the held-out group | leave-one-group-out quantile checked by brute force in E2E |
-| 19 | Relative or local score divides by zero on empty cells | required `--score-floor-ha`, E2E; quantiles brute-forced with the floor, the relative one on the shared runs, the local one with zero pixel variance on cells predicted empty |
+| 19 | Relative or local score divides by zero on empty cells | required `--score-floor-ha`, refused unless positive (0, negative and NaN), E2E; quantiles brute-forced with the floor, the relative one on the shared runs, the local one with zero pixel variance on cells predicted empty |
 | 20 | Bootstrap resamples cells instead of groups, or method pairs use different resamples | shared group index matrix in `evaluation.summarize`, E2E on the run's test groups: coverage constant within groups and a constant paired width difference must give zero-width intervals |
 | 21 | A method x calibration row is missing from the results | exact row set checked in E2E; `pipeline_check.py` fails on an absent row or NaN in PICP or MPIW, E2E |
 | 22 | A stage changes the environment under a run in progress | `uv run --no-sync` in every script |
