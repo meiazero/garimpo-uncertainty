@@ -49,20 +49,20 @@ NAMED_OTHERWISE = {
     "--steps": "SWEEP_STEPS",
 }
 ASSIGNMENT = re.compile(r"^\++ ([A-Z_]+)=(\S*)$", flags=re.MULTILINE)
-# Equal in full.env.example too, so swapping them changes no run.
-EQUAL_BY_DESIGN = {"SEED", "SUBSET_SEED"}
 # full.env.example's values stay unless filled or shrunk here, so the example itself is under test.
 FILLED = {
     "ARCH": "unet",
     "ENCODER_WEIGHTS": "none",
     "RUN_DIR": "runs/unet_scratch-f1.0",
     "TRAIN_FRACTION": "1.0",
+    # Not SEED's 0, so swapping the two shows; at fraction 1.0 every seed selects every tile.
+    "SUBSET_SEED": "7",
     # The shared runs' training, which the synthetic tiles are known to survive.
     "EPOCHS": "3",
     "STEPS_PER_EPOCH": support.STEPS_PER_EPOCH,
     "BATCH_SIZE": "8",
     "LR": "1e-3",
-    # Not 0, which SEED and SUBSET_SEED hold, so a swap with either shows in the trace.
+    # Not 0, which SEED holds, so a swap shows in the trace.
     "WEIGHT_DECAY": "1e-6",
     # Apart from BATCH_SIZE and NUM_WORKERS, so a swapped variable shows in the trace.
     "EVAL_BATCH_SIZE": "5",
@@ -238,7 +238,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     for _, name in FLAG_VARIABLE.findall(text):
         by_value.setdefault(values[name], set()).add(name)
     shared = {value: names for value, names in by_value.items() if len(names) > 1}
-    assert all(names == EQUAL_BY_DESIGN for names in shared.values()), shared
+    assert not shared, shared
     checked = set()
     for script, runs in traced_commands(passed_job.result.stderr).items():
         for words in runs:
@@ -261,7 +261,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
 def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
     """FORCE_FROM redoes its stage and later ones, FORCE_VALIDATE the validation; none retrains."""
     run_dir = passed_job.run_dir
-    validation = DATA / "status" / "fraction-1.0-seed-0" / "validate_data.json"
+    validation = DATA / "status" / "fraction-1.0-seed-7" / "validate_data.json"
     with support.restored_after(run_dir):
         before = status_mtimes(run_dir)
         validated = validation.stat().st_mtime_ns
