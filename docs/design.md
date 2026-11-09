@@ -3,6 +3,72 @@
 Read to understand what the experiment can conclude, and why its runs and rows are shaped as they
 are. The facts these sections rely on are in [runs.md](runs.md).
 
+## The experiment at a glance
+
+The data are downloaded once, on a CPU machine (your own, or a Colab CPU runtime), and reach the
+Colab GPU as one archive in Drive. Each of the four runs is one `slurm/full.sbatch` job:
+`validate_data`, then the stages of `STAGE_ORDER` in `slurm/stages.sh`, and `pipeline_check` from
+the job's EXIT trap, also after a failed stage. The model trains on `train`; `validation` picks
+`best_model.pt` and the layer. Intervals are evaluated on `test`, in 50 km clusters no other role
+shares (`validate_data`'s `group_leakage`), and calibrated on the `calibration` role (`external`),
+on it reweighted toward `test` by a density ratio (`external_weighted`), or on the other `test`
+groups, leaving out the evaluated one (`own_region`); CQR's regressor is fitted on `train` cells.
+`merge_results.py` then runs once, by hand, over the four runs. Tile counts come from
+`outputs/split.csv`; methods and calibrations from `src/garimpo_uncertainty/intervals.py`.
+
+```mermaid
+flowchart TD
+    subgraph DATA["1 · Data: a CPU machine, once"]
+        Z["Zenodo · Jasansky et al. 2024<br/>tiles and mining polygons"] --> SPLIT["Geographic split<br/>outputs/split.csv"]
+        PC["Planetary Computer<br/>Sentinel-2 L2A"] --> DL["slurm/download.sh<br/>1,179 tiles → 18,864 cells of 512×512"]
+        Z -- "polygons → masks" --> DL
+        SPLIT --> DL
+        DL --> STORE[("Memmap store · 69.2 GB<br/>+ sidecars, log, starting weights")]
+        STORE --> TAR["tar zstd -19 → Drive<br/>garimpo/data.tar.zst"]
+    end
+
+    subgraph ROLES["Split roles (tiles)"]
+        TR["train · 56 artisanal + 947 industrial"]
+        VA["validation · 18 artisanal"]
+        CA["calibration · 69 artisanal"]
+        TE["test · 89 artisanal"]
+    end
+    SPLIT -.-> ROLES
+
+    subgraph RUNS["2 · Four runs at 100%: Colab GPU, one env file each"]
+        R1["convnet<br/>DeepLabV3, no pretraining"]
+        R2["unet_scratch"]
+        R3["unet_imagenet"]
+        R4["unet_sentinel2<br/>SSL4EO-S12 MoCo"]
+    end
+    TAR --> RUNS
+
+    subgraph JOB["3 · One slurm/full.sbatch job per run"]
+        VD["validate_data<br/>slot hashes, split, counts"] --> T["train · 100 epochs<br/>best_model.pt by validation Dice<br/>last.pt every epoch, resumable"]
+        T --> INF["infer<br/>logits of every cell"]
+        INF --> FD["fit_directions<br/>Jacobians: PCA and SVM normal"]
+        FD --> LM["layer_monotonicity<br/>(validation)"]
+        LM --> CL["choose_layer"]
+        CL --> EM["endpoint_monotonicity"]
+        EM --> CS["compass_scores<br/>beta search per cell"]
+        CS --> CAL["calibrate<br/>55 combinations × alpha 0.05 · 0.10 · 0.15"]
+        CAL --> GI["generate_intervals<br/>(test)"]
+        GI --> CM["compute_metrics<br/>PICP, MPIW, bootstrap over groups"]
+    end
+    RUNS --> VD
+    JOB -. "EXIT trap, also after a failed stage" .-> PCHK["pipeline_check<br/>debugging report · PASS/FAIL"]
+
+    subgraph METHODS["Methods × calibrations"]
+        MB["independent pixels · conformal simple/relative/local · CQR"]
+        MC["COMPASS-L · COMPASS-J PCA · COMPASS-J SVM<br/>+ their asymmetric versions"]
+        MK["calibration: none · external · external_weighted · own_region<br/>+ Mondrian · subsampled"]
+    end
+    CAL -.-> METHODS
+
+    CM -- "once, by hand, over the four runs" --> MR["merge_results<br/>tables across runs"]
+    MR --> DISS["Dissertation tables and figures"]
+```
+
 ## What the model comparison varies
 
 The experiment is one architecture with three starting weights, plus the ConvNet the proposal asks

@@ -62,6 +62,14 @@ ENV = "unet_scratch-f1.0"
 !(while sleep 1800; do rsync -a --exclude '*.tmp' runs/ {DRIVE}/runs/; done) > /dev/null 2>&1 &
 !NUM_WORKERS={os.cpu_count()} bash slurm/full.sbatch slurm/{ENV}.env 2>&1 | tee outputs/logs/{ENV}.log
 !rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
+from pathlib import Path
+VERDICTS = ("PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL")
+# The cell succeeds whatever the jobs did; their verdicts say how they went. Nothing here may
+# raise, or the GPU would stay assigned.
+for log in [Path(f"outputs/logs/{ENV}.log")]:
+    text = log.read_text(errors="replace") if log.exists() else ""
+    verdict = [line for line in text.splitlines() if line.startswith(VERDICTS)]
+    print(log.name, verdict[-1] if verdict else "NO VERDICT: the job or its check died; see the log")
 from google.colab import runtime; runtime.unassign()
 ```
 

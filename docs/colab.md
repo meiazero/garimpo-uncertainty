@@ -43,3 +43,10 @@ Any level extracts with the same command. On your own machine,
 A cell carries on after a failed `!` line. Whatever the pilot's outcome, the runs and logs still
 reach Drive and `runtime.unassign()` releases the GPU, which spends compute units until it is
 released.
+
+So the cell itself always succeeds, also when a job failed: `tee` hides the job's exit code, and
+the pilot's loop goes on to the next variant, which is wanted, since the variants are independent.
+The job's verdict is the `PIPELINE CHECK: PASS` or `PIPELINE CHECK: FAIL` line `pipeline_check.py`
+prints at the end of every job, failed or not. The cell prints that line of each log before
+releasing the GPU, so read those lines, not the cell's status; `NO VERDICT` is a job, or its check,
+that died before the verdict; the log says where.
