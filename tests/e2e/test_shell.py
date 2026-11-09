@@ -29,6 +29,20 @@ EXAMPLE = support.ROOT / "slurm" / "full.env.example"
 LAYERS = ["decoder.blocks.3", "decoder.blocks.4"]
 STAGES = support.ROOT / "slurm" / "stages.sh"
 FLAG_VARIABLE = re.compile(r'(--[a-z0-9-]+) "\$([A-Z_]+)"')
+# A variable alone after a flag, however quoted, braced or continued; arrays and paths are not.
+LOOSE_FLAG_VARIABLE = re.compile(
+    r'(--[a-z0-9-]+)\s+(?:\\\s+)?"?\$\{?([A-Z_]+)\}?"?(?=[\s)}]|$)', re.MULTILINE
+)
+# Flags whose variable is not their own name in capitals.
+NAMED_OTHERWISE = {
+    "--beta-max-features": "BETA_RANGE_FEATURES",
+    "--beta-max-logits": "BETA_RANGE_LOGITS",
+    "--cell-px": "GARIMPO_TEST_CELL_PX",
+    "--cells-per-role": "SWEEP_CELLS",
+    "--lightgbm-jobs": "NUM_WORKERS",
+    "--report": "VALIDATION_REPORT",
+    "--steps": "SWEEP_STEPS",
+}
 ASSIGNMENT = re.compile(r"^\++ ([A-Z_]+)=(\S*)$", flags=re.MULTILINE)
 # Equal in full.env.example too, so swapping them changes no run.
 EQUAL_BY_DESIGN = {"SEED", "SUBSET_SEED"}
@@ -190,31 +204,36 @@ def test_full_job_runs_every_stage_and_passes_the_check(passed_job: PassedJob) -
     assert statuses == dict.fromkeys(STAGE_ORDER, "ok")
 
 
-def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
-    """Every `--flag "$NAME"` in stages.sh reaches its script with the value NAME holds.
+def expected_variable(flag: str, script: str) -> str:
+    """Return the variable a flag must receive: from its own name, never from stages.sh."""
+    if flag == "--batch-size":
+        return "BATCH_SIZE" if script == "train" else "EVAL_BATCH_SIZE"
+    return NAMED_OTHERWISE.get(flag, flag.removeprefix("--").upper().replace("-", "_"))
 
-    A swapped variable runs fine and is wrong, so only the arguments themselves show it; the values
-    sharing a command are distinct, so a swap between two of them shows too.
+
+def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
+    """Every `--flag "$NAME"` in stages.sh reaches its script with the value its name implies.
+
+    The variable comes from the flag's name or NAMED_OTHERWISE, written here, so swapping two
+    variables in stages.sh shows; the values sharing a command are distinct, so the trace tells
+    them apart.
     """
-    pairs = set(FLAG_VARIABLE.findall(STAGES.read_text()))
-    # --batch-size is the one flag fed by two variables: training's and evaluation's.
-    variable_of = {flag: name for flag, name in pairs if flag != "--batch-size"}
-    assert len(variable_of) == len(pairs) - 2, sorted(pairs)
+    text = STAGES.read_text()
+    flags = {flag for flag, _ in FLAG_VARIABLE.findall(text)}
+    # Any other way of writing a variable after a flag would escape the pattern above.
+    assert set(LOOSE_FLAG_VARIABLE.findall(text)) == set(FLAG_VARIABLE.findall(text))
     values = dict(ASSIGNMENT.findall(passed_job.result.stderr))
     values["GARIMPO_TEST_CELL_PX"] = str(support.CELL_PX)
     checked = set()
     for script, runs in traced_commands(passed_job.result.stderr).items():
-        expected = variable_of | {
-            "--batch-size": "BATCH_SIZE" if script == "train" else "EVAL_BATCH_SIZE"
-        }
         for words in runs:
-            present = {flag: name for flag, name in expected.items() if flag in words}
+            present = {flag: expected_variable(flag, script) for flag in flags if flag in words}
             for flag, name in present.items():
                 assert value_of(words, flag) == values[name], (script, flag, name)
             shared = [values[n] for n in present.values() if n not in EQUAL_BY_DESIGN]
             assert len(set(shared)) == len(shared), (script, present)
             checked |= set(present)
-    assert checked == set(variable_of) | {"--batch-size"}, "a flag of stages.sh never ran"
+    assert checked == flags, f"flags of stages.sh that never ran: {sorted(flags - checked)}"
 
     layer = support.chosen_layer(passed_job.run_dir)
     assert layer != LAYERS[0], "the run must choose a layer other than the first"
