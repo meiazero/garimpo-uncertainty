@@ -5,8 +5,9 @@ No hyperparameter has a default, so a run states every value it uses.
 
 import argparse
 import json
+import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,6 +66,31 @@ def build_loss(name: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor
     return lambda logits, mask: dice(logits, mask) + bce(logits, mask)
 
 
+def batches(loader: torch.utils.data.DataLoader) -> Iterator:
+    """Start iterating the loader without losing a Ctrl+C that lands while it forks its workers.
+
+    Python raises such a Ctrl+C inside an at-fork callback, where it only prints it as unraisable
+    and training carries on; it is kept here and raised again once the workers exist.
+    """
+    swallowed: list[KeyboardInterrupt] = []
+    previous = sys.unraisablehook
+
+    def keep(unraisable: object) -> None:  # sys.UnraisableHookArgs exists only in typeshed
+        if isinstance(unraisable.exc_value, KeyboardInterrupt):
+            swallowed.append(unraisable.exc_value)
+        else:
+            previous(unraisable)
+
+    sys.unraisablehook = keep
+    try:
+        iterator = iter(loader)
+    finally:
+        sys.unraisablehook = previous
+    if swallowed:
+        raise swallowed[0]
+    return iterator
+
+
 @torch.no_grad()
 def validation_dice(
     model: torch.nn.Module, loader: torch.utils.data.DataLoader, device: str
@@ -72,7 +98,7 @@ def validation_dice(
     """Mean Dice over validation cells with mining; the criterion that picks the best checkpoint."""
     model.eval()
     scores = []
-    for images, masks, _ in loader:
+    for images, masks, _ in batches(loader):
         predictions = model(images.to(device)) >= 0
         references = masks.to(device) > 0
         intersection = (predictions & references).flatten(1).sum(1)
@@ -231,7 +257,7 @@ def fit_epoch(
     batch_shape = None
     # The wait starts with the epoch's clock, so the two timings share one origin.
     ready = started
-    for images, masks, _ in loader:
+    for images, masks, _ in batches(loader):
         data_wait += time.monotonic() - ready
         state.optimizer.zero_grad()
         loss = state.loss_fn(state.model(images.to(device)), masks.to(device))
