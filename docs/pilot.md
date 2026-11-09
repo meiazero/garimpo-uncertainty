@@ -38,6 +38,7 @@ Every run ends with `scripts/pipeline_check.py`, which prints:
 - `|cos(v1, w)|`, saturated searches, and PICP and MPIW per method;
 - the run's slots against the hashes in their sidecars.
 
+The first failing stage stops the job, so no later stage runs on its missing or stale outputs.
 It receives the script's exit code, so an error outside every stage also reads FAIL. Which statuses
 fail the check: [stages.md](stages.md#statuses).
 
