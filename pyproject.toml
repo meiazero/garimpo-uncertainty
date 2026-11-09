@@ -56,8 +56,7 @@ addopts = "-n 4 --dist loadfile --basetemp=tests/artifacts/tmp"
 line-length = 100
 target-version = "py312"
 # A submodule with its own config and repository; these rules reach it in a later, separate change.
-# The notebook copies the README's cells, which are not linted either.
-extend-exclude = ["compass", "colab.ipynb"]
+extend-exclude = ["compass"]
 
 [tool.ruff.lint]
 # Each family below catches something that nobody decided to write.
@@ -164,3 +163,6 @@ ban-relative-imports = "all"
 ]
 # The output of a script is its purpose.
 "scripts/*" = ["T201"]
+# Ruff does not see the names a `!` shell line uses (B007), a Colab form line cannot wrap (E501),
+# and the notebook's prints are its output (T201).
+"colab.ipynb" = ["B007", "E501", "T201"]
