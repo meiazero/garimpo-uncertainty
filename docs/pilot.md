@@ -47,8 +47,8 @@ fail the check: [stages.md](stages.md#statuses).
 1. Commit and push the fix from your machine. The session's token is read-only, and the next
    session's clone picks the fix up.
 2. In a new session, choose the first stage the fix affects in the `FORCE_FROM` option of each
-   pilot cell, then run step 3. The option applies to its own cell only. Colab saves it in the
-   notebook, so empty it again once the rerun passes.
+   pilot cell, then run step 3. The option applies to its own cell only. It stays set in the open
+   tab, so empty it once the rerun passes; reopening the notebook from its link also empties it.
 
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
 invalidates nothing; that is why the stage has to be named. `FORCE_FROM` takes a name from

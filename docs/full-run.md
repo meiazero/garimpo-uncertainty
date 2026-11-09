@@ -63,9 +63,9 @@ The notebook's Full run step runs one model, in this order:
 
 1. Start the copy of `runs/` and the logs to Drive every 30 minutes.
 2. Run the model: choose `ENV` in the cell's option, and leave `FORCE_FROM` and `FORCE_VALIDATE`
-   empty on a first run. `NUM_WORKERS` follows the runtime's CPUs. Colab saves a form option in
-   the notebook, so empty `FORCE_FROM` again after a forced rerun; left set, it redoes those
-   stages in every later session instead of resuming.
+   empty on a first run. `NUM_WORKERS` follows the runtime's CPUs. An option stays set in the open
+   tab, so empty `FORCE_FROM` once a forced rerun passes. Reopening the notebook from its link
+   restores the values on `main`.
 3. Stop the copy, then save the runs and the logs in Drive.
 4. Print the verdict, then release the GPU.
 

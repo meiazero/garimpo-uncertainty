@@ -23,8 +23,12 @@ The experiment runs on Google Colab through `colab.ipynb`, which explains each o
 
 1. On GitHub, create a fine-grained token for this repository with Contents: Read-only, since the
    repository is private.
-2. In Colab, add it as the secret `GH_TOKEN`, with Notebook access on.
-3. Open the notebook with File > Upload notebook.
+2. Open the notebook from GitHub, in every session, at
+   <https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/colab.ipynb>.
+   A copy uploaded or saved to Drive keeps the cells of the day it was made. If Colab cannot
+   open the link, open <https://colab.research.google.com/github>, check Include Private Repos
+   and authorize Colab to read the repository.
+3. In Colab, add the token as the secret `GH_TOKEN`, with Notebook access on for this notebook.
 4. In every session, run the cells of its "Session setup" in order. They mount Drive, clone the
    code, run `uv sync`, and restore the data and earlier runs from Drive. Skip the unpack cell in
    steps 1 and 5, which do not read the data.
