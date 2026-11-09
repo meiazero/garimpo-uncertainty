@@ -19,6 +19,9 @@ source "${1:?usage: bash slurm/full.sbatch <values.env>}"
 : "${MIN_FRACTION_ASCENDING:?}" "${SEARCH_THRESHOLD_LOGITS:?}" "${SEARCH_THRESHOLD_FEATURES:?}"
 : "${CELLS:?}" "${SCORE_FLOOR_HA:?}" "${BOUNDARY_TOLERANCE_PX:?}"
 [ "${#LAYERS[@]}" -gt 0 ] || { echo "LAYERS is empty" >&2; exit 1; }
+# calibrate.py checks the floor too, but only after training.
+uv run --no-sync python -c 'import math, sys; x = float(sys.argv[1]); sys.exit(not (math.isfinite(x) and x > 0))' "$SCORE_FLOOR_HA" 2>/dev/null \
+    || { echo "SCORE_FLOOR_HA must be a positive finite number, got '$SCORE_FLOOR_HA'" >&2; exit 1; }
 
 VALIDATION_REPORT=outputs/data_validation-fraction-$TRAIN_FRACTION-seed-$SUBSET_SEED.json
 VALIDATE_ARGS=(--split-summary outputs/split_summary.json)

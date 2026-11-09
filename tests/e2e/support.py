@@ -538,3 +538,12 @@ def write_synthetic_sentinel2_weights(path: Path, seed: int = 0) -> dict[str, to
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(state, path)
     return state
+
+
+def pooled_quantile(scores: np.ndarray, groups: np.ndarray, level: float) -> float:
+    """Brute-force Dunn et al. pooling: return the smallest score whose mean ECDF reaches level."""
+    for candidate in np.sort(scores):
+        ecdfs = [np.mean(scores[groups == group] <= candidate) for group in np.unique(groups)]
+        if np.mean(ecdfs) >= level - 1e-12:
+            return float(candidate)
+    return float(scores.max())

@@ -7,6 +7,7 @@ quantiles of each row as [A, K].
 """
 
 import argparse
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -420,9 +421,9 @@ def main() -> None:
     parser.add_argument("--lightgbm-jobs", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    # Written as `not > 0` so NaN is refused too.
-    if not args.score_floor_ha > 0:
-        parser.error(f"--score-floor-ha must be positive, got {args.score_floor_ha}")
+    # An infinite floor turns every relative margin into NaN.
+    if not (math.isfinite(args.score_floor_ha) and args.score_floor_ha > 0):
+        parser.error(f"--score-floor-ha must be positive and finite, got {args.score_floor_ha}")
     garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
