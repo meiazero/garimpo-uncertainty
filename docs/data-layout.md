@@ -42,8 +42,8 @@ slots.
 
 `slots_sha256` hashes a tile's images, masks and SCL when they are written.
 
-- `validate_data.py` recomputes it for the selection on every call, skip included, and on any
-  difference validates again and fails with `slot_hash`.
+- `validate_data.py` recomputes it once for the selection on every call, skip included, and on any
+  difference validates again, reusing those hashes, and fails with `slot_hash`.
 - `pipeline_check.py` also recomputes it, last, and fails on `slot_hash`, `store_missing` or
   `sidecars_missing`.
 

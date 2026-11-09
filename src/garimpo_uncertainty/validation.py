@@ -222,12 +222,14 @@ def validate(
     summary: dict | None,
     *,
     workers: int,
+    slot_problems: list[str],
 ) -> tuple[dict, pd.DataFrame]:
     """Return the report and per-cell findings on the selected tiles; the store may hold more.
 
     Clouds and nodata are reported, never filtered. A missing artisanal tile fails, since all 232
     were confirmed available; an industrial tile with no scene or no mask is listed and the run
-    proceeds without it, and any other industrial failure stops the run.
+    proceeds without it, and any other industrial failure stops the run. `slot_problems` is what
+    `slot_mismatches` returned for these tiles, taken from the caller since it reads every slot.
     """
     unusable = unusable_store(root, split, tile_ids)
     if unusable:
@@ -248,7 +250,7 @@ def validate(
     problems += check_store(store, cell_px)
     ok_tiles = tiles[tiles.status == "ok"].reset_index(drop=True)
     problems += check_tiles(ok_tiles)
-    problems += slot_mismatches(root, ok_tiles, workers)
+    problems += slot_problems
     cells = _with_recomputed_values(
         store, garimpo_uncertainty.data.cell_table(root, split, tile_ids), ok_tiles, workers
     )
