@@ -62,6 +62,10 @@ ENV = "unet_scratch-f1.0"
 !(while sleep 1800; do rsync -a --exclude '*.tmp' runs/ {DRIVE}/runs/; done) > /dev/null 2>&1 &
 !NUM_WORKERS={os.cpu_count()} bash slurm/full.sbatch slurm/{ENV}.env 2>&1 | tee outputs/logs/{ENV}.log
 !rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
+from pathlib import Path
+for log in sorted(Path("outputs/logs").glob(f"{ENV}.log")):  # the cell succeeds whatever the jobs did
+    verdict = [line for line in log.read_text().splitlines() if line.startswith("PIPELINE CHECK: ")]
+    print(log.name, verdict[-1] if verdict else "NO PIPELINE CHECK: the job died before it")
 from google.colab import runtime; runtime.unassign()
 ```
 

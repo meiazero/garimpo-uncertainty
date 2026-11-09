@@ -64,6 +64,10 @@ Then run the pilot, the 1% training fraction, on an L4 runtime, after the sessio
 ```python
 !for w in none imagenet sentinel2_moco; do ENCODER_WEIGHTS=$$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$$w.log; done
 !rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
+from pathlib import Path
+for log in sorted(Path("outputs/logs").glob("pilot-*.log")):  # the cell succeeds whatever the jobs did
+    verdict = [line for line in log.read_text().splitlines() if line.startswith("PIPELINE CHECK: ")]
+    print(log.name, verdict[-1] if verdict else "NO PIPELINE CHECK: the job died before it")
 from google.colab import runtime; runtime.unassign()
 ```
 
