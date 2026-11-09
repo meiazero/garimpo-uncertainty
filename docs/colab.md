@@ -46,6 +46,7 @@ released.
 
 So the cell itself always succeeds, also when a job failed: `tee` hides the job's exit code, and
 the pilot's loop goes on to the next variant, which is wanted, since the variants are independent.
-The job's verdict is the `PIPELINE CHECK:` line `pipeline_check.py` prints at the end of every
-job, failed or not. The cell prints that line of each log before releasing the GPU, so read those
-lines, not the cell's status; a log without one is a job that died before its check.
+The job's verdict is the `PIPELINE CHECK: PASS` or `PIPELINE CHECK: FAIL` line `pipeline_check.py`
+prints at the end of every job, failed or not. The cell prints that line of each log before
+releasing the GPU, so read those lines, not the cell's status; `NO VERDICT` is a job that died
+before its check.

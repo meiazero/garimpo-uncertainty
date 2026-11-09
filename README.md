@@ -65,9 +65,13 @@ Then run the pilot, the 1% training fraction, on an L4 runtime, after the sessio
 !for w in none imagenet sentinel2_moco; do ENCODER_WEIGHTS=$$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$$w.log; done
 !rsync -a runs/ {DRIVE}/runs/ && rsync -a outputs/logs/ {DRIVE}/logs/
 from pathlib import Path
-for log in sorted(Path("outputs/logs").glob("pilot-*.log")):  # the cell succeeds whatever the jobs did
-    verdict = [line for line in log.read_text().splitlines() if line.startswith("PIPELINE CHECK: ")]
-    print(log.name, verdict[-1] if verdict else "NO PIPELINE CHECK: the job died before it")
+VERDICTS = ("PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL")
+# The cell succeeds whatever the jobs did; their verdicts say how they went. Nothing here may
+# raise, or the GPU would stay assigned.
+for log in [Path(f"outputs/logs/pilot-{w}.log") for w in ("none", "imagenet", "sentinel2_moco")]:
+    text = log.read_text(errors="replace") if log.exists() else ""
+    verdict = [line for line in text.splitlines() if line.startswith(VERDICTS)]
+    print(log.name, verdict[-1] if verdict else "NO VERDICT: the job died before its check")
 from google.colab import runtime; runtime.unassign()
 ```
 
