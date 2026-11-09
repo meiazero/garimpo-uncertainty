@@ -55,7 +55,8 @@ fail the check: [stages.md](stages.md#statuses).
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
 invalidates nothing; that is why the stage has to be named. `FORCE_FROM` takes a name from
 `STAGE_ORDER` in `slurm/stages.sh` and redoes that stage and every stage after it. Earlier stages
-skip, and `train` runs again only with `FORCE_FROM=train`. The data validation is outside that
+skip, and `train` runs again only with `FORCE_FROM=train`, which refuses while `last.pt` holds an
+unfinished training: drop it to resume, or delete `last.pt` to start over. The data validation is outside that
 order: redo it with `FORCE_VALIDATE=1`. Both variables work the same way with `slurm/full.sbatch`.
 
 A stage whose inputs or arguments changed without being forced stops with status `refused`, which

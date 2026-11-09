@@ -22,6 +22,10 @@ uv run ruff format --check . && uv run ruff check .
   `fit_directions.py` at 2 threads; that run now passes `--direction-temperature 1`.
 - `test_shell.py` sets `GARIMPO_TEST_CELL_PX`, which `slurm/stages.sh` passes to
   `validate_data.py` as `--cell-px`, because the synthetic cells are 32 pixels, not 512.
+- oneDNN picks its CPU kernels from the core a process starts on. On a hybrid CPU (performance and
+  efficiency cores) two trainings with one seed therefore differ in the last bits, so a test that
+  compares weights across processes runs them inside `support.one_core()`, which pins them to one
+  CPU.
 - CI runs the same `uv run --no-sync pytest -q` after `uv sync --locked`, with a 45-minute limit.
 
 ## Modules
@@ -42,6 +46,25 @@ uv run ruff format --check . && uv run ruff check .
 | `test_stages.py` | Reruns, refusals, saturation, absent cells, merge, peak memory records and `pipeline_check.py` |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
 | `test_shell.py` | `slurm/full.sbatch` and `slurm/pilot.sbatch` run as a job runs them, from a root linking the real `slurm/` and `scripts/`: a full job to PASS, every `--flag "$NAME"` of `stages.sh` receiving NAME's value in the `bash -x` trace, with no two values of one command equal, and the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `FORCE_FROM` and `FORCE_VALIDATE`, an unknown `FORCE_FROM`, a failed stage stopping both jobs, every value of `full.env.example` left empty |
+| `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
+| `test_workers.py` | Two DataLoader workers on CPU: two trainings with one seed give one model, band statistics and every prediction equal those read without workers |
+
+## On a GPU
+
+Run the suite once on a Colab GPU runtime before the first paid run, after the session cell of the
+[README](../README.md):
+
+```python
+!GARIMPO_TEST_DEVICE=cuda uv run --no-sync pytest -q
+```
+
+The stages then get no `--device`, so they choose the GPU through `checkpoints.default_device` as a
+real run does, and every loader runs with 2 workers and pinned memory. `test_training_artifacts`
+then requires a positive GPU peak in `history.csv`, the `infer` status and `status/train.json`.
+Skipped there: `test_workers.py`, which every stage then covers; the two `test_results.py` tests
+that recompute a stage in the test process on CPU; and the comparison with the uninterrupted run in
+`test_resume.py`, since GPU kernels are not deterministic. No GPU run of this command is recorded
+yet.
 
 ## Not covered
 
@@ -50,9 +73,8 @@ uv run ruff format --check . && uv run ruff check .
 - `slurm/download.sh` and `bash slurm/pilot.sbatch download`
 - the pilot's own values: `test_shell.py` runs the pilot only up to a failed `train`
 - `download_data.py metadata` and `weights`
-- a resume that actually continues training
 - cleanup of the temporary file in `infer.py`
-- GPU
+- GPU, unless run as in [On a GPU](#on-a-gpu); CI has none
 - the real ImageNet weights (a synthetic file covers the load)
 - the real Sentinel-2 MoCo file: a synthetic 13-band file stands in, with the variant trained for
   one epoch and only inference after it

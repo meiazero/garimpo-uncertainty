@@ -92,6 +92,15 @@ RUN_ORDER = {
     ),
 }
 MODEL_NAMES = {"convnet": "convnet", "unet": "unet_scratch"}
+# GARIMPO_TEST_DEVICE=cuda runs the suite as production runs on a GPU: no --device, so the stages
+# pick it through checkpoints.default_device, and two loader workers. See docs/testing.md.
+DEVICE = os.environ.get("GARIMPO_TEST_DEVICE", "cpu")
+if DEVICE not in {"cpu", "cuda"}:
+    raise ValueError(f"GARIMPO_TEST_DEVICE is cpu or cuda, not {DEVICE!r}")
+if DEVICE == "cuda" and not torch.cuda.is_available():
+    raise RuntimeError("GARIMPO_TEST_DEVICE=cuda, but torch sees no GPU")
+DEVICE_ARGS = ["--device", "cpu"] if DEVICE == "cpu" else []
+NUM_WORKERS = "0" if DEVICE == "cpu" else "2"
 TORCH_FREE = (
     "import runpy, sys; sys.argv = sys.argv[1:]; "
     "runpy.run_path(sys.argv[0], run_name='__main__'); "
@@ -119,6 +128,22 @@ def restored_after(directory: Path) -> Iterator[Path]:
     finally:
         shutil.rmtree(directory)
         backup.rename(directory)
+
+
+@contextmanager
+def one_core() -> Iterator[None]:
+    """Pin this process, and every stage it starts meanwhile, to one CPU.
+
+    oneDNN picks its CPU kernels from the core a process starts on, so on a hybrid CPU two runs
+    with one seed differ in the last bits when one starts on a performance core and the other on an
+    efficiency core. Exact comparisons across processes need every process on one kind of core.
+    """
+    allowed = os.sched_getaffinity(0)
+    os.sched_setaffinity(0, {min(allowed)})
+    try:
+        yield
+    finally:
+        os.sched_setaffinity(0, allowed)
 
 
 def build_once(name: str, build: Callable[[], object]) -> None:
@@ -306,10 +331,9 @@ def train_args(
         "dice_bce",
         "--seed",
         "0",
-        "--device",
-        "cpu",
+        *DEVICE_ARGS,
         "--num-workers",
-        "0",
+        NUM_WORKERS,
     ]
 
 
@@ -322,10 +346,9 @@ def checkpoint_args(run_dir: Path, batch_size: str = "8") -> list[str]:
         str(run_dir),
         "--batch-size",
         batch_size,
-        "--device",
-        "cpu",
+        *DEVICE_ARGS,
         "--num-workers",
-        "0",
+        NUM_WORKERS,
     ]
 
 
