@@ -62,7 +62,7 @@ def main() -> None:
             summary = garimpo_uncertainty.data.scale_summary(
                 json.loads(args.split_summary.read_text()), args.train_fraction
             )
-        # A store back by now was never hashed, so it must not reach a clean report.
+        # Unreadable when checked: fail on that even if readable by now, since no slot was hashed.
         if unusable:
             report, cells = {"problems": unusable}, pd.DataFrame()
         else:
