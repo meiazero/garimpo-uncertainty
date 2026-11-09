@@ -29,10 +29,15 @@ EXAMPLE = support.ROOT / "slurm" / "full.env.example"
 LAYERS = ["decoder.blocks.3", "decoder.blocks.4"]
 STAGES = support.ROOT / "slurm" / "stages.sh"
 FLAG_VARIABLE = re.compile(r'(--[a-z0-9-]+) "\$([A-Z_]+)"')
-# A variable alone after a flag, however quoted, braced or continued; arrays and paths are not.
-LOOSE_FLAG_VARIABLE = re.compile(
-    r'(--[a-z0-9-]+)\s+(?:\\\s+)?"?\$\{?([A-Z_]+)\}?"?(?=[\s)}]|$)', re.MULTILINE
-)
+# Any variable after a flag, however quoted, braced, defaulted, continued or joined by `=`.
+LOOSE_FLAG_VARIABLE = re.compile(r'(--[a-z0-9-]+)[\s=]+(?:\\\s+)?"?\$\{?([A-Za-z_][A-Za-z0-9_]*)')
+# Not one scalar value: a path under RUN_DIR and the layer lists, checked apart below.
+NOT_SCALAR = {
+    ("--checkpoint", "RUN_DIR"),
+    ("--layers", "LAYERS"),
+    ("--layers", "layer"),
+    ("--layer", "layer"),
+}
 # Flags whose variable is not their own name in capitals.
 NAMED_OTHERWISE = {
     "--beta-max-features": "BETA_RANGE_FEATURES",
@@ -62,15 +67,16 @@ FILLED = {
     # Apart from BATCH_SIZE and NUM_WORKERS, so a swapped variable shows in the trace.
     "EVAL_BATCH_SIZE": "5",
     "LAYERS": f"({' '.join(LAYERS)})",
-    "MIN_FRACTION_ASCENDING": "0",
-    "SVM_C": "1.0",
+    # Every value distinct from every other, so a wrong variable shows: "0.0" is not SEED's "0".
+    "MIN_FRACTION_ASCENDING": "0.0",
+    "SVM_C": "1.5",
     "SVM_CLASS_WEIGHT": "balanced",
     "SVM_PIXELS_PER_CELL": "50",
     "SWEEP_STEPS": "9",
     "SWEEP_CELLS": "6",
     # Few updates leave every Jacobian zero at the upstream 10,000 (docs/failure-modes.md, 40).
     "DIRECTION_TEMPERATURE": "1",
-    "SEARCH_THRESHOLD_FEATURES": "1e-3",
+    "SEARCH_THRESHOLD_FEATURES": "2e-3",
     "SCORE_FLOOR_HA": "0.01",
     "NUM_WORKERS": "2",
 }
@@ -221,17 +227,24 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     text = STAGES.read_text()
     flags = {flag for flag, _ in FLAG_VARIABLE.findall(text)}
     # Any other way of writing a variable after a flag would escape the pattern above.
-    assert set(LOOSE_FLAG_VARIABLE.findall(text)) == set(FLAG_VARIABLE.findall(text))
+    loose = set(LOOSE_FLAG_VARIABLE.findall(text)) - NOT_SCALAR
+    assert loose == set(FLAG_VARIABLE.findall(text)), sorted(
+        loose ^ set(FLAG_VARIABLE.findall(text))
+    )
     values = dict(ASSIGNMENT.findall(passed_job.result.stderr))
     values["GARIMPO_TEST_CELL_PX"] = str(support.CELL_PX)
+    # A wrong variable holding the same value would pass, so no two may share one.
+    by_value: dict[str, set[str]] = {}
+    for _, name in FLAG_VARIABLE.findall(text):
+        by_value.setdefault(values[name], set()).add(name)
+    shared = {value: names for value, names in by_value.items() if len(names) > 1}
+    assert all(names == EQUAL_BY_DESIGN for names in shared.values()), shared
     checked = set()
     for script, runs in traced_commands(passed_job.result.stderr).items():
         for words in runs:
             present = {flag: expected_variable(flag, script) for flag in flags if flag in words}
             for flag, name in present.items():
                 assert value_of(words, flag) == values[name], (script, flag, name)
-            shared = [values[n] for n in present.values() if n not in EQUAL_BY_DESIGN]
-            assert len(set(shared)) == len(shared), (script, present)
             checked |= set(present)
     assert checked == flags, f"flags of stages.sh that never ran: {sorted(flags - checked)}"
 
