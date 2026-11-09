@@ -138,7 +138,7 @@ def test_force_refuses_to_discard_an_unfinished_training(data_root: Path, tmp_pa
 
 
 def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
-    uninterrupted: Path, data_root: Path, tmp_path: Path
+    data_root: Path, tmp_path: Path
 ) -> None:
     """A forced redo cut short before its first epoch must start over, not resume the old run.
 
@@ -146,7 +146,8 @@ def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
     --delete, so a last.pt removed only locally would return.
     """
     run_dir, drive = tmp_path / "convnet", tmp_path / "drive"
-    shutil.copytree(uninterrupted, run_dir)
+    # Trained here, not copied: a last.pt naming another run_dir would be refused for that instead.
+    support.run("train.py", *training_args(run_dir), data_root=data_root)
     shutil.copytree(run_dir, drive)
     status = run_dir / "status" / "train.json"
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
