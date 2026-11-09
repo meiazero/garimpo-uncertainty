@@ -11,15 +11,15 @@ never to `outputs/`.
 
 ## Steps
 
-1. On a CPU runtime, run the session cell of the README's [install](../README.md#install), then the
-   data cell of the [quick start](../README.md#quick-start). This is needed once.
-2. On an L4 runtime, run the session cell, then the pilot cell of the quick start.
-3. Read the pipeline check at the end of each variant's log, `outputs/logs/pilot-<weights>.log`,
-   also copied to `logs/` in Drive.
+1. On a CPU runtime, run the session setup of `colab.ipynb`, then step 2, Data. This is needed
+   once.
+2. On an L4 runtime, run the session setup, then step 3, Pilot.
+3. Read the verdicts the step prints, then the pipeline check at the end of each variant's log,
+   `outputs/logs/pilot-<weights>.log`, also copied to `logs/` in Drive.
 
-The three variants (`none`, `imagenet`, `sentinel2_moco`) run one after another on the one GPU.
-Each writes to `runs/pilot/unet-<weights>/` and merges its tables into
-`runs/pilot/tables-<weights>/`. The runs and logs reach Drive and `runtime.unassign()` releases the
+Each variant (`none`, `imagenet`, `sentinel2_moco`) has its own cell, and they run one after
+another on the one GPU. Each writes to `runs/pilot/unet-<weights>/` and merges its tables into
+`runs/pilot/tables-<weights>/`. The runs and logs reach Drive and the step's last cell releases the
 GPU even when a variant fails.
 
 Outside Colab, `bash slurm/pilot.sbatch download` downloads the pilot's data once (add
@@ -46,11 +46,9 @@ fail the check: [stages.md](stages.md#statuses).
 
 1. Commit and push the fix from your machine. The session's token is read-only, and the next
    session's clone picks the fix up.
-2. Name the first stage the fix affects in `FORCE_FROM` and run the pilot cell with it:
-
-   ```python
-   !for w in none imagenet sentinel2_moco; do FORCE_FROM=calibrate ENCODER_WEIGHTS=$$w bash slurm/pilot.sbatch 2>&1 | tee outputs/logs/pilot-$$w.log; done
-   ```
+2. In a new session, choose the first stage the fix affects in the `FORCE_FROM` option of each
+   pilot cell, then run step 3. The option applies to its own cell only. It stays set in the open
+   tab, so empty it once the rerun passes; reopening the notebook from its link also empties it.
 
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
 invalidates nothing; that is why the stage has to be named. `FORCE_FROM` takes a name from
