@@ -3,6 +3,66 @@
 Read to understand what the experiment can conclude, and why its runs and rows are shaped as they
 are. The facts these sections rely on are in [runs.md](runs.md).
 
+## The experiment at a glance
+
+The data are downloaded once, on a CPU machine, and reach Colab as one archive in Drive. Each of
+the four runs then goes through the same stages of `slurm/stages.sh`: the model is trained on the
+`train` tiles, intervals are calibrated on `calibration` and evaluated on `test`, in 50 km
+clusters no other role shares (`validate_data`'s `group_leakage`). Tile counts come from `outputs/split.csv`; the methods and calibrations from
+`src/garimpo_uncertainty/intervals.py`.
+
+```mermaid
+flowchart TD
+    subgraph DATA["1 · Data: own machine, CPU, once"]
+        Z["Zenodo · Jasansky et al. 2024<br/>mining polygons"] --> SPLIT["Geographic split<br/>outputs/split.csv"]
+        PC["Planetary Computer<br/>Sentinel-2 L2A"] --> DL["slurm/download.sh<br/>1,179 tiles → 18,864 cells of 512×512"]
+        SPLIT --> DL
+        DL --> STORE[("Memmap store · 69.2 GB<br/>+ sidecars and log")]
+        STORE --> TAR["tar zstd -19 → Drive<br/>garimpo/data.tar.zst"]
+    end
+
+    subgraph ROLES["Split roles (tiles)"]
+        TR["train · 56 artisanal + 947 industrial"]
+        VA["validation · 18 artisanal"]
+        CA["calibration · 69 artisanal"]
+        TE["test · 89 artisanal"]
+    end
+    SPLIT -.-> ROLES
+
+    subgraph RUNS["2 · Four runs at 100%: Colab GPU, one env file each"]
+        R1["convnet<br/>DeepLabV3, no pretraining"]
+        R2["unet_scratch"]
+        R3["unet_imagenet"]
+        R4["unet_sentinel2<br/>SSL4EO-S12 MoCo"]
+    end
+    TAR --> RUNS
+
+    subgraph STAGES["3 · Stages of each run: slurm/stages.sh"]
+        VD["validate_data<br/>slot hashes, split, counts"] --> T["train · 100 epochs<br/>last.pt every epoch, resumable"]
+        T --> INF["infer<br/>logits of every cell"]
+        INF --> FD["fit_directions<br/>Jacobians: PCA and SVM normal"]
+        FD --> LM["layer_monotonicity<br/>(validation)"]
+        LM --> CL["choose_layer"]
+        CL --> EM["endpoint_monotonicity"]
+        EM --> CS["compass_scores<br/>beta search per cell"]
+        CS --> CAL["calibrate<br/>55 combinations × alpha 0.05 · 0.10 · 0.15"]
+        CAL --> GI["generate_intervals<br/>(test)"]
+        GI --> CM["compute_metrics<br/>PICP, MPIW, bootstrap over groups"]
+    end
+    RUNS --> VD
+
+    subgraph METHODS["Methods × calibrations"]
+        MB["independent pixels · conformal simple/relative/local · CQR"]
+        MC["COMPASS-L · COMPASS-J PCA · COMPASS-J SVM"]
+        MK["calibration: external · external_weighted · own_region<br/>+ Mondrian · asymmetric · subsampled"]
+    end
+    CAL -.-> METHODS
+
+    CM --> MR["merge_results<br/>tables across runs"]
+    MR --> DISS["Dissertation tables and figures"]
+    CM --> PCHK["pipeline_check<br/>debugging report · PASS/FAIL"]
+```
+
 ## What the model comparison varies
 
 The experiment is one architecture with three starting weights, plus the ConvNet the proposal asks
