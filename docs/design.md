@@ -83,7 +83,7 @@ feature, so it has no skip connections.
 Each run is one training, so differences between variants have no replication behind them and the
 comparison is descriptive only. Nor can a rerun reproduce a run: GPU kernels are not deterministic,
 DeepLabV3's bilinear upsampling among them, so one seed gives slightly different weights on each
-run. Only CPU runs on one core repeat exactly, which is what the resume tests rely on.
+run. Only CPU runs on one kind of core repeat exactly, which the resume and worker tests rely on.
 
 ResNet-18 is the smallest ResNet with both ImageNet and SSL4EO-S12 MoCo weights: a U-Net of 14.3 M
 parameters, against 32.5 M with ResNet-50. Fixing one encoder for every model lets `LAYERS` carry
