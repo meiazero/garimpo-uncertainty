@@ -232,14 +232,22 @@ def test_store_holds_the_scene_at_the_window(
     assert (store.scl[0] == 9).all()
 
 
+def validate(root: Path, tile_ids: list[int], summary: dict | None) -> dict:
+    """Hash the slots first and hand them over, as validate_data.py does."""
+    tiles = garimpo_uncertainty.data.tile_records(root, SPLIT, tile_ids)
+    slot_problems = garimpo_uncertainty.validation.slot_mismatches(root, tiles, workers=2)
+    report, _ = garimpo_uncertainty.validation.validate(
+        root, SPLIT, tile_ids, CELL_PX, summary, workers=2, slot_problems=slot_problems
+    )
+    return report
+
+
 def test_real_offset_and_missing_industrial_tile_pass_validation(downloaded: Path) -> None:
     store = garimpo_uncertainty.data.open_store(downloaded)
     written = garimpo_uncertainty.data.cell_table(downloaded, SPLIT, TILE_IDS)
     assert written.cell_index.tolist() == list(range(16))
     assert np.isclose(store.stats["mask_ha"][:16].sum(), MASK.area / 1e4, rtol=0.01)
-    report, _ = garimpo_uncertainty.validation.validate(
-        downloaded, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, workers=2
-    )
+    report = validate(downloaded, TILE_IDS, {"tiles_by_scale_role": SPLIT_COUNTS})
     assert report["problems"] == []
     assert report["industrial_tiles_excluded"] == 1
     assert report["diagnostics"]["by_role"]["test"]["cells_100_percent_cloud"] == 1
@@ -260,9 +268,7 @@ def test_outage_is_not_a_missing_tile(scratch_download: Path) -> None:
     """It must stop the run instead of shrinking the training set."""
     industrial = scratch_download / "tiles" / "1.json"
     industrial.write_text(json.dumps(json.loads(industrial.read_text()) | {"status": "http_503"}))
-    report, _ = garimpo_uncertainty.validation.validate(
-        scratch_download, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, workers=2
-    )
+    report = validate(scratch_download, TILE_IDS, {"tiles_by_scale_role": SPLIT_COUNTS})
     assert "industrial_download_errors" in " ".join(report["problems"])
     assert "split_counts" in " ".join(report["problems"])
     assert report["industrial_tiles_excluded"] == 0
@@ -504,9 +510,7 @@ def test_missing_artisanal_tile_and_off_scene_window_fail_validation(
     download.download_scenes(root, SPLIT, SPLIT, 2, BILINEAR)
     assert json.loads((root / "tiles" / "2.json").read_text())["status"] == "missing_item"
     assert json.loads((root / "tiles" / "3.json").read_text())["status"] == "error_ValueError"
-    report, _ = garimpo_uncertainty.validation.validate(
-        root, SPLIT, SPLIT.tile_id.tolist(), CELL_PX, None, workers=2
-    )
+    report = validate(root, SPLIT.tile_id.tolist(), None)
     problems = " ".join(report["problems"])
     assert "missing_scenes: 2 cases" in problems, problems
     assert "partial_group" in problems, problems
@@ -527,9 +531,7 @@ def test_tile_without_a_mask_polygon_never_disappears_silently(
         sidecar = json.loads((root / "tiles" / f"{tile_id}.json").read_text())
         assert sidecar["status"] == "no_mask_polygon", sidecar
 
-    report, _ = garimpo_uncertainty.validation.validate(
-        root, SPLIT, TILE_IDS, CELL_PX, {"tiles_by_scale_role": SPLIT_COUNTS}, workers=2
-    )
+    report = validate(root, TILE_IDS, {"tiles_by_scale_role": SPLIT_COUNTS})
     assert "missing_scenes: 1 cases, for example [0]" in report["problems"], report["problems"]
     # The industrial tile counts as excluded; only the artisanal one is unaccounted for.
     counts = "split_counts: 1 cases, for example ['Artisanal/test: expected 1, accounted for 0']"

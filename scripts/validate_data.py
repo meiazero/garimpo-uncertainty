@@ -46,7 +46,13 @@ def main() -> None:
                 json.loads(args.split_summary.read_text()), args.train_fraction
             )
         report, cells = garimpo_uncertainty.validation.validate(
-            root, split, tile_ids, args.cell_px, summary, workers=args.workers
+            root,
+            split,
+            tile_ids,
+            args.cell_px,
+            summary,
+            workers=args.workers,
+            slot_problems=slot_problems,
         )
         garimpo_uncertainty.stages.write_json(args.report, report)
         print(json.dumps(report, indent=2))
@@ -55,11 +61,13 @@ def main() -> None:
         return {"cells": len(cells)}
 
     # The fingerprint reads sidecars, so only reading the slots shows a store changed underneath.
-    store_changed = garimpo_uncertainty.validation.unusable_store(root, split, tile_ids) or (
-        garimpo_uncertainty.validation.slot_mismatches(
+    # Hashed once, before deciding to skip, and reused by the report: a pass reads the whole store.
+    unusable = garimpo_uncertainty.validation.unusable_store(root, split, tile_ids)
+    slot_problems = []
+    if not unusable:
+        slot_problems = garimpo_uncertainty.validation.slot_mismatches(
             root, garimpo_uncertainty.data.tile_records(root, split, tile_ids), args.workers
         )
-    )
     garimpo_uncertainty.stages.run_stage(
         root / "status" / selection,
         "validate_data",
@@ -70,7 +78,7 @@ def main() -> None:
             hashed=garimpo_uncertainty.data.tiles_identity(root, split, tile_ids),
         ),
         work,
-        force=args.force or bool(store_changed),
+        force=args.force or bool(unusable or slot_problems),
     )
 
 
