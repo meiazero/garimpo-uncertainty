@@ -5,19 +5,25 @@ are. The facts these sections rely on are in [runs.md](runs.md).
 
 ## The experiment at a glance
 
-The data are downloaded once, on a CPU machine, and reach Colab as one archive in Drive. Each of
-the four runs then goes through the same stages of `slurm/stages.sh`: the model is trained on the
-`train` tiles, intervals are calibrated on `calibration` and evaluated on `test`, in 50 km
-clusters no other role shares (`validate_data`'s `group_leakage`). Tile counts come from `outputs/split.csv`; the methods and calibrations from
-`src/garimpo_uncertainty/intervals.py`.
+The data are downloaded once, on a CPU machine (your own, or a Colab CPU runtime), and reach the
+Colab GPU as one archive in Drive. Each of the four runs is one `slurm/full.sbatch` job:
+`validate_data`, then the stages of `STAGE_ORDER` in `slurm/stages.sh`, and `pipeline_check` from
+the job's EXIT trap, also after a failed stage. The model trains on `train`; `validation` picks
+`best_model.pt` and the layer. Intervals are evaluated on `test`, in 50 km clusters no other role
+shares (`validate_data`'s `group_leakage`), and calibrated on the `calibration` role (`external`),
+on it reweighted toward `test` by a density ratio (`external_weighted`), or on the other `test`
+groups, leaving out the evaluated one (`own_region`); CQR's regressor is fitted on `train` cells.
+`merge_results.py` then runs once, by hand, over the four runs. Tile counts come from
+`outputs/split.csv`; methods and calibrations from `src/garimpo_uncertainty/intervals.py`.
 
 ```mermaid
 flowchart TD
-    subgraph DATA["1 · Data: own machine, CPU, once"]
-        Z["Zenodo · Jasansky et al. 2024<br/>mining polygons"] --> SPLIT["Geographic split<br/>outputs/split.csv"]
+    subgraph DATA["1 · Data: a CPU machine, once"]
+        Z["Zenodo · Jasansky et al. 2024<br/>tiles and mining polygons"] --> SPLIT["Geographic split<br/>outputs/split.csv"]
         PC["Planetary Computer<br/>Sentinel-2 L2A"] --> DL["slurm/download.sh<br/>1,179 tiles → 18,864 cells of 512×512"]
+        Z -- "polygons → masks" --> DL
         SPLIT --> DL
-        DL --> STORE[("Memmap store · 69.2 GB<br/>+ sidecars and log")]
+        DL --> STORE[("Memmap store · 69.2 GB<br/>+ sidecars, log, starting weights")]
         STORE --> TAR["tar zstd -19 → Drive<br/>garimpo/data.tar.zst"]
     end
 
@@ -37,8 +43,8 @@ flowchart TD
     end
     TAR --> RUNS
 
-    subgraph STAGES["3 · Stages of each run: slurm/stages.sh"]
-        VD["validate_data<br/>slot hashes, split, counts"] --> T["train · 100 epochs<br/>last.pt every epoch, resumable"]
+    subgraph JOB["3 · One slurm/full.sbatch job per run"]
+        VD["validate_data<br/>slot hashes, split, counts"] --> T["train · 100 epochs<br/>best_model.pt by validation Dice<br/>last.pt every epoch, resumable"]
         T --> INF["infer<br/>logits of every cell"]
         INF --> FD["fit_directions<br/>Jacobians: PCA and SVM normal"]
         FD --> LM["layer_monotonicity<br/>(validation)"]
@@ -50,17 +56,17 @@ flowchart TD
         GI --> CM["compute_metrics<br/>PICP, MPIW, bootstrap over groups"]
     end
     RUNS --> VD
+    JOB -. "EXIT trap, also after a failed stage" .-> PCHK["pipeline_check<br/>debugging report · PASS/FAIL"]
 
     subgraph METHODS["Methods × calibrations"]
         MB["independent pixels · conformal simple/relative/local · CQR"]
-        MC["COMPASS-L · COMPASS-J PCA · COMPASS-J SVM"]
-        MK["calibration: external · external_weighted · own_region<br/>+ Mondrian · asymmetric · subsampled"]
+        MC["COMPASS-L · COMPASS-J PCA · COMPASS-J SVM<br/>+ their asymmetric versions"]
+        MK["calibration: none · external · external_weighted · own_region<br/>+ Mondrian · subsampled"]
     end
     CAL -.-> METHODS
 
-    CM --> MR["merge_results<br/>tables across runs"]
+    CM -- "once, by hand, over the four runs" --> MR["merge_results<br/>tables across runs"]
     MR --> DISS["Dissertation tables and figures"]
-    CM --> PCHK["pipeline_check<br/>debugging report · PASS/FAIL"]
 ```
 
 ## What the model comparison varies
