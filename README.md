@@ -20,7 +20,8 @@ reports their coverage and width.
 ## Install
 
 Run this cell at the start of every Colab session. The repository is private, so save a read-only
-GitHub token as the Colab secret `GH_TOKEN` first.
+GitHub token as the Colab secret `GH_TOKEN` first. `colab.ipynb` holds this cell and those of the
+quick start, ready to upload to Colab; change it together with them.
 
 ```python
 import os

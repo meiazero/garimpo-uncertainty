@@ -56,7 +56,8 @@ addopts = "-n 4 --dist loadfile --basetemp=tests/artifacts/tmp"
 line-length = 100
 target-version = "py312"
 # A submodule with its own config and repository; these rules reach it in a later, separate change.
-extend-exclude = ["compass"]
+# The notebook copies the README's cells, which are not linted either.
+extend-exclude = ["compass", "colab.ipynb"]
 
 [tool.ruff.lint]
 # Each family below catches something that nobody decided to write.
