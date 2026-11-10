@@ -701,23 +701,27 @@ def test_a_model_with_no_gradient_stops_the_direction_fit(
     assert "mean Jacobian is orthogonal to w" in error, error
 
 
-@pytest.mark.parametrize("damage", ["row_absent", "nan_picp", "nan_mpiw"])
+@pytest.mark.parametrize("damage", ["file_absent", "row_absent", "nan_picp", "nan_mpiw"])
 def test_pipeline_check_fails_on_an_incomplete_results_table(
     private_convnet: support.FinishedRun, data_root: Path, damage: str
 ) -> None:
-    """Every status says ok here: only the table shows that a row is gone or empty."""
+    """Every status says ok here: only the table shows that it, a row or a value is gone."""
     path = private_convnet.run_dir / "metrics" / "results.csv"
     results = pd.read_csv(path)
     expected = {
+        "file_absent": "results absent",
         "row_absent": "results rows absent",
         "nan_picp": "NaN in PICP or MPIW",
         "nan_mpiw": "NaN in PICP or MPIW",
     }[damage]
-    if damage == "row_absent":
-        results = results.drop(index=len(results) // 2)
+    if damage == "file_absent":
+        path.unlink()
     else:
-        results.loc[3, damage.removeprefix("nan_")] = np.nan
-    results.to_csv(path, index=False)
+        if damage == "row_absent":
+            results = results.drop(index=len(results) // 2)
+        else:
+            results.loc[3, damage.removeprefix("nan_")] = np.nan
+        results.to_csv(path, index=False)
     report = support.pipeline_check(private_convnet.run_dir, data_root, check=False)
     assert report.returncode == 1
     assert expected in report.stdout

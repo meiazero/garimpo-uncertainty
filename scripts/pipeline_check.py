@@ -210,7 +210,8 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
 
 def results_failures(results_path: Path) -> list[dict]:
     if not results_path.exists():
-        return []
+        # compute_metrics ok without its table: a copy to Drive caught the run between the two.
+        return [{"stage": f"results absent: {results_path}"}]
     results = pd.read_csv(results_path)
     failures = []
     found = set(zip(results.alpha, results.method, results.calibration, strict=True))
