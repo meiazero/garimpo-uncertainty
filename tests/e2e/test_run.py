@@ -6,7 +6,8 @@ training, or a versioned config the runner would refuse; a config value passed t
 the chosen layer not reaching the calibrated stages; --force-from redoing too much, too little, or
 nothing at all on a typo; a stage's exit code lost before the pipeline check; a stage's lines
 missing from the log, or a new attempt overwriting the earlier ones; Ctrl+C leaving the stage
-running, losing the lines it prints as it stops, or skipping the check.
+running, losing the lines it prints as it stops, or skipping the check; a job lost between two
+stages leaving the later ones ok.
 
 The runner reads its scripts and outputs from the working directory, so it runs from RUN_ROOT,
 which links the real scripts/ and holds a synthetic outputs/split.csv, a copy of the data root and
@@ -285,6 +286,58 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
     first, second = log.split(ATTEMPT)[1:3]
     assert "PIPELINE CHECK: PASS" in first
     assert "PIPELINE CHECK: PASS" in second
+
+
+def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
+    passed_job: PassedJob, tmp_path: Path
+) -> None:
+    """A lost runtime ends the job between two stages, after a copy to Drive took its statuses.
+
+    The later stages must not read ok, or the merge takes their tables of the earlier layer; the
+    next attempt must skip them back to ok, since their inputs did not change.
+    """
+    run_dir = passed_job.run_dir
+    choose = started_commands(passed_job.result.stdout)["choose_layer"][0]
+    order = garimpo_uncertainty.stages.STAGE_ORDER
+    later = order[order.index("choose_layer") + 1 :]
+    with support.restored_after(run_dir):
+        subprocess.run(  # noqa: S603 - the runner's own command
+            [*choose, "--force"], check=True, cwd=RUN_ROOT, env=runner_env(), capture_output=True
+        )
+        statuses = {s: json.loads((run_dir / "status" / f"{s}.json").read_text()) for s in later}
+        assert {s: r["status"] for s, r in statuses.items()} == dict.fromkeys(later, "stale")
+        merge = [sys.executable, "scripts/merge_results.py", "--runs", str(run_dir)]
+        refused = subprocess.run(  # noqa: S603 - arguments come from the test
+            [*merge, "--out", str(tmp_path / "merged")],
+            check=False,
+            cwd=RUN_ROOT,
+            env=runner_env(),
+            capture_output=True,
+            text=True,
+        )
+        assert refused.returncode != 0
+        assert f"{later[0]} is stale" in refused.stderr
+        assert not (tmp_path / "merged").exists()
+        check = [sys.executable, "scripts/pipeline_check.py", "--run-dir", str(run_dir)]
+        check += ["--train-fraction", str(FILLED["TRAIN_FRACTION"])]
+        report = subprocess.run(  # noqa: S603 - arguments come from the test
+            [*check, "--subset-seed", str(FILLED["SUBSET_SEED"])],
+            check=False,
+            cwd=RUN_ROOT,
+            env=runner_env(),
+            capture_output=True,
+            text=True,
+        )
+        assert report.returncode == 1
+        assert f"--- failing stage: {later[0]} (stale)\nchoose_layer ran again after it" in (
+            report.stdout
+        )
+
+        result = run_job(str(passed_job.config))
+        assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
+        assert "PIPELINE CHECK: PASS" in result.stdout
+        for stage in (*later, "choose_layer"):
+            assert f"{stage}: outputs exist, skipping" in result.stdout, stage
 
 
 def test_unknown_force_from_stops_the_job_before_any_stage(passed_job: PassedJob) -> None:

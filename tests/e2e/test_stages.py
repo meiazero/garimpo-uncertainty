@@ -309,6 +309,30 @@ def test_merge_refuses_two_runs_of_one_variant(
     assert "same model and train_fraction" in same_variant.stderr
 
 
+def test_merge_refuses_a_run_whose_stages_are_not_all_ok(
+    private_convnet: support.FinishedRun, unet_run: support.FinishedRun, data_root: Path
+) -> None:
+    """A failed choice leaves the old tables, or brings them back from Drive; none may merge."""
+    (private_convnet.run_dir / "status" / "choose_layer.json").write_text(
+        json.dumps({"stage": "choose_layer", "status": "failed", "error": "no layer qualifies"})
+    )
+    out = support.ARTIFACTS / "merged_not_ok"
+    refused = support.run(
+        "merge_results.py",
+        "--runs",
+        str(private_convnet.run_dir),
+        str(unet_run.run_dir),
+        "--out",
+        str(out),
+        data_root=data_root,
+        check=False,
+    )
+    assert refused.returncode != 0
+    assert f"{private_convnet.run_dir}: choose_layer is failed" in refused.stderr
+    assert str(unet_run.run_dir) not in refused.stderr
+    assert not out.exists()
+
+
 def test_pipeline_check_passes_on_a_healthy_run(
     unet_run: support.FinishedRun, data_root: Path
 ) -> None:
@@ -343,6 +367,36 @@ def test_pipeline_check_names_the_failed_stage(
     assert report.returncode == 1
     assert "failing stage: calibrate" in report.stdout
     assert "boom" in report.stdout
+
+
+def test_pipeline_check_ignores_a_choice_its_stage_did_not_make(
+    private_convnet: support.FinishedRun, data_root: Path
+) -> None:
+    """Print no chosen layer, nor any table written after it, unless choose_layer's status is ok.
+
+    choose_layer deletes chosen_layer.json when no layer qualifies, but no copy to Drive deletes,
+    so the next restore brings the old file back; the report must not print it as the run's choice.
+    """
+    run_dir = private_convnet.run_dir
+    (run_dir / "status" / "choose_layer.json").write_text(
+        json.dumps({"stage": "choose_layer", "status": "failed", "error": "no layer qualifies"})
+    )
+    assert (run_dir / "chosen_layer.json").exists()
+    report = support.pipeline_check(run_dir, data_root, check=False)
+    sections = {
+        part.split("\n", 1)[0]: part.split("\n", 1)[1] for part in report.stdout.split("\n--- ")[1:]
+    }
+    chosen = sections["layer chosen from the validation role"]
+    assert "not chosen: choose_layer is failed" in chosen
+    assert private_convnet.layer not in chosen
+    # Written after the choice, so they belong to the old one; those before it are still current.
+    later = ("monotonicity of the chosen layer", "saturated searches", "PICP and MPIW per method")
+    for title in later:
+        section = next(text for name, text in sections.items() if name.startswith(title))
+        assert section.startswith("not shown: choose_layer is failed"), (title, section)
+    for title in ("monotonicity for choosing the layer", "|cos(v1, w)|", "losses, validation"):
+        section = next(text for name, text in sections.items() if name.startswith(title))
+        assert not section.startswith(("not shown", "not produced")), (title, section)
 
 
 class AbsentCells(NamedTuple):
@@ -647,23 +701,27 @@ def test_a_model_with_no_gradient_stops_the_direction_fit(
     assert "mean Jacobian is orthogonal to w" in error, error
 
 
-@pytest.mark.parametrize("damage", ["row_absent", "nan_picp", "nan_mpiw"])
+@pytest.mark.parametrize("damage", ["file_absent", "row_absent", "nan_picp", "nan_mpiw"])
 def test_pipeline_check_fails_on_an_incomplete_results_table(
     private_convnet: support.FinishedRun, data_root: Path, damage: str
 ) -> None:
-    """Every status says ok here: only the table shows that a row is gone or empty."""
+    """Every status says ok here: only the table shows that it, a row or a value is gone."""
     path = private_convnet.run_dir / "metrics" / "results.csv"
     results = pd.read_csv(path)
     expected = {
+        "file_absent": "results absent",
         "row_absent": "results rows absent",
         "nan_picp": "NaN in PICP or MPIW",
         "nan_mpiw": "NaN in PICP or MPIW",
     }[damage]
-    if damage == "row_absent":
-        results = results.drop(index=len(results) // 2)
+    if damage == "file_absent":
+        path.unlink()
     else:
-        results.loc[3, damage.removeprefix("nan_")] = np.nan
-    results.to_csv(path, index=False)
+        if damage == "row_absent":
+            results = results.drop(index=len(results) // 2)
+        else:
+            results.loc[3, damage.removeprefix("nan_")] = np.nan
+        results.to_csv(path, index=False)
     report = support.pipeline_check(private_convnet.run_dir, data_root, check=False)
     assert report.returncode == 1
     assert expected in report.stdout

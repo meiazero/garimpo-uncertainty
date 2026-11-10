@@ -5,9 +5,17 @@ Read before changing a cell of `colab.ipynb`, or when a cell behaves unexpectedl
 ## The store is an archive in Drive
 
 The runtime's disk is erased when the session ends. The store therefore lives in Drive as one
-archive, `data.tar.zst`, which section 2 of the notebook unpacks to the local disk every time, and `runs/`
-and the logs are copied back from Drive the same way. Reading the store's memmaps through Drive
-would make every cell a remote read.
+archive, `data.tar.zst`, which section 2 of the notebook unpacks to the local disk every time:
+reading the store's memmaps through Drive would make every cell a remote read.
+
+`runs/` and the logs are copied back from Drive with `rsync -a --ignore-existing`, which copies
+only the files the local disk lacks. A new session gets everything; Run all again in the same
+session keeps the local files, which are never older than Drive's copy, since Drive only receives
+copies of them. A file deleted locally in the session comes back, as no copy uses `--delete`:
+`--delete` toward Drive would wipe the saved runs after a restore that failed. The one file a stage
+deletes, `chosen_layer.json` when no layer qualifies, can therefore come back: the pipeline check
+shows a stage's table only while it and every stage before it are `ok`, and `merge_results.py`
+refuses a run with any stage not `ok`.
 
 `DATA` is always `/content/garimpo-data` because runs record the data root's path, and a run
 restored under another path refuses ([stages.md](stages.md#run-identity)).
@@ -74,7 +82,7 @@ options, and `print_verdicts` prints the verdict of the last attempt only:
 
 ## The copy every 30 minutes
 
-During a full run, a Python thread copies `runs/` (without `*.tmp` files) and the logs to Drive
-every 30 minutes, so a session that ends mid-run keeps the finished stages and the last
-checkpoint. The stop cell waits for a copy in progress to finish, so it never writes to Drive at
-the same time as the final copy.
+During a full run, a Python thread copies `runs/` (without `*.tmp` files, as the final copy and the
+restore do) and the logs to Drive every 30 minutes, so a session that ends mid-run keeps the
+finished stages and the last checkpoint. The stop cell waits for a copy in progress to finish, so it
+never writes to Drive at the same time as the final copy.
