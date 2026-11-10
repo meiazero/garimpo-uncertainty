@@ -13,20 +13,8 @@ import pandas as pd
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
+import garimpo_uncertainty.stages
 import garimpo_uncertainty.validation
-
-RUN_STAGES = (
-    "train",
-    "infer",
-    "fit_directions",
-    "layer_monotonicity",
-    "choose_layer",
-    "endpoint_monotonicity",
-    "compass_scores",
-    "calibrate",
-    "generate_intervals",
-    "compute_metrics",
-)
 
 
 def read_status(status_dir: Path, stage: str) -> dict:
@@ -91,7 +79,7 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
         print(first_failure.get("error", "no error recorded: the job died inside this stage"))
         print(first_failure.get("traceback", ""))
     if job_exit_code != 0:
-        # An import, syntax or argparse error, a bad FORCE_FROM or merge_results reach no status.
+        # An import, syntax or argparse error, a refused config or merge_results reach no status.
         failed.append({"stage": f"job exit code {job_exit_code}"})
         print(f"\n--- job exit code {job_exit_code}: see the job's .err log")
     return failed
@@ -241,7 +229,10 @@ def main() -> None:
         read_status(root / "status", "download_scenes"),
         read_status(root / "status" / selection, "validate_data"),
     ]
-    records += [read_status(args.run_dir / "status", stage) for stage in RUN_STAGES]
+    records += [
+        read_status(args.run_dir / "status", stage)
+        for stage in garimpo_uncertainty.stages.STAGE_ORDER
+    ]
 
     print_stage_table(records)
     failed = report_failed_stages(records, args.job_exit_code)

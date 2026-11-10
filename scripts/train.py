@@ -122,7 +122,7 @@ def read_resume(args: argparse.Namespace) -> dict | None:
 def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
     """Refuse --force over an unfinished run's last.pt, which training from scratch overwrites.
 
-    FORCE_FROM=train left in a Colab cell would otherwise restart after every lost session. A
+    --force-from train left in a Colab cell would otherwise restart after every lost session. A
     finished run's last.pt is marked discarded instead, so a forced redo cut short never resumes
     from its end: a deleted file would come back with the next restore from Drive, whose rsync
     has no --delete, where the mark replaces it.
@@ -140,7 +140,8 @@ def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
             run_dir / "status",
             "train",
             f"{last} holds an unfinished training (status {status.get('status', 'absent')}): "
-            f"run without --force (FORCE_FROM=train) to resume it, or delete {last} to start over",
+            f"run without --force (--force-from train) to resume it, or delete {last} to start "
+            "over",
         )
     garimpo_uncertainty.checkpoints.save(last, DISCARDED)
 

@@ -32,6 +32,19 @@ IGNORED_ARGUMENTS = {
     "report",
 }
 MISSING_INPUT = "missing"
+# The order scripts/run.py runs a model's stages in, after validate_data; --force-from names one.
+STAGE_ORDER = (
+    "train",
+    "infer",
+    "fit_directions",
+    "layer_monotonicity",
+    "choose_layer",
+    "endpoint_monotonicity",
+    "compass_scores",
+    "calibrate",
+    "generate_intervals",
+    "compute_metrics",
+)
 
 
 def log_to_stdout(log_file: Path | None = None) -> None:
@@ -63,7 +76,7 @@ def fingerprint(
 
     `hashed` holds inputs known by content, with None when absent: the shared store, of which a run
     reads only its own slots. Commits stay out on purpose: a pull must not invalidate training, and
-    after a code fix FORCE_FROM redoes the stage and those after it by name.
+    after a code fix --force-from redoes the stage and those after it by name.
     """
     ignored = IGNORED_ARGUMENTS - set(keep)
     arguments = {k: v for k, v in vars(args).items() if k not in ignored}
@@ -163,11 +176,11 @@ def _skip_or_refuse(status_path: Path, name: str, previous: dict, stage_fingerpr
             write_json(status_path, restored | {"status": "ok"})
         logger.info("%s: outputs exist, skipping (use --force to redo)", name)
         return
-    # The validation sits outside STAGE_ORDER in slurm/stages.sh.
+    # The validation sits outside STAGE_ORDER.
     redo = (
-        "FORCE_VALIDATE=1 to redo it"
+        "--force-validate to redo it"
         if name == "validate_data"
-        else f"FORCE_FROM={name} to redo this stage and those after it"
+        else f"--force-from {name} to redo this stage and those after it"
     )
     message = f"{name}: outputs exist from other inputs or arguments; use --force, or {redo}"
     write_json(status_path, previous | {"status": "refused", "error": message})
