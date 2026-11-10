@@ -8,7 +8,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import segmentation_models_pytorch
+import torch
 
+import garimpo_uncertainty.cell_dataset
+import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 from tests.e2e import support
 
@@ -46,6 +50,77 @@ def test_training_artifacts(finished_run: support.FinishedRun) -> None:
     assert metadata["variant"] == support.MODEL_NAMES[arch]
     assert len(metadata["normalization"]["mean"]) == 6
     assert len(metadata["normalization"]["std"]) == 6
+
+
+def test_history_records_what_a_training_needs_watching(finished_run: support.FinishedRun) -> None:
+    """Losses, learning rate, gradient norms and throughput, per epoch, all usable numbers."""
+    history = pd.read_csv(finished_run.run_dir / "history.csv")
+    # Positive: a norm taken after zero_grad would be zero.
+    for column in ("train_loss", "val_loss", "grad_norm_mean", "grad_norm_max"):
+        assert (np.isfinite(history[column]) & (history[column] > 0)).all(), column
+    # Over 10 updates the two differ, so swapped keys would show.
+    assert (history.grad_norm_max > history.grad_norm_mean).all()
+    arguments = support.train_args(finished_run.arch, finished_run.run_dir)
+    assert (history.lr == float(arguments[arguments.index("--lr") + 1])).all()
+    assert ((history.val_precision >= 0) & (history.val_precision <= 1)).all()
+    assert ((history.val_recall >= 0) & (history.val_recall <= 1)).all()
+    # The cells the epoch trained on, steps times batch, not every training cell of the run.
+    batch = int(arguments[arguments.index("--batch-size") + 1])
+    trained = history.train_cells_per_second * history.train_seconds
+    assert np.allclose(trained, history.updates * batch, rtol=1e-9), trained.tolist()
+
+
+# Not a divisor of the synthetic validation cells, so the last validation batch is smaller.
+UNEVEN_BATCH = 3
+
+
+@pytest.mark.skipif(
+    support.DEVICE != "cpu", reason="the stage ran on the GPU, this process recomputes on CPU"
+)
+def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(data_root: Path) -> None:
+    """Recompute the validation loss, precision and recall from best_model.pt, apart from train.py.
+
+    The loss weighs each batch by its cells, so an uneven last batch counts no more than its cells;
+    the ConvNet's head has dropout, so a loss taken outside eval mode would differ.
+    """
+    run_dir = support.RUNS / "convnet_uneven_validation"
+    arguments = support.train_args("convnet", run_dir, batch_size=str(UNEVEN_BATCH), epochs="2")
+    support.run("train.py", *arguments, data_root=data_root)
+    history = pd.read_csv(run_dir / "history.csv")
+    best = torch.load(run_dir / "best_model.pt", map_location="cpu", weights_only=True)["epoch"]
+    record = history.set_index("epoch").loc[best]
+    split = pd.read_csv(support.SPLIT_PATH)
+    tile_ids = garimpo_uncertainty.data.select_tiles(split, 1.0, 0).tile_id.tolist()
+    cells = garimpo_uncertainty.data.cell_table(data_root, split, tile_ids)
+    validation = cells[cells.role == "validation"]
+    assert len(validation) % UNEVEN_BATCH != 0, "an even last batch would hide a per-batch mean"
+    model, metadata = garimpo_uncertainty.checkpoints.load_model(
+        run_dir / "best_model.pt", cells, "cpu"
+    )
+    loader = garimpo_uncertainty.cell_dataset.loader(
+        data_root, validation, metadata["normalization"], UNEVEN_BATCH, 0
+    )
+    dice = segmentation_models_pytorch.losses.DiceLoss(mode="binary", from_logits=True)
+    bce = torch.nn.BCEWithLogitsLoss()
+    weighted_loss, counts = 0.0, np.zeros(3)
+    with torch.no_grad():
+        for images, masks, _ in loader:
+            logits = model(images)
+            weighted_loss += float(dice(logits, masks) + bce(logits, masks)) * len(images)
+            predicted, reference = (logits >= 0).numpy(), (masks > 0).numpy()
+            counts += [
+                (predicted & reference).sum(),
+                (predicted & ~reference).sum(),
+                (~predicted & reference).sum(),
+            ]
+    true_positive, false_positive, false_negative = counts
+    assert record.val_loss == pytest.approx(weighted_loss / len(validation), rel=1e-6)
+    assert record.val_precision == pytest.approx(
+        true_positive / (true_positive + false_positive), abs=1e-9
+    )
+    assert record.val_recall == pytest.approx(
+        true_positive / (true_positive + false_negative), abs=1e-9
+    )
 
 
 @pytest.fixture(scope="module")

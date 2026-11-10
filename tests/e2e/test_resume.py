@@ -19,7 +19,13 @@ import torch
 from tests.e2e import support
 
 # What the clock changes; every other column must match the uninterrupted run.
-TIMINGS = ["seconds", "train_seconds", "validation_seconds", "train_data_wait_seconds"]
+TIMINGS = [
+    "seconds",
+    "train_seconds",
+    "validation_seconds",
+    "train_data_wait_seconds",
+    "train_cells_per_second",
+]
 LAST_PT_TIMEOUT_SECONDS = 300
 # One epoch before the kill, one after it.
 EPOCHS = "2"
@@ -123,7 +129,7 @@ def test_a_resume_keeps_the_best_dice_so_far(data_root: Path, tmp_path: Path) ->
 
 
 def test_force_refuses_to_discard_an_unfinished_training(data_root: Path, tmp_path: Path) -> None:
-    """FORCE_FROM=train left in a cell must not restart a training a lost session cut short."""
+    """--force-from train left in a cell must not restart a training a lost session cut short."""
     run_dir = tmp_path / "convnet"
     finished_epoch_zero(run_dir, data_root)
     before = (run_dir / "last.pt").stat().st_mtime_ns

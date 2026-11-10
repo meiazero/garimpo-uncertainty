@@ -413,7 +413,7 @@ def compute_metrics(
 def run_stages_after_training(
     run_dir: Path, layers: list[str], data_root: Path, direction_args: tuple[str, ...] = ()
 ) -> str:
-    """Run inference through the intervals as slurm/stages.sh does; return the chosen layer."""
+    """Run inference through the intervals as scripts/run.py does; return the chosen layer."""
     common = checkpoint_args(run_dir)
     run("infer.py", *common, data_root=data_root)
     run(
@@ -447,7 +447,7 @@ def run_stages_after_training(
 
 
 def sweep(run_dir: Path, use: str, layers: list[str], data_root: Path) -> None:
-    """Algorithm 2, with beta_max equal to the search range below, as slurm/stages.sh passes it."""
+    """Algorithm 2, with beta_max equal to the search range below, as scripts/run.py passes it."""
     run(
         "verify_monotonicity.py",
         *checkpoint_args(run_dir),

@@ -34,8 +34,8 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 | `configs/full/unet_sentinel2.json` | U-Net from Sentinel-2 MoCo weights |
 | `configs/full/convnet.json` | DeepLabV3 from segmentation-models-pytorch |
 
-Each value has its source in [decisions.md](decisions.md). `scripts/run_config.py` reads a config
-for the job and stops it before any stage when a key is missing, null, empty or unknown, or when
+Each value has its source in [decisions.md](decisions.md). `scripts/run.py` reads a config and
+stops the run before any stage when a key is missing, null, empty or unknown, or when
 `SCORE_FLOOR_HA` is not a positive finite number. `RUN_DIR` is `runs/<config name>-f1.0`: the
 merge reads the runs from those paths. `configs/pilot/` holds the same four configs at 1%
 ([pilot.md](pilot.md)).
@@ -45,11 +45,11 @@ merge reads the runs from those paths. `configs/pilot/` holds the same four conf
 On your own machine:
 
 ```bash
-GARIMPO_DATA_DIR=<DIR> bash slurm/download.sh
+GARIMPO_DATA_DIR=<DIR> uv run --no-sync python scripts/download_data.py all
 tar --format=posix -I 'zstd -19 -T0' -cf <DIR>.tar.zst -C <DIR> .
 ```
 
-Then upload the archive to Drive as `garimpo/data.tar.zst`. `slurm/download.sh` downloads the
+Then upload the archive to Drive as `garimpo/data.tar.zst`. `download_data.py all` downloads the
 metadata, the 100% list and both starting weights. It stops before downloading when the disk cannot
 hold the store, counting what is already downloaded as available, and resumes when rerun. It uses
 one worker per CPU minus one, between 1 and 16. Each tile is printed as it ends, with the rate
@@ -66,18 +66,20 @@ About the download:
   [runs.md](runs.md#training-fractions).
 - Downloading with another `--resampling-20m` than the tiles already cut refuses.
 - `--force` redoes every listed tile. Rerun the stages afterwards with
-  `FORCE_VALIDATE=1 FORCE_FROM=train`, since a re-cut that changes a tile's slots changes the hash
+  `--force-validate --force-from train`, since a re-cut that changes a tile's slots changes the hash
   in its sidecar.
 
 ## The run cells
 
 Section 5 of the notebook has one cell per model, run in order:
 
-1. "Train <model>" runs `bash slurm/run.sbatch configs/<scale>/<model>.json`, with `<scale>`
-   `full` for the full runs. `NUM_WORKERS` follows
-   the runtime's CPUs.
+1. "Train <model>" runs `uv run --no-sync python scripts/run.py configs/<scale>/<model>.json`,
+   with `<scale>` `full` for the full runs. `--num-workers` defaults to the runtime's CPUs. The
+   runner prints each stage's command, lines, exit code and duration with the UTC time, and
+   appends them to `outputs/logs/<scale>-<model>.log`.
 2. "Rerun <model> - (in a reexecution)" does nothing unless its `RUN` box is checked; then it runs
-   the same job with its `FORCE_FROM` and `FORCE_VALIDATE` options. An option stays set in the
+   the same job with its `FORCE_FROM` and `FORCE_VALIDATE` options, passed as `--force-from` and
+   `--force-validate`. An option stays set in the
    open tab, so clear `RUN` once the rerun passes. Reopening the notebook from its link restores
    the values on `main`.
 3. "Print the verdicts" prints one line per model.
@@ -88,15 +90,14 @@ section 7, which saves the runs and logs once more and releases the GPU.
 With the copy every 30 minutes, a session that ends mid-run keeps the finished stages and the
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
 its first epoch and requires the rerun to end where an uninterrupted run ends, on CPU; on a GPU the
-kernels are not deterministic, so only the resume itself is the same. Rerun without `FORCE_FROM=train`
-to resume: with it, `train.py` refuses to discard an unfinished training and says so. Every script
+kernels are not deterministic, so only the resume itself is the same. Rerun without
+`--force-from train` to resume: with it, `train.py` refuses to discard an unfinished training and says so. Every script
 runs with `uv run --no-sync`, so a run never changes the environment under itself.
 
 Outside Colab, one run is one job:
 
 ```bash
-mkdir -p outputs/logs
-NUM_WORKERS=$(nproc) bash slurm/run.sbatch configs/full/unet_scratch.json 2>&1 | tee -a outputs/logs/full-unet_scratch.log
+uv run --no-sync python scripts/run.py configs/full/unet_scratch.json
 ```
 
 ## Regenerate the tile lists

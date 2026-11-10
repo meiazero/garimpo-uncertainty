@@ -99,6 +99,7 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 | Where | Field | Meaning |
 |---|---|---|
 | `history.csv`, per epoch | `train_seconds`, `validation_seconds` | Unrounded time of each part of the epoch |
+| `history.csv`, per epoch | `train_cells_per_second` | Training cells per second, data wait included |
 | `history.csv`, per epoch | `train_data_wait_seconds`, `seconds` | Time spent waiting for training data, and the epoch's total |
 | `history.csv`, per epoch | `updates` | Optimizer steps the epoch made, which is `STEPS_PER_EPOCH` |
 | `history.csv`, per epoch | `train_peak_gpu_bytes`, `validation_peak_gpu_bytes` | GPU peak of each part, empty if no GPU is in use |
@@ -108,3 +109,17 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 | `status/<stage>.json` | `seconds`, `peak_rss_gb`, `peak_gpu_gb`, `host`, `slurm_job_id` | The stage's last process, so a resumed `train` reports only its last stretch; `history.csv` keeps every epoch. `peak_rss_gb` is the largest single process, not a sum |
 
 `pipeline_check.py` prints the data wait of both `history.csv` and `infer.py`.
+
+## Training history
+
+`history.csv` holds one row per epoch. `train.py` also prints the main values, rounded, as one
+line per epoch with the best `val_dice` so far and the time left. Besides the resource fields above:
+
+| Field | Meaning |
+|---|---|
+| `train_loss` | Mean loss of the epoch's updates, in training mode, augmented |
+| `grad_norm_mean`, `grad_norm_max` | L2 norm of all gradients before each step: mean and largest of the epoch |
+| `lr` | Learning rate of the optimizer during the epoch |
+| `val_loss` | The training loss on every validation cell, in eval mode, each batch weighed by its cells; the Dice term pools each batch, so compare it only at one batch size |
+| `val_dice` | Mean Dice over validation cells with mining; it picks `best_model.pt` |
+| `val_precision`, `val_recall` | Over every validation pixel, mining predicted where the logit is at least 0 |

@@ -142,5 +142,5 @@ def test_a_new_threshold_refuses_the_old_choice(tmp_path: Path) -> None:
     choose(run_dir)
     result = choose(run_dir, minimum="0.9", check=False)
     assert result.returncode != 0
-    assert "FORCE_FROM=choose_layer" in result.stderr
+    assert "--force-from choose_layer" in result.stderr
     assert chosen(run_dir)["layer"] == "up.1"
