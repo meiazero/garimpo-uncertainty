@@ -1,9 +1,9 @@
 # garimpo-uncertainty
 
-Replication package for calibrated prediction intervals for the area of
-artisanal mining in Sentinel-2 imagery, evaluated under geographic domain shift. It trains
-segmentation models, builds COMPASS and conformal intervals for the mined area of each cell, and
-reports their coverage and width.
+Replication package for calibrated prediction intervals for the area of artisanal mining in
+Sentinel-2 imagery, evaluated under geographic domain shift. It trains segmentation models, builds
+COMPASS and conformal intervals for the mined area of each cell, and reports their coverage and
+width.
 
 - 1,179 Sentinel-2 tiles cut into 18,864 cells of 512 x 512 pixels: 69.2 GB on disk at the 100%
   training fraction, 10.9 GB for the pilot. Counts per role are in
