@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.stages
 
 TABLES = {
     "results.csv": "metrics/results.csv",
@@ -30,6 +31,14 @@ def read_table(path: Path) -> pd.DataFrame:
     return pd.DataFrame([{k: chosen[k] for k in ("layer", "min_fraction_ascending")}])
 
 
+def stage_statuses(run_dir: Path) -> dict[str, str]:
+    statuses = {}
+    for stage in garimpo_uncertainty.stages.STAGE_ORDER:
+        path = run_dir / "status" / f"{stage}.json"
+        statuses[stage] = json.loads(path.read_text())["status"] if path.exists() else "not_run"
+    return statuses
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--runs", type=Path, nargs="+", required=True)
@@ -41,6 +50,15 @@ def main() -> None:
     keys = [tuple(identity.values()) for identity in identities]
     if len(set(keys)) != len(keys):
         raise SystemExit(f"two runs of the same model and train_fraction would merge: {keys}")
+    # A failed stage leaves its earlier tables, and a restore from Drive brings deleted ones back.
+    not_ok = [
+        f"{run_dir}: {stage} is {status}"
+        for run_dir in args.runs
+        for stage, status in stage_statuses(run_dir).items()
+        if status != "ok"
+    ]
+    if not_ok:
+        raise SystemExit("every stage of every run must be ok to merge:\n" + "\n".join(not_ok))
 
     args.out.mkdir(parents=True, exist_ok=True)
     for name, relative in TABLES.items():
