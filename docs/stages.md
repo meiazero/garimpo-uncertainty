@@ -1,8 +1,8 @@
-# Stages
+# 🪜 Stages
 
 Read when a stage fails, skips or refuses.
 
-## Stage table
+## 📋 Stage table
 
 Paths without a prefix are inside the run directory.
 
@@ -32,7 +32,7 @@ Paths without a prefix are inside the run directory.
 `compass_scores`, `calibrate`, `generate_intervals`, `compute_metrics`. These are also the names of
 their status files.
 
-## Skip, refuse, force
+## 🚦 Skip, refuse, force
 
 Every stage from `validate_data.py` on, and `download_data.py scenes`, records its status in a
 status file:
@@ -57,7 +57,7 @@ validates again, whatever its status, when they disagree.
 A missing input fails the stage before any work, keeping the last completed fingerprint, so once
 the input is back a finished stage skips again.
 
-## Statuses
+## 🟢 Statuses
 
 | Status | Written when | Pipeline check |
 |---|---|---|
@@ -81,7 +81,7 @@ a second of the first count as one, since `uv run` forwards the terminal's Ctrl+
 A later Ctrl+C quits without waiting; the tiles still in progress then have no `ok` sidecar and are fetched again.
 Other stages start their work over.
 
-## Run identity
+## 🆔 Run identity
 
 Only `train.py` ever updates weights. `best_model.pt` stores the model configuration, variant,
 starting weights, seed, normalization, fraction, subset seed, the run's tile ids, split hash and the
@@ -94,7 +94,7 @@ Code is not part of any fingerprint. A run calibrated before rows were added to
 rerun with `--force-from calibrate`.
 
 Only a fresh start of `train.py` reads starting weights. Without the file it fails, naming the
-`scripts/download_data.py weights` command of [full-run.md](full-run.md#download-the-store). A finished or
+`scripts/download_data.py weights` command of [full-run.md](full-run.md#-download-the-store). A finished or
 resumed run needs no weights file and takes the hash it started from out of `run_meta.json`; with
 both absent, `train.py` fails naming both.
 
@@ -105,7 +105,7 @@ their other inputs are preserved too: a `best_model.pt` with a new modification 
 stages after training refuse. Both weights are plain files under `$GARIMPO_DATA_DIR/weights/`, so
 training never reaches a network or a library cache.
 
-## Data validation
+## 🔍 Data validation
 
 `validate_data.py` separates what can fail from what cannot, on the tiles of the run's selection
 only. `problems` fail the stage:
@@ -122,3 +122,8 @@ and NDVI contrast.
 
 The `tile_offset` problem discounts the polygon's box excess over the window. The centered window
 then bounds it at half a pixel, so it trips only on a defect in the sidecar or in `tile_origin`.
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

@@ -1,8 +1,8 @@
-# Data layout
+# 📁 Data layout
 
 Read when inspecting the store or a run's artifacts by hand.
 
-## The store
+## 💾 The store
 
 There is one authoritative store, with arrays indexed by integer and nothing stored twice. Under
 `$GARIMPO_DATA_DIR`:
@@ -15,7 +15,7 @@ There is one authoritative store, with arrays indexed by integer and nothing sto
 | `stats.npy` | `(18864,)`, 2 `float64` fields | `mask_ha`, the writer's claim the validation checks against `masks.npy`, and `vector_ha`, which needs the polygon | 0.3 MB |
 | `tiles/<tile_id>.json` | one per tile | `status`, `item`, `detail`, `epsg`, `transform`, `boa_offset`, `tile_offset_m`, `tile_box_excess_m`, `resampling_20m`, `scene_cloud`, `tile_index`, `cells_per_tile`, `slots_sha256` | small |
 
-## Cell index
+## 🔢 Cell index
 
 `cell_index = tile_index * 16 + position`. `tile_index` is the tile's row among the non-dropped
 tiles of `outputs/split.csv`, and `position` runs row by row over the 4 x 4 cells. A fraction is
@@ -31,14 +31,14 @@ the split, or empty the store and `tiles/` and download again.
 A cell's georeferencing comes from its tile's sidecar. With `row, col = divmod(position, 4)`, the
 cell's transform is `Affine(*transform) @ Affine.translation(col * 512, row * 512)`, in `epsg`.
 
-## Slots and writes
+## 📝 Slots and writes
 
 Files are uncompressed by construction. A slot is `(6 * 2 + 1 + 1) * 262,144 = 3,670,016` bytes, so
 a tile is 58.7 MB. The download writes a tile's 16 slots, flushes, and only then writes its sidecar
 with `ok`, so a crash leaves no `ok`. A forced re-cut removes the sidecar before overwriting the
 slots.
 
-## Slot hashes
+## 🔑 Slot hashes
 
 `slots_sha256` hashes a tile's images, masks and SCL when they are written.
 
@@ -53,7 +53,7 @@ still skip on a damaged store, and these two are what fails. Hashes cover a sele
 so tiles arriving elsewhere leave finished runs valid. If an array is lost while an `ok` sidecar
 exists, the download refuses rather than recreate it as zeros.
 
-## Sparse files
+## 🪶 Sparse files
 
 The arrays are created whole, for all 18,864 cells, before the first tile.
 `np.lib.format.open_memmap` extends each file by seeking past its end and writing one byte
@@ -67,7 +67,7 @@ only written slots take disk. Where it does not, the full 69.2 GB (images 59.3 G
 - A full disk under a write to a hole can kill the process with SIGBUS rather than raise. No `ok`
   is then written, so rerun after freeing space. Untested.
 
-## Run artifacts
+## 🧾 Run artifacts
 
 Artifacts inside a run align by position with its cell table or carry `cell_index`, always
 ascending:
@@ -89,7 +89,7 @@ CSV is kept for tables meant for people: `history.csv`, `directions/diagnostics.
 monotonicity tables and the metrics tables. No stage keeps a derived copy of the store, and nothing
 is memoized.
 
-## Resource measurements
+## 📏 Resource measurements
 
 Resource measurements stay raw, with no summary table, so how to present them can be decided later.
 A GPU peak counts the bytes of tensors on the current device, not the memory reserved by torch or
@@ -110,7 +110,7 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 
 `pipeline_check.py` prints the data wait of both `history.csv` and `infer.py`.
 
-## Training history
+## 📈 Training history
 
 `history.csv` holds one row per epoch. `train.py` also prints the main values, rounded, as one
 line per epoch with the best `val_dice` so far and the time left. Besides the resource fields above:
@@ -123,3 +123,8 @@ line per epoch with the best `val_dice` so far and the time left. Besides the re
 | `val_loss` | The training loss on every validation cell, in eval mode, each batch weighed by its cells; the Dice term pools each batch, so compare it only at one batch size |
 | `val_dice` | Mean Dice over validation cells with mining; it picks `best_model.pt` |
 | `val_precision`, `val_recall` | Over every validation pixel, mining predicted where the logit is at least 0 |
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

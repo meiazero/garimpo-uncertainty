@@ -1,4 +1,4 @@
-# Values of the full run
+# 🧮 Values of the full run
 
 Read before changing a value in `configs/full/`.
 
@@ -8,9 +8,9 @@ one, the row says what the choice is for. None is tuned on the pilot, which only
 `scripts/run.py` stops a run before any stage on a config with a value missing, null, empty or
 unknown (`garimpo_uncertainty/run_config.py`).
 `ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION` name the run, one config each, as listed
-in [runs.md](runs.md#model-variants).
+in [runs.md](runs.md#-model-variants).
 
-## Decided
+## ✅ Decided
 
 | Value | Set to | Source |
 |---|---|---|
@@ -36,3 +36,8 @@ in [runs.md](runs.md#model-variants).
 | Steps and cells of the monotonicity sweep | 21 steps, 20 cells per role | COMPASS gives no values (Appendix C). The sweep is `linspace(-beta_max, beta_max, steps)` (`compass2d/compass.py:151`), so 21 steps keep the origin and 10 points per side; 20 cells bound its cost. Not tuned |
 | `SEARCH_THRESHOLD_FEATURES` | 1e-15 | Upstream's runner: 60 bisection steps from 1000. The pilot uses it too |
 | Score floor of the relative and local methods (`SCORE_FLOOR_HA`) | 0.01 ha | One 10 m pixel, the smallest area a cell can show. Romano et al. 2019 add γ to the denominator, set to 1 after dividing the response by its mean absolute value; here the floor stays in hectares instead, so it has a physical meaning. Not tuned |
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

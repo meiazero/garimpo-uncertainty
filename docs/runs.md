@@ -1,8 +1,8 @@
-# Runs
+# 🏃 Runs
 
 Read to know what a run selects, downloads and starts from.
 
-## Dataset size
+## 📊 Dataset size
 
 The 1,207 tiles of Jasansky et al. (2024) that carry the dataset's split field enter, 975 industrial
 and 232 artisanal (`outputs/frame.json`). A tile is 2,048 x 2,048 pixels at 10 m, cut into 16 cells
@@ -18,10 +18,10 @@ leaves 1,179 tiles and 18,864 cells (`outputs/split_summary.json`):
 | Total | 232 | 947 | 18,864 | 75 |
 
 The store takes 69.2 GB on disk at the 100% fraction and 10.9 GB for the pilot
-([training fractions](#training-fractions)). Each array's size is in
+([training fractions](#-training-fractions)). Each array's size is in
 [data-layout.md](data-layout.md).
 
-## Training fractions
+## ➗ Training fractions
 
 | `TRAIN_FRACTION` | Artisanal training tiles | Industrial training tiles | Tiles, with the 176 of the other roles | Cells | GB written (58.7 MB per tile) |
 |---|---|---|---|---|---|
@@ -46,7 +46,7 @@ The store takes 69.2 GB on disk at the 100% fraction and 10.9 GB for the pilot
   `$DATA/status/fraction-<F>-seed-<S>/`. Another `--train-fraction` or `--subset-seed` under the
   same `RUN_DIR` refuses.
 
-## Tile lists
+## 🌍 Tile lists
 
 `outputs/tiles/tiles_{1,5,10,100}pct.json` are versioned and are the source of every download, so a
 fresh clone downloads without generating anything. Each list is complete for its fraction: the
@@ -72,7 +72,7 @@ the split does not keep. It downloads exactly what the list names; training stil
 ask for a tile the download did not fetch, and the E2E suite asserts that each versioned list equals
 `select_tiles` for its fraction and seed.
 
-## Model variants
+## 🧬 Model variants
 
 | Model in the results | `ARCH` | `ENCODER_WEIGHTS` | `RUN_DIR` | Input |
 |---|---|---|---|---|
@@ -89,15 +89,15 @@ calibration rows (`intervals.COMBINATIONS`) at each of the three levels alpha = 
 | Base rows: `tab:combinacoes` plus the SVM direction | 17 |
 | Mondrian rows, `*_mondrian` | 12 |
 | Asymmetric COMPASS rows, `a_*` | 6 |
-| Repeated subsampling rows, `*_subsampled` ([design.md](design.md#quantile-rule-and-its-sensitivity-analysis)) | 20 |
+| Repeated subsampling rows, `*_subsampled` ([design.md](design.md#-quantile-rule-and-its-sensitivity-analysis)) | 20 |
 | Total | 55 |
 
 Over 4 runs and 3 levels that is 660 rows. `merge_results.py` identifies a run by
 `(model, train_fraction)` and refuses a repeated pair; each run's paired comparisons stay inside
 that run. What the comparison between variants can show is in
-[design.md](design.md#what-the-model-comparison-varies).
+[design.md](design.md#-what-the-model-comparison-varies).
 
-## Starting weights
+## 🌱 Starting weights
 
 | Weights | Source | License |
 |---|---|---|
@@ -105,10 +105,10 @@ that run. What the comparison between variants can show is in
 | `imagenet` | `smp-hub/resnet18.imagenet` on Hugging Face, the repository that `encoders/resnet.py` of segmentation-models-pytorch 0.6.0 names; file `model.safetensors` at revision `2342da2`, pinned in `download.py` (smp 0.6.0 itself pins `3f2325f`); sha256 prefix `b1d1d36f` from the Hugging Face API, checked on download | `other` (Hugging Face API metadata): read the model card before citing it |
 
 Both files land under `$GARIMPO_DATA_DIR/weights/`
-([stages.md](stages.md#stage-table)). Their limits:
-[design.md](design.md#limits-of-the-starting-weights).
+([stages.md](stages.md#-stage-table)). Their limits:
+[design.md](design.md#-limits-of-the-starting-weights).
 
-## Encoder and layer names
+## 🔤 Encoder and layer names
 
 Every model uses a ResNet-18 encoder, fixed in `models.ENCODER`, so `LAYERS` carries over between
 the U-Nets and no run can mix encoders. `choose_layer.py` chooses the layer per run.
@@ -122,3 +122,8 @@ the U-Nets and no run can mix encoders. `choose_layer.py` chooses the layer per 
 config diagnoses all of them: `decoder.blocks.0` to `decoder.blocks.4` for the U-Nets,
 `decoder.aspp` and `decoder.relu` for the ConvNet. The E2E suite checks that every versioned config
 names only layers of its model.
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

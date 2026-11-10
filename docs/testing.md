@@ -1,4 +1,4 @@
-# Testing
+# 🧪 Testing
 
 Read before changing the pipeline or adding a test.
 
@@ -7,7 +7,7 @@ uv run pytest -q
 uv run ruff format --check . && uv run ruff check .
 ```
 
-## How the suite runs
+## 🧰 How the suite runs
 
 - The tests live in `tests/e2e/` and leave their artifacts in `tests/artifacts/`, which is reset
   when a session starts.
@@ -28,7 +28,7 @@ uv run ruff format --check . && uv run ruff check .
   CPU.
 - CI runs the same `uv run --no-sync pytest -q` after `uv sync --locked`, with a 45-minute limit.
 
-## Modules
+## 🧩 Modules
 
 | Module | Subject |
 |---|---|
@@ -49,7 +49,7 @@ uv run ruff format --check . && uv run ruff check .
 | `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
 | `test_workers.py` | Two DataLoader workers on CPU: two trainings with one seed give one model, band statistics and every prediction equal those read without workers |
 
-## On a GPU
+## ⚡ On a GPU
 
 Run the suite on a Colab GPU runtime before the first paid run, with section 4 of `colab.ipynb`.
 Its cell runs:
@@ -67,7 +67,7 @@ validation metrics from `best_model.pt` on CPU; and the comparison with the unin
 `test_resume.py`, since GPU kernels are not deterministic. No GPU run of this command is recorded
 yet.
 
-## Not covered
+## 🚫 Not covered
 
 - `--cells nonempty`
 - real HTTP (STAC, SAS tokens, 429 retries, Zenodo; token renewal and the 429 wait run against a fake
@@ -77,10 +77,15 @@ yet.
 - the pilot configs' own run: `test_run.py` runs the job on its own values
 - `download_data.py metadata` and `weights`
 - cleanup of the temporary file in `infer.py`
-- GPU, unless run as in [On a GPU](#on-a-gpu); CI has none
+- GPU, unless run as in [On a GPU](#-on-a-gpu); CI has none
 - the real ImageNet weights (a synthetic file covers the load)
 - the real Sentinel-2 MoCo file: a synthetic 13-band file stands in, with the variant trained for
   one epoch and only inference after it
 
 The boundary F1 assertion in `test_wider_tolerance_can_only_match_more_boundary` depends on the
 short synthetic training not being degenerate; it held on the suite's fixed seeds.
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

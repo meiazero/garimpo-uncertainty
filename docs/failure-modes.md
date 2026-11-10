@@ -1,4 +1,4 @@
-# Ways the pipeline can fail
+# 🚨 Ways the pipeline can fail
 
 Read to see what guards a given failure, or before adding a stage.
 
@@ -29,7 +29,7 @@ last column names a guard that a test in `tests/e2e/` exercises.
 | 20 | Bootstrap resamples cells instead of groups, or method pairs use different resamples | shared group index matrix in `evaluation.summarize`, E2E on the run's test groups: coverage constant within groups and a constant paired width difference must give zero-width intervals |
 | 21 | A method x calibration row is missing from the results | exact row set checked in E2E; `pipeline_check.py` fails on an absent row or NaN in PICP or MPIW, E2E |
 | 22 | A stage changes the environment under a run in progress | `uv run --no-sync` in every script |
-| 23 | The Colab session ends and its disk takes the data or the runs with it | store kept in Drive as `data.tar.zst` and `runs/` in Drive, `runs/` copied every 30 minutes during a run ([colab.md](colab.md#the-copy-every-30-minutes)); not checked automatically |
+| 23 | The Colab session ends and its disk takes the data or the runs with it | store kept in Drive as `data.tar.zst` and `runs/` in Drive, `runs/` copied every 30 minutes during a run ([colab.md](colab.md#-the-copy-every-30-minutes)); not checked automatically |
 | 24 | A metric change forces a retrain | stages read persisted files; E2E hashes everything around a metrics rerun |
 | 25 | A changed argument silently reuses an old output | stage fingerprint refuses and fails the pipeline check, E2E; a code change is redone by name with `--force-from` |
 | 26 | A later stage rebuilds the model on another split | split hash in the checkpoint, E2E with a data root missing a test tile; `read_predictions` refuses a `cells.npz` out of the cell table's order, E2E |
@@ -75,3 +75,8 @@ last column names a guard that a test in `tests/e2e/` exercises.
 | 66 | A session ends mid-training and the rerun starts over, or continues without the optimizer's moments, the generators, the best Dice or the history | `last.pt` after every epoch holds all of them, the CUDA generators included; E2E kills training after epoch 0, by SIGKILL and by Ctrl+C, and requires the rerun to equal an uninterrupted run exactly, on one CPU core only; E2E raises last.pt's best Dice and requires epoch 1 not to replace `best_model.pt`; the CUDA generators are not checked, CI has no GPU |
 | 67 | A loader worker cannot pickle the dataset or open the store, takes a seed that is not the run's, or returns batches out of order | E2E trains twice and infers with 2 workers on CPU: one model per seed, band statistics and predictions equal to those without workers |
 | 68 | `FORCE_FROM` at `train` left in a Colab cell restarts, after a lost session, a training that `last.pt` could resume, or a forced redo cut short resumes from the end of the old run | `train.py --force` refuses over an unfinished run's `last.pt` (no `completed_fingerprint` in its status) and marks a finished run's discarded before training, a mark the Colab rsync copies to Drive where a deletion would not reach, E2E for both, the second through a Drive round trip; not checked: the 30-minute background rsync copying the old `last.pt` in the second the mark replaces it, then the session ending before its next pass |
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

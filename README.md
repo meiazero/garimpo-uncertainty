@@ -1,4 +1,4 @@
-# garimpo-uncertainty
+# ⛏️ garimpo-uncertainty
 
 Replication package for calibrated prediction intervals for the area of artisanal mining in
 Sentinel-2 imagery, evaluated under geographic domain shift. It trains segmentation models, builds
@@ -7,7 +7,7 @@ width.
 
 - 1,179 Sentinel-2 tiles cut into 18,864 cells of 512 x 512 pixels: 69.2 GB on disk at the 100%
   training fraction, 10.9 GB for the pilot. Counts per role are in
-  [docs/runs.md](docs/runs.md#dataset-size).
+  [docs/runs.md](docs/runs.md#-dataset-size).
 - Four runs, all at 100% and all on a ResNet-18 encoder: a U-Net from scratch, from ImageNet
   weights and from Sentinel-2 MoCo weights, and smp's DeepLabV3 as the ConvNet.
 - `compass/` (submodule) holds the adapted COMPASS method, `src/garimpo_uncertainty/` the satellite
@@ -17,7 +17,7 @@ width.
 - No model result exists yet. The code has run only under pytest, on synthetic data; the pipeline
   has never run on real scenes or on a GPU.
 
-## Install
+## 📦 Install
 
 The experiment runs on Google Colab through `colab.ipynb`, which explains each of its cells.
 
@@ -29,7 +29,7 @@ The experiment runs on Google Colab through `colab.ipynb`, which explains each o
 
 Why the cells are written as they are: [docs/colab.md](docs/colab.md).
 
-## Quick start
+## 🚀 Quick start
 
 Runtime > Run all runs the notebook's sections in order, on one GPU runtime. Its `SCALE` option
 runs the pilot, the same four models on 1%, until a full run has a checkpoint; choose `full` once
@@ -46,13 +46,13 @@ the pilot passes, and later sessions continue the full runs on their own:
 | 7. Release | Writes the pending files to Drive and releases the GPU |
 
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
-first ([docs/full-run.md](docs/full-run.md#download-the-store)). If the session ends early, run
+first ([docs/full-run.md](docs/full-run.md#-download-the-store)). If the session ends early, run
 Runtime > Run all again in a new one: finished stages are skipped and training resumes. Pilot
 runs and result tables go to `runs/pilot/`, never to `outputs/`.
 Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot.md). The full run:
 [docs/full-run.md](docs/full-run.md).
 
-## Documentation
+## 📚 Documentation
 
 | Document | Covers |
 |---|---|
@@ -68,7 +68,7 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 | [docs/testing.md](docs/testing.md) | Running the E2E suite, its modules, what it does not cover |
 | [docs/failure-modes.md](docs/failure-modes.md) | The 68 ways the pipeline can fail and what catches each |
 
-## Development
+## 🔧 Development
 
 ```bash
 uv run pytest -q                                       # E2E tests, artifacts in tests/artifacts/
@@ -80,7 +80,18 @@ git config core.hooksPath .githooks                    # once per clone, enables
   push to `main`.
 - The pre-push hook checks the working tree, not the pushed commits, so push from a clean tree.
 
-## Attribution and licenses
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ This project supports LGBTQIA+ people. Everyone is welcome to use it, open issues and
+contribute, whatever their gender identity, gender expression or sexual orientation.
+
+- Address people by the names and pronouns they use.
+- Write gender-neutral text, as the documentation already does: "you" for the reader, "they" for a
+  person whose pronouns you do not know.
+- Harassment and discrimination for gender identity, gender expression or sexual orientation are
+  not accepted in issues, pull requests or reviews.
+
+## 📜 Attribution and licenses
 
 - COMPASS (MIT, `compass/LICENSE`): Cheung, Veeraraghavan and Balakrishnan, COMPASS: Robust
   Feature Conformal Prediction for Medical Segmentation Metrics, ICLR 2026, arXiv:2509.22240. Code
@@ -89,4 +100,4 @@ git config core.hooksPath .githooks                    # once per clone, enables
   images, Zenodo, 2024, DOI 10.5281/zenodo.14195737.
 - Imagery: modified Copernicus Sentinel data, through Microsoft Planetary Computer.
 - Starting weights: `sentinel2_moco` is `cc-by-4.0` and `imagenet` is `other` on Hugging Face; see
-  [docs/runs.md](docs/runs.md#starting-weights).
+  [docs/runs.md](docs/runs.md#-starting-weights).

@@ -1,9 +1,9 @@
-# Design
+# 📐 Design
 
 Read to understand what the experiment can conclude, and why its runs and rows are shaped as they
 are. The facts these sections rely on are in [runs.md](runs.md).
 
-## The experiment at a glance
+## 👀 The experiment at a glance
 
 The data are downloaded once, on your own machine, and reach the Colab GPU as one archive in Drive.
 Each of the four runs is one `scripts/run.py` job:
@@ -70,7 +70,7 @@ flowchart TD
     MR --> DISS["Result tables and figures"]
 ```
 
-## What the model comparison varies
+## 🆚 What the model comparison varies
 
 The experiment is one architecture with three starting weights, plus the ConvNet the proposal asks
 for. The ConvNet is smp's DeepLabV3 with a ResNet-18 encoder, whose decoder reads only the deepest
@@ -90,7 +90,7 @@ ResNet-18 is the smallest ResNet with both ImageNet and SSL4EO-S12 MoCo weights:
 parameters, against 32.5 M with ResNet-50. Fixing one encoder for every model lets `LAYERS` carry
 over between the U-Nets and keeps any run from mixing encoders.
 
-## Limits of the starting weights
+## 🚧 Limits of the starting weights
 
 - `sentinel2_moco` was trained on 13 top-of-atmosphere (L1C) bands, and these cells are L2A surface
   reflectance. The filters meet a different radiometry than the one they learned.
@@ -101,7 +101,7 @@ over between the U-Nets and keeps any run from mixing encoders.
 - `imagenet` starts `conv1` from RGB filters that smp cycles over the 6 bands, so its first layer
   has no relation to these bands' wavelengths.
 
-## Quantile rule and its sensitivity analysis
+## 📊 Quantile rule and its sensitivity analysis
 
 The main rows take the group quantile by CDF pooling (Dunn et al. 2022, §3.2), which weighs every
 group equally but is valid only as k grows and for a continuous response. Dunn et al.'s
@@ -124,3 +124,8 @@ pair them. How to read them was fixed before the data:
 2. Pooling's own undercoverage: own-region coverage is below 0.90 by pooling and not by
    subsampling. The geographic effect is then read as external minus own region within one rule.
 3. Geographic shift: external coverage falls under both rules and own region does not.
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

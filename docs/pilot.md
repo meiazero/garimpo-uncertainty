@@ -1,4 +1,4 @@
-# Run the pilot
+# 🛫 Run the pilot
 
 Read before the first run on a GPU.
 
@@ -13,10 +13,10 @@ Each model's pilot config in `configs/pilot/` equals its full config in `configs
 updates still reaches the last stage, and `RUN_DIR` `runs/pilot/<model>-f0.01`. `test_run.py`
 fails on any other difference. Its runs and result tables go to `runs/pilot/`, never to `outputs/`.
 
-## Steps
+## 👣 Steps
 
 1. Put the data archive in Drive as `MyDrive/garimpo/data.tar.zst`
-   ([full-run.md](full-run.md#download-the-store)). This is needed once.
+   ([full-run.md](full-run.md#-download-the-store)). This is needed once.
 2. On a GPU runtime, run Runtime > Run all in `colab.ipynb`. Section 3's `SCALE`, at `auto`, runs
    the pilot while no full run has a checkpoint; choose `pilot` to run it after that.
 3. Read the verdicts section 5 prints, then the pipeline check at the end of each model's log,
@@ -29,7 +29,7 @@ and logs reach Drive and the notebook's last cell releases the GPU even when a m
 Outside Colab, `uv run --no-sync python scripts/run.py configs/pilot/<model>.json` runs one
 model's pilot.
 
-## The check report
+## 📋 The check report
 
 Every run ends with `scripts/pipeline_check.py`, which prints:
 
@@ -44,9 +44,9 @@ Every run ends with `scripts/pipeline_check.py`, which prints:
 
 The first failing stage stops the job, so no later stage runs on its missing or stale outputs.
 It receives the script's exit code, so an error outside every stage also reads FAIL. Which statuses
-fail the check: [stages.md](stages.md#statuses).
+fail the check: [stages.md](stages.md#-statuses).
 
-## Rerun after a code fix
+## 🩹 Rerun after a code fix
 
 1. Commit and push the fix from your machine. The session's clone cannot push, and the next
    session's clone picks the fix up.
@@ -66,3 +66,8 @@ the same way for the full runs.
 A stage whose inputs or arguments changed without being forced stops with status `refused`, which
 fails the check. A run stopped midway keeps its finished stages, and they skip on the next start
 once `runs/` is restored from Drive with its modification times.
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.

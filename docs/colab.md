@@ -1,8 +1,8 @@
-# Colab sessions
+# 📓 Colab sessions
 
 Read before changing a cell of `colab.ipynb`, or when a cell behaves unexpectedly.
 
-## The store is an archive in Drive
+## 📦 The store is an archive in Drive
 
 The runtime's disk is erased when the session ends. The store therefore lives in Drive as one
 archive, `data.tar.zst`, which section 2 of the notebook unpacks to the local disk every time, and `runs/`
@@ -10,12 +10,12 @@ and the logs are copied back from Drive the same way. Reading the store's memmap
 would make every cell a remote read.
 
 `DATA` is always `/content/garimpo-data` because runs record the data root's path, and a run
-restored under another path refuses ([stages.md](stages.md#run-identity)).
+restored under another path refuses ([stages.md](stages.md#-run-identity)).
 
 Each session clones the repository again without credentials, so code changes are committed and
 pushed from your own machine, never from the session.
 
-## One command per cell
+## 🎯 One command per cell
 
 Each cell holds at most one shell command, so a cell that failed can run again on its own,
 without repeating the commands before it. Shell lines use Python names and expressions only
@@ -26,14 +26,14 @@ without repeating the commands before it. Shell lines use Python names and expre
 - If one of them fails, such as a `$name` with no Python variable of that name or a brace group
   `{ ...; }`, IPython runs the line with nothing expanded.
 
-## Modification times
+## 🕒 Modification times
 
 The stages' fingerprints compare each input file's size and modification time, so every copy has
 to keep them. `tar` and `rsync -a` do. The archive is written with `--format=posix`
-([full-run.md](full-run.md#download-the-store)), which keeps modification times to the
+([full-run.md](full-run.md#-download-the-store)), which keeps modification times to the
 nanosecond; tar's default format keeps whole seconds.
 
-## Releasing the runtime
+## 🔌 Releasing the runtime
 
 The notebook ends with a cell that calls `release_runtime()`, so Runtime > Run all runs every
 section on one runtime and releases it only at the end. It unmounts Drive, which writes the files
@@ -51,13 +51,13 @@ SIGKILL: the runner kills the stage at once, then still runs the check, whose ve
 cell and the log. Then run the cells of
 section 7 by hand.
 
-## Optional and reexecution cells
+## 🔁 Optional and reexecution cells
 
 A cell titled "- (optional)" runs only while its `RUN` box is checked, which it is by default. A
 cell titled "- (in a reexecution)" runs only once its `RUN` box is checked, so Runtime > Run all
 never forces a stage by accident. Both write their command in full, so the cell shows what runs.
 
-## Job verdicts
+## ✅ Job verdicts
 
 Since every job cell succeeds, read the job's verdict instead of the cell's status. Every pilot and
 full-run job ends with the `PIPELINE CHECK: PASS` or `PIPELINE CHECK: FAIL` line of
@@ -72,9 +72,14 @@ options, and `print_verdicts` prints the verdict of the last attempt only:
   run died before its first line (an `argparse` or import error, or no environment), as the cell's
   output shows, or its cell did not run.
 
-## The copy every 30 minutes
+## 📤 The copy every 30 minutes
 
 During a full run, a Python thread copies `runs/` (without `*.tmp` files) and the logs to Drive
 every 30 minutes, so a session that ends mid-run keeps the finished stages and the last
 checkpoint. The stop cell waits for a copy in progress to finish, so it never writes to Drive at
 the same time as the final copy.
+
+## 🌈 Inclusion
+
+🏳️‍🌈 🏳️‍⚧️ LGBTQIA+ people are welcome in this project. What that means for issues, pull requests
+and new text: [Inclusion](../README.md#-inclusion) in the README.
