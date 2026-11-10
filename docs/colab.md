@@ -29,30 +29,9 @@ without repeating the commands before it. Shell lines use Python names and expre
 ## Modification times
 
 The stages' fingerprints compare each input file's size and modification time, so every copy has
-to keep them. `tar` and `rsync -a` do. The archive cell writes with `--format=posix`, which keeps
-modification times to the nanosecond; tar's default format keeps whole seconds.
-
-## The data step
-
-The 1% list is downloaded before the 100% list. The 1% cell's run time, shown when you hover over
-the icon to its left, tells you whether the 100% list fits in one session, which matters because a
-session that ends mid-download loses everything not yet archived.
-
-The archive cell archives nothing unless `status/download_scenes.json` says `ok`. `tar` writes
-`data.tar.zst.tmp`, which replaces the archive only when `tar` succeeds, so a failed download or
-archive leaves the old archive as it was. Two limits:
-
-- `ok` means the download stage finished, not that every tile did. A tile that failed keeps its
-  status and reason in its sidecar, `tiles/<tile_id>.json`, and is archived that way; rerunning
-  the scenes cell retries it.
-- When an archive already exists, unpack it before downloading, so the downloads resume from it
-  and the new archive keeps everything the old one had. If the unpack failed partway, do not run
-  the archive cell: the status it reads comes from the old archive and says `ok` even for a store
-  cut short.
-
-The archive uses zstd level 3 because higher levels compress far slower on the runtime's 2 CPUs.
-Any level extracts with the same command. On your own machine,
-[full-run.md](full-run.md#download-the-store) uses level 19.
+to keep them. `tar` and `rsync -a` do. The archive is written with `--format=posix`
+([full-run.md](full-run.md#download-the-store)), which keeps modification times to the
+nanosecond; tar's default format keeps whole seconds.
 
 ## Releasing the runtime
 
@@ -65,8 +44,7 @@ cell of a step raises before its release:
 
 - A failed `!` line only prints its error, and the cell carries on. `tee` also hides the job's exit
   code.
-- The Python cells that can fail catch the error and print it: the archive cell, `start_log` and
-  `print_verdicts`.
+- The Python cells that can fail catch the error and print it: `start_log` and `print_verdicts`.
 
 If you interrupt a cell, check that the release cell ran, and run it by hand if it did not.
 

@@ -5,8 +5,8 @@ are. The facts these sections rely on are in [runs.md](runs.md).
 
 ## The experiment at a glance
 
-The data are downloaded once, on a CPU machine (your own, or a Colab CPU runtime), and reach the
-Colab GPU as one archive in Drive. Each of the four runs is one `slurm/full.sbatch` job:
+The data are downloaded once, on your own machine, and reach the Colab GPU as one archive in Drive.
+Each of the four runs is one `slurm/full.sbatch` job:
 `validate_data`, then the stages of `STAGE_ORDER` in `slurm/stages.sh`, and `pipeline_check` from
 the job's EXIT trap, also after a failed stage. The model trains on `train`; `validation` picks
 `best_model.pt` and the layer. Intervals are evaluated on `test`, in 50 km clusters no other role

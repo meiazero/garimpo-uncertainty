@@ -26,7 +26,7 @@ The experiment runs on Google Colab through `colab.ipynb`, which explains each o
    A copy uploaded or saved to Drive keeps the cells of the day it was made.
 2. In every session, run the cells of its "Session setup" in order. They mount Drive, clone the
    code, run `uv sync`, and restore the data and earlier runs from Drive. Skip the unpack cell in
-   steps 1 and 5, which do not read the data.
+   steps 1 and 4, which do not read the data.
 
 Why the cells are written as they are: [docs/colab.md](docs/colab.md).
 
@@ -37,12 +37,13 @@ After the session setup, run the cells of one step of the notebook, in order:
 | Step | Runtime | When |
 |---|---|---|
 | 1. Tests | GPU | Once, before the first paid run |
-| 2. Data | CPU | Once; writes `data.tar.zst` to Drive |
-| 3. Pilot | L4 GPU | Until all three variants pass |
-| 4. Full run | GPU | Once per model, one model per session |
-| 5. Merge | CPU | Once, after the four full runs pass |
+| 2. Pilot | L4 GPU | Until all three variants pass |
+| 3. Full run | GPU | Once per model, one model per session |
+| 4. Merge | CPU | Once, after the four full runs pass |
 
-Each step ends by releasing the runtime. Pilot results go to `runs/pilot/`, never to `outputs/`.
+The notebook downloads nothing: download the data on your own machine and put the archive in Drive
+first ([docs/full-run.md](docs/full-run.md#download-the-store)). Each step ends by releasing the
+runtime. Pilot results go to `runs/pilot/`, never to `outputs/`.
 Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot.md). The full run:
 [docs/full-run.md](docs/full-run.md).
 
@@ -50,7 +51,7 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 
 | Document | Covers |
 |---|---|
-| [docs/colab.md](docs/colab.md) | Why the cells of `colab.ipynb` are written as they are: the Drive archive, one command per cell, modification times, the data step, releasing the runtime, the job verdicts, the copy every 30 minutes |
+| [docs/colab.md](docs/colab.md) | Why the cells of `colab.ipynb` are written as they are: the Drive archive, one command per cell, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
 | [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `FORCE_FROM` |
 | [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, their sources, and where each is set |

@@ -5,8 +5,8 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 ## Steps
 
 1. Start every Colab session with the session setup of `colab.ipynb`.
-2. Download the store once, either on your own machine or on a Colab CPU runtime
-   ([below](#download-the-store)).
+2. Download the store once on your own machine and upload it to Drive
+   ([below](#download-the-store)). The notebook downloads nothing.
 3. Copy the values file with `cp slurm/full.env.example slurm/unet_scratch-f1.0.env` and fill in
    every value, using [decisions.md](decisions.md), with `RUN_DIR=runs/unet_scratch-f1.0`: the
    merge reads the runs from those paths. Commit and push it from your machine: each session
@@ -43,10 +43,7 @@ and the time left, and the download's own lines are also appended, timestamped, 
 `<DIR>/status/download_scenes.json` instead. Without `GARIMPO_DATA_DIR` it writes to
 `~/Experiments/datasets/garimpo`. The `tar` line needs free disk for the archive as well.
 
-On Colab, run step 2 of the notebook on a CPU runtime: metadata, the 1% and 100% lists, both
-weights, then the archive to Drive.
-
-Either way:
+About the download:
 
 - The download reads the versioned list, so `lists` does not need to run first.
 - It resumes within a session.

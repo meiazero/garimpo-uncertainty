@@ -3,7 +3,7 @@
 Read before the first run on a GPU.
 
 The pilot is the 1% training fraction, run through the same scripts as the full run: 186 tiles and
-2,976 cells, since validation, calibration and test stay whole. It downloads the versioned list
+2,976 cells, since validation, calibration and test stay whole. It trains on the versioned list
 `outputs/tiles/tiles_1pct.json`. Its purpose is to debug the implementation, and its numbers say
 nothing about any method. Its values are set in `slurm/pilot.sbatch`: the decided ones from
 [decisions.md](decisions.md), the rest marked there as pilot-only. Results go to `runs/pilot/`,
@@ -11,9 +11,9 @@ never to `outputs/`.
 
 ## Steps
 
-1. On a CPU runtime, run the session setup of `colab.ipynb`, then step 2, Data. This is needed
-   once.
-2. On an L4 runtime, run the session setup, then step 3, Pilot.
+1. Put the data archive in Drive as `MyDrive/garimpo/data.tar.zst`
+   ([full-run.md](full-run.md#download-the-store)). This is needed once.
+2. On an L4 runtime, run the session setup, then step 2, Pilot.
 3. Read the verdicts the step prints, then the pipeline check at the end of each variant's log,
    `outputs/logs/pilot-<weights>.log`, also copied to `logs/` in Drive.
 
@@ -47,7 +47,7 @@ fail the check: [stages.md](stages.md#statuses).
 1. Commit and push the fix from your machine. The session's clone cannot push, and the next
    session's clone picks the fix up.
 2. In a new session, choose the first stage the fix affects in the `FORCE_FROM` option of each
-   pilot cell, then run step 3. The option applies to its own cell only. It stays set in the open
+   pilot cell, then run step 2. The option applies to its own cell only. It stays set in the open
    tab, so empty it once the rerun passes; reopening the notebook from its link also empties it.
 
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
