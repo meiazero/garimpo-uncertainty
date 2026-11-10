@@ -10,7 +10,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 3. Copy the values file with `cp slurm/full.env.example slurm/unet_scratch-f1.0.env` and fill in
    every value, using [decisions.md](decisions.md), with `RUN_DIR=runs/unet_scratch-f1.0`: the
    merge reads the runs from those paths. Commit and push it from your machine: each session
-   starts from a fresh clone with a read-only token.
+   starts from a fresh clone, which cannot push.
 4. On a GPU runtime, run the session setup and then the notebook's Full run step
    ([below](#the-run-cells)), one run per session. The run chooses the layer from the validation
    role and continues; `chosen_layer.json` records why.
@@ -23,7 +23,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
    ```
 
 7. On Colab, the Merge step copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit
-   it from your own machine: these are the tables the dissertation reports.
+   it from your own machine: these are the final result tables.
 
 ## Download the store
 

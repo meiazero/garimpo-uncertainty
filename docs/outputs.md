@@ -1,6 +1,6 @@
 # Numbers, scripts and outputs
 
-Read to trace a number in the dissertation back to its script.
+Read to trace a reported number back to its script.
 
 ## Regenerate the split
 

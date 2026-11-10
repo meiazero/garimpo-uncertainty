@@ -1,9 +1,9 @@
 # garimpo-uncertainty
 
-Replication package of a master's dissertation on calibrated prediction intervals for the area of
-artisanal mining in Sentinel-2 imagery, evaluated under geographic domain shift. It trains
-segmentation models, builds COMPASS and conformal intervals for the mined area of each cell, and
-reports their coverage and width.
+Replication package for calibrated prediction intervals for the area of artisanal mining in
+Sentinel-2 imagery, evaluated under geographic domain shift. It trains segmentation models, builds
+COMPASS and conformal intervals for the mined area of each cell, and reports their coverage and
+width.
 
 - 1,179 Sentinel-2 tiles cut into 18,864 cells of 512 x 512 pixels: 69.2 GB on disk at the 100%
   training fraction, 10.9 GB for the pilot. Counts per role are in
@@ -21,15 +21,10 @@ reports their coverage and width.
 
 The experiment runs on Google Colab through `colab.ipynb`, which explains each of its cells.
 
-1. On GitHub, create a fine-grained token for this repository with Contents: Read-only, since the
-   repository is private.
-2. Open the notebook from GitHub, in every session, at
+1. Open the notebook from GitHub, in every session, at
    <https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/colab.ipynb>.
-   A copy uploaded or saved to Drive keeps the cells of the day it was made. If Colab cannot
-   open the link, open <https://colab.research.google.com/github>, check Include Private Repos
-   and authorize Colab to read the repository.
-3. In Colab, add the token as the secret `GH_TOKEN`, with Notebook access on for this notebook.
-4. In every session, run the cells of its "Session setup" in order. They mount Drive, clone the
+   A copy uploaded or saved to Drive keeps the cells of the day it was made.
+2. In every session, run the cells of its "Session setup" in order. They mount Drive, clone the
    code, run `uv sync`, and restore the data and earlier runs from Drive. Skip the unpack cell in
    steps 1 and 5, which do not read the data.
 

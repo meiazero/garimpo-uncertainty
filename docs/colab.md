@@ -12,7 +12,7 @@ would make every cell a remote read.
 `DATA` is always `/content/garimpo-data` because runs record the data root's path, and a run
 restored under another path refuses ([stages.md](stages.md#run-identity)).
 
-Each session clones the repository again with a read-only token, so code changes are committed and
+Each session clones the repository again without credentials, so code changes are committed and
 pushed from your own machine, never from the session.
 
 ## One command per cell
