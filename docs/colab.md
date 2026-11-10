@@ -42,11 +42,11 @@ still pending, and then releases the runtime, which spends compute units until i
 When a Python cell raises, Colab cancels the cells queued after it, the release included. So no
 cell before the release raises:
 
-- A failed `!` line only prints its error, and the cell carries on. `tee` also hides the job's exit
-  code.
-- The Python cells that can fail catch the error and print it: `start_log` and `print_verdicts`.
+- A failed `!` line only prints its error, and the cell carries on.
+- The Python cells that can fail catch the error and print it, such as `print_verdicts`.
 
-If you interrupt a cell, run the cells of section 7 by hand.
+If you interrupt a run cell, `scripts/run.py` stops the stage, runs the pipeline check and exits
+130; then run the cells of section 7 by hand.
 
 ## Optional and reexecution cells
 
@@ -58,10 +58,10 @@ never forces a stage by accident. Both write their command in full, so the cell 
 
 Since every job cell succeeds, read the job's verdict instead of the cell's status. Every pilot and
 full-run job ends with the `PIPELINE CHECK: PASS` or `PIPELINE CHECK: FAIL` line of
-`pipeline_check.py`, failed or not. Each job appends to its log with `tee -a`, so the log keeps
-earlier attempts, including one cut short by a session that ended. `start_log` writes an
-`=== attempt started` line before each attempt, and `print_verdicts` prints the verdict of the last
-attempt only:
+`pipeline_check.py`, failed or not. `scripts/run.py` appends every line to the model's log with the
+UTC time, so the log keeps earlier attempts, including one cut short by a session that ended. It
+writes an `=== attempt started` line before each attempt, with the config, the commit and the
+options, and `print_verdicts` prints the verdict of the last attempt only:
 
 - `NO VERDICT`: the job or its check died before the verdict; the log says where.
 - `NO LOG`: the log does not exist yet or could not be read.
