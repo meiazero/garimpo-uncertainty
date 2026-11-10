@@ -45,7 +45,7 @@ def collect_samples(
 
     jacobians, features, labels = [], [], []
     feature_shape = None
-    for images, masks, _ in loader:
+    for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         encoded = garimpo_uncertainty.models.common.encode(model, images.to(device))
         z, decode = garimpo_uncertainty.models.common.split_at(model, layer, encoded)
         feature_shape = list(z.shape[1:])

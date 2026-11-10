@@ -1,5 +1,7 @@
 """Torch access to the cell store, with the role selection done by the caller."""
 
+import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -89,6 +91,31 @@ def loader(
     )
 
 
+def batches(loader: torch.utils.data.DataLoader) -> Iterator:
+    """Start iterating the loader without losing a Ctrl+C that lands while it forks its workers.
+
+    Python raises such a Ctrl+C inside an at-fork callback, where it only prints it as unraisable
+    and the stage carries on; it is kept here and raised again once the workers exist.
+    """
+    swallowed: list[KeyboardInterrupt] = []
+    previous = sys.unraisablehook
+
+    def keep(unraisable: object) -> None:  # sys.UnraisableHookArgs exists only in typeshed
+        if isinstance(unraisable.exc_value, KeyboardInterrupt):
+            swallowed.append(unraisable.exc_value)
+        else:
+            previous(unraisable)
+
+    sys.unraisablehook = keep
+    try:
+        iterator = iter(loader)
+    finally:
+        sys.unraisablehook = previous
+    if swallowed:
+        raise swallowed[0]
+    return iterator
+
+
 def identity_normalization() -> dict[str, list[float]]:
     """Return statistics that leave reflectance untouched, as the Sentinel-2 MoCo weights expect."""
     n_bands = len(garimpo_uncertainty.data.BANDS)
@@ -100,7 +127,7 @@ def band_statistics(
 ) -> dict[str, list[float]]:
     """Per-band mean and std of training reflectance; only the training role may reach this."""
     total, squares, count = None, None, 0
-    for images, _, _ in loader(root, cells, None, batch_size, num_workers):
+    for images, _, _ in batches(loader(root, cells, None, batch_size, num_workers)):
         pixels = images.to(torch.float64).transpose(0, 1).flatten(1)
         total = pixels.sum(1) if total is None else total + pixels.sum(1)
         squares = (pixels**2).sum(1) if squares is None else squares + (pixels**2).sum(1)

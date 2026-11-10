@@ -143,7 +143,7 @@ def score_cells(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     first = 0
-    for images, masks, _ in loader:
+    for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         last = first + len(images)
         batch = score_batch(model, images.to(device), masks.to(device), fitted, args)
         for name, array in arrays.items():
