@@ -69,18 +69,22 @@ def test_history_records_what_a_training_needs_watching(finished_run: support.Fi
     assert np.allclose(trained, history.updates * batch, rtol=1e-9), trained.tolist()
 
 
+# Not a divisor of the synthetic validation cells, so the last validation batch is smaller.
+UNEVEN_BATCH = 3
+
+
 @pytest.mark.skipif(
     support.DEVICE != "cpu", reason="the stage ran on the GPU, this process recomputes on CPU"
 )
-def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(
-    finished_run: support.FinishedRun, data_root: Path
-) -> None:
+def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(data_root: Path) -> None:
     """Recompute the validation loss, precision and recall from best_model.pt, apart from train.py.
 
     The loss weighs each batch by its cells, so an uneven last batch counts no more than its cells;
-    the model must be in eval mode, or the head's dropout would change the loss.
+    the ConvNet's head has dropout, so a loss taken outside eval mode would differ.
     """
-    run_dir = finished_run.run_dir
+    run_dir = support.RUNS / "convnet_uneven_validation"
+    arguments = support.train_args("convnet", run_dir, batch_size=str(UNEVEN_BATCH), epochs="2")
+    support.run("train.py", *arguments, data_root=data_root)
     history = pd.read_csv(run_dir / "history.csv")
     best = torch.load(run_dir / "best_model.pt", map_location="cpu", weights_only=True)["epoch"]
     record = history.set_index("epoch").loc[best]
@@ -88,11 +92,12 @@ def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(
     tile_ids = garimpo_uncertainty.data.select_tiles(split, 1.0, 0).tile_id.tolist()
     cells = garimpo_uncertainty.data.cell_table(data_root, split, tile_ids)
     validation = cells[cells.role == "validation"]
+    assert len(validation) % UNEVEN_BATCH != 0, "an even last batch would hide a per-batch mean"
     model, metadata = garimpo_uncertainty.checkpoints.load_model(
         run_dir / "best_model.pt", cells, "cpu"
     )
     loader = garimpo_uncertainty.cell_dataset.loader(
-        data_root, validation, metadata["normalization"], 8, 0
+        data_root, validation, metadata["normalization"], UNEVEN_BATCH, 0
     )
     dice = segmentation_models_pytorch.losses.DiceLoss(mode="binary", from_logits=True)
     bce = torch.nn.BCEWithLogitsLoss()
@@ -108,7 +113,6 @@ def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(
                 (~predicted & reference).sum(),
             ]
     true_positive, false_positive, false_negative = counts
-    assert len(validation) % 8 != 0, "an even last batch would hide a per-batch mean"
     assert record.val_loss == pytest.approx(weighted_loss / len(validation), rel=1e-6)
     assert record.val_precision == pytest.approx(
         true_positive / (true_positive + false_positive), abs=1e-9
