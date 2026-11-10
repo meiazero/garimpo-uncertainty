@@ -4,26 +4,39 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 
 ## Steps
 
-1. Start every Colab session with the session setup of `colab.ipynb`.
-2. Download the store once on your own machine and upload it to Drive
+1. Download the store once on your own machine and upload it to Drive
    ([below](#download-the-store)). The notebook downloads nothing.
-3. Copy the values file with `cp slurm/full.env.example slurm/unet_scratch-f1.0.env` and fill in
-   every value, using [decisions.md](decisions.md), with `RUN_DIR=runs/unet_scratch-f1.0`: the
-   merge reads the runs from those paths. Commit and push it from your machine: each session
-   starts from a fresh clone, which cannot push.
-4. On a GPU runtime, run the session setup and then the notebook's Full run step
-   ([below](#the-run-cells)), one run per session. The run chooses the layer from the validation
-   role and continues; `chosen_layer.json` records why.
-5. Repeat the two items above for the other three runs in [runs.md](runs.md#model-variants).
-6. Merge the four runs' tables into `outputs/` with the notebook's Merge step, on a CPU runtime.
-   It runs the command below; on your own machine, copy `runs/` from Drive first.
+2. Each run reads every value from its config in `configs/full/` ([below](#the-run-configs)). To
+   change one, edit the file, then commit and push it from your machine: each session starts from a
+   fresh clone, which cannot push.
+3. On a GPU runtime, run Runtime > Run all in `colab.ipynb`. Section 6 trains the four models one
+   after another ([below](#the-run-cells)). Each run chooses the layer from the validation role
+   and continues; `chosen_layer.json` records why.
+4. If the session ends first, run Runtime > Run all again in a new session: finished stages skip
+   and training resumes from its last checkpoint.
+5. Section 7 merges the four runs' tables into `outputs/` with the command below; on your own
+   machine, copy `runs/` from Drive first.
 
    ```bash
    uv run --no-sync python scripts/merge_results.py --out outputs --runs runs/unet_scratch-f1.0 runs/unet_imagenet-f1.0 runs/unet_sentinel2-f1.0 runs/convnet-f1.0
    ```
 
-7. On Colab, the Merge step copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit
-   it from your own machine: these are the final result tables.
+6. On Colab, section 7 copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit it
+   from your own machine: these are the final result tables.
+
+## The run configs
+
+| Config | Model |
+|---|---|
+| `configs/full/unet_scratch-f1.0.json` | U-Net from scratch |
+| `configs/full/unet_imagenet-f1.0.json` | U-Net from ImageNet weights |
+| `configs/full/unet_sentinel2-f1.0.json` | U-Net from Sentinel-2 MoCo weights |
+| `configs/full/convnet-f1.0.json` | DeepLabV3 from segmentation-models-pytorch |
+
+Each value has its source in [decisions.md](decisions.md). `scripts/run_config.py` reads a config
+for the job and stops it before any stage when a key is missing, null, empty or unknown, or when
+`SCORE_FLOOR_HA` is not a positive finite number. `RUN_DIR` is `runs/<config name>`: the merge
+reads the runs from those paths.
 
 ## Download the store
 
@@ -56,15 +69,18 @@ About the download:
 
 ## The run cells
 
-The notebook's Full run step runs one model, in this order:
+Section 6 of the notebook has one cell per model, run in order:
 
-1. Start the copy of `runs/` and the logs to Drive every 30 minutes.
-2. Run the model: choose `ENV` in the cell's option, and leave `FORCE_FROM` and `FORCE_VALIDATE`
-   empty on a first run. `NUM_WORKERS` follows the runtime's CPUs. An option stays set in the open
-   tab, so empty `FORCE_FROM` once a forced rerun passes. Reopening the notebook from its link
-   restores the values on `main`.
-3. Stop the copy, then save the runs and the logs in Drive.
-4. Print the verdict, then release the GPU.
+1. "Train <model>" runs `bash slurm/full.sbatch configs/full/<model>.json`. `NUM_WORKERS` follows
+   the runtime's CPUs.
+2. "Rerun <model> - (in a reexecution)" does nothing unless its `RUN` box is checked; then it runs
+   the same job with its `FORCE_FROM` and `FORCE_VALIDATE` options. An option stays set in the
+   open tab, so clear `RUN` once the rerun passes. Reopening the notebook from its link restores
+   the values on `main`.
+3. "Print the verdicts of the training" prints one line per model.
+
+The copy of `runs/` and the logs to Drive every 30 minutes starts before the pilot and stops in
+section 8, which saves the runs and logs once more and releases the GPU.
 
 With the copy every 30 minutes, a session that ends mid-run keeps the finished stages and the
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
@@ -77,7 +93,7 @@ Outside Colab, one run is one job:
 
 ```bash
 mkdir -p outputs/logs
-NUM_WORKERS=$(nproc) bash slurm/full.sbatch slurm/unet_scratch-f1.0.env 2>&1 | tee -a outputs/logs/unet_scratch-f1.0.log
+NUM_WORKERS=$(nproc) bash slurm/full.sbatch configs/full/unet_scratch-f1.0.json 2>&1 | tee -a outputs/logs/unet_scratch-f1.0.log
 ```
 
 ## Regenerate the tile lists

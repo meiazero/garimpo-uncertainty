@@ -5,7 +5,7 @@ Read before changing a cell of `colab.ipynb`, or when a cell behaves unexpectedl
 ## The store is an archive in Drive
 
 The runtime's disk is erased when the session ends. The store therefore lives in Drive as one
-archive, `data.tar.zst`, which the session setup unpacks to the local disk every time, and `runs/`
+archive, `data.tar.zst`, which section 2 of the notebook unpacks to the local disk every time, and `runs/`
 and the logs are copied back from Drive the same way. Reading the store's memmaps through Drive
 would make every cell a remote read.
 
@@ -35,18 +35,24 @@ nanosecond; tar's default format keeps whole seconds.
 
 ## Releasing the runtime
 
-Each step ends with a cell that calls `release_runtime()`. It unmounts Drive, which writes the
-files still pending, and then releases the runtime, which spends compute units until it is
-released.
+The notebook ends with a cell that calls `release_runtime()`, so Runtime > Run all runs every
+section on one runtime and releases it only at the end. It unmounts Drive, which writes the files
+still pending, and then releases the runtime, which spends compute units until it is released.
 
 When a Python cell raises, Colab cancels the cells queued after it, the release included. So no
-cell of a step raises before its release:
+cell before the release raises:
 
 - A failed `!` line only prints its error, and the cell carries on. `tee` also hides the job's exit
   code.
 - The Python cells that can fail catch the error and print it: `start_log` and `print_verdicts`.
 
-If you interrupt a cell, check that the release cell ran, and run it by hand if it did not.
+If you interrupt a cell, run the cells of section 8 by hand.
+
+## Optional and reexecution cells
+
+A cell titled "- (optional)" runs only while its `RUN` box is checked, which it is by default. A
+cell titled "- (in a reexecution)" runs only once its `RUN` box is checked, so Runtime > Run all
+never forces a stage by accident. Both write their command in full, so the cell shows what runs.
 
 ## Job verdicts
 

@@ -24,26 +24,30 @@ The experiment runs on Google Colab through `colab.ipynb`, which explains each o
 1. Open the notebook from GitHub, in every session, at
    <https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/colab.ipynb>.
    A copy uploaded or saved to Drive keeps the cells of the day it was made.
-2. In every session, run the cells of its "Session setup" in order. They mount Drive, clone the
-   code, run `uv sync`, and restore the data and earlier runs from Drive. Skip the unpack cell in
-   steps 1 and 4, which do not read the data.
+2. Choose a GPU runtime, then run Runtime > Run all. The setup mounts Drive, clones the code, runs
+   `uv sync`, and restores the data and earlier runs from Drive.
 
 Why the cells are written as they are: [docs/colab.md](docs/colab.md).
 
 ## Quick start
 
-After the session setup, run the cells of one step of the notebook, in order:
+Runtime > Run all runs the notebook's sections in order, on one GPU runtime:
 
-| Step | Runtime | When |
-|---|---|---|
-| 1. Tests | GPU | Once, before the first paid run |
-| 2. Pilot | L4 GPU | Until all three variants pass |
-| 3. Full run | GPU | Once per model, one model per session |
-| 4. Merge | CPU | Once, after the four full runs pass |
+| Section | What it does |
+|---|---|
+| 1. Setup | Mounts Drive, clones the code, builds the environment |
+| 2. Data | Unpacks the data and restores the earlier runs and logs |
+| 3. Run configs | Shows the values of every run, from `configs/` |
+| 4. Tests | Runs the suite on the GPU (optional) |
+| 5. Pilot | The pipeline on 1% of the training tiles, to check the code |
+| 6. Training | The four models on all the training tiles |
+| 7. Evaluation | Merges the four runs' tables into `outputs/` |
+| 8. Release | Writes the pending files to Drive and releases the GPU |
 
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
-first ([docs/full-run.md](docs/full-run.md#download-the-store)). Each step ends by releasing the
-runtime. Pilot results go to `runs/pilot/`, never to `outputs/`.
+first ([docs/full-run.md](docs/full-run.md#download-the-store)). If the session ends early, run
+Runtime > Run all again in a new one: finished stages are skipped and training resumes. Pilot
+results go to `runs/pilot/`, never to `outputs/`.
 Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot.md). The full run:
 [docs/full-run.md](docs/full-run.md).
 
@@ -53,7 +57,7 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 |---|---|
 | [docs/colab.md](docs/colab.md) | Why the cells of `colab.ipynb` are written as they are: the Drive archive, one command per cell, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
 | [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `FORCE_FROM` |
-| [docs/full-run.md](docs/full-run.md) | The full run step by step, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
+| [docs/full-run.md](docs/full-run.md) | The full run step by step, the run configs, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, their sources, and where each is set |
 | [docs/runs.md](docs/runs.md) | Dataset size by role, training fractions, tile lists, model variants, starting weights, layer names |
 | [docs/design.md](docs/design.md) | What the model comparison can and cannot show, limits of the starting weights, the quantile rule and its sensitivity analysis |
