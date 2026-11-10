@@ -6,7 +6,7 @@ are. The facts these sections rely on are in [runs.md](runs.md).
 ## The experiment at a glance
 
 The data are downloaded once, on your own machine, and reach the Colab GPU as one archive in Drive.
-Each of the four runs is one `slurm/full.sbatch` job:
+Each of the four runs is one `slurm/run.sbatch` job:
 `validate_data`, then the stages of `STAGE_ORDER` in `slurm/stages.sh`, and `pipeline_check` from
 the job's EXIT trap, also after a failed stage. The model trains on `train`; `validation` picks
 `best_model.pt` and the layer. Intervals are evaluated on `test`, in 50 km clusters no other role
@@ -35,7 +35,7 @@ flowchart TD
     end
     SPLIT -.-> ROLES
 
-    subgraph RUNS["2 · Four runs at 100%: Colab GPU, one env file each"]
+    subgraph RUNS["2 · Four runs at 100%: Colab GPU, one JSON config each"]
         R1["convnet<br/>DeepLabV3, no pretraining"]
         R2["unet_scratch"]
         R3["unet_imagenet"]
@@ -43,7 +43,7 @@ flowchart TD
     end
     TAR --> RUNS
 
-    subgraph JOB["3 · One slurm/full.sbatch job per run"]
+    subgraph JOB["3 · One slurm/run.sbatch job per run"]
         VD["validate_data<br/>slot hashes, split, counts"] --> T["train · 100 epochs<br/>best_model.pt by validation Dice<br/>last.pt every epoch, resumable"]
         T --> INF["infer<br/>logits of every cell"]
         INF --> FD["fit_directions<br/>Jacobians: PCA and SVM normal"]

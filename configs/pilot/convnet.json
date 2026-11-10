@@ -1,0 +1,32 @@
+{
+  "ARCH": "convnet",
+  "RUN_DIR": "runs/pilot/convnet-f0.01",
+  "TRAIN_FRACTION": 0.01,
+  "SUBSET_SEED": 0,
+  "EPOCHS": 2,
+  "STEPS_PER_EPOCH": 20,
+  "BATCH_SIZE": 16,
+  "EVAL_BATCH_SIZE": 16,
+  "LR": 0.0001,
+  "WEIGHT_DECAY": 0.01,
+  "LOSS": "dice_bce",
+  "SEED": 0,
+  "LAYERS": [
+    "decoder.aspp",
+    "decoder.relu"
+  ],
+  "MIN_FRACTION_ASCENDING": 0,
+  "SVM_C": 1.0,
+  "SVM_CLASS_WEIGHT": "balanced",
+  "SVM_PIXELS_PER_CELL": 200,
+  "SWEEP_STEPS": 21,
+  "SWEEP_CELLS": 20,
+  "BETA_RANGE_LOGITS": 100,
+  "BETA_RANGE_FEATURES": 1000,
+  "DIRECTION_TEMPERATURE": 10000,
+  "SEARCH_THRESHOLD_LOGITS": 0.01,
+  "SEARCH_THRESHOLD_FEATURES": 1e-15,
+  "CELLS": "all",
+  "SCORE_FLOOR_HA": 0.01,
+  "BOUNDARY_TOLERANCE_PX": 5.43
+}

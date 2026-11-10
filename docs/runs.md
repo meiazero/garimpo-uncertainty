@@ -81,7 +81,7 @@ ask for a tile the download did not fetch, and the E2E suite asserts that each v
 | `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/unet_sentinel2-f1.0` | reflectance / 10000, stored as mean 0 and std 1 |
 | `convnet` (smp's DeepLabV3) | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
 
-The experiment is these four runs, all at 100%, one env file each. Each run has 55 method and
+The experiment is these four runs, all at 100%, one config in `configs/full/` each. Each run has 55 method and
 calibration rows (`intervals.COMBINATIONS`) at each of the three levels alpha = 0.05, 0.10 and 0.15:
 
 | Rows | Per run and alpha |
@@ -118,5 +118,7 @@ the U-Nets and no run can mix encoders. `choose_layer.py` chooses the layer per 
 | U-Net | `decoder.blocks.N` | smp's decoder (`decoders/unet/decoder.py` of the pinned 0.6.0), which keeps one block per `decoder_channels` entry and takes its input widths from the encoder |
 | ConvNet | `decoder.aspp`, `decoder.relu` | `decoders/deeplabv3/decoder.py` |
 
-`fit_directions.py` checks each name against the built model and stops on an unknown one. The E2E
-suite asserts the two names the pilot uses, `decoder.blocks.3` and `decoder.blocks.4`.
+`fit_directions.py` checks each name against the built model and stops on an unknown one. Every
+config diagnoses all of them: `decoder.blocks.0` to `decoder.blocks.4` for the U-Nets,
+`decoder.aspp` and `decoder.relu` for the ConvNet. The E2E suite checks that every versioned config
+names only layers of its model.

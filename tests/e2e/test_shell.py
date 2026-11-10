@@ -1,7 +1,8 @@
-"""The bash layer in slurm/: full.sbatch, pilot.sbatch and stages.sh, run as a job runs them.
+"""The bash layer in slurm/: run.sbatch and stages.sh, run as a job runs them.
 
 Failures guarded here: a failing stage that lets later stages run on missing or stale inputs; a
-value left empty in the env file reaching a stage as an empty argument after training; a flag name
+value left empty or misspelled in the JSON config reaching a stage as an empty argument after
+training, or a versioned config the job would refuse; a flag name
 or variable miswired in stages.sh; the chosen layer not reaching the calibrated stages; FORCE_FROM
 redoing too much, too little, or nothing at all on a typo; the EXIT trap losing the exit code.
 
@@ -14,17 +15,21 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
 import pandas as pd
 import pytest
 
+import garimpo_uncertainty.models.common
 from tests.e2e import support
 
 SHELL_ROOT = support.ROOT / "tests" / "artifacts" / "shell"
 DATA = SHELL_ROOT / "data"
-EXAMPLE = support.ROOT / "slurm" / "full.env.example"
+# The versioned config, so its own values are under test wherever FILLED leaves them.
+BASE = support.ROOT / "configs" / "full" / "unet_scratch.json"
+CONFIGS = sorted((support.ROOT / "configs").glob("*/*.json"))
 # Ordered so the chosen layer is not the first: passing LAYERS[0] for it must show in the trace.
 LAYERS = ["decoder.blocks.3", "decoder.blocks.4"]
 STAGES = support.ROOT / "slurm" / "stages.sh"
@@ -49,37 +54,41 @@ NAMED_OTHERWISE = {
     "--steps": "SWEEP_STEPS",
 }
 ASSIGNMENT = re.compile(r"^\++ ([A-Z_]+)=(\S*)$", flags=re.MULTILINE)
-# full.env.example's values stay unless filled or shrunk here, so the example itself is under test.
 FILLED = {
     "ARCH": "unet",
     "ENCODER_WEIGHTS": "none",
     "RUN_DIR": "runs/unet_scratch-f1.0",
-    "TRAIN_FRACTION": "1.0",
+    "TRAIN_FRACTION": 1.0,
     # Not SEED's 0, so swapping the two shows; at fraction 1.0 every seed selects every tile.
-    "SUBSET_SEED": "7",
+    "SUBSET_SEED": 7,
     # The shared runs' training, which the synthetic tiles are known to survive.
-    "EPOCHS": "3",
-    "STEPS_PER_EPOCH": support.STEPS_PER_EPOCH,
-    "BATCH_SIZE": "8",
-    "LR": "1e-3",
+    "EPOCHS": 3,
+    "STEPS_PER_EPOCH": int(support.STEPS_PER_EPOCH),
+    "BATCH_SIZE": 8,
+    "LR": 1e-3,
     # Not 0, which SEED holds, so a swap shows in the trace.
-    "WEIGHT_DECAY": "1e-6",
+    "WEIGHT_DECAY": 1e-6,
     # Apart from BATCH_SIZE and NUM_WORKERS, so a swapped variable shows in the trace.
-    "EVAL_BATCH_SIZE": "5",
-    "LAYERS": f"({' '.join(LAYERS)})",
-    # Every value distinct from every other, so a wrong variable shows: "0.0" is not SEED's "0".
-    "MIN_FRACTION_ASCENDING": "0.0",
-    "SVM_C": "1.5",
+    "EVAL_BATCH_SIZE": 5,
+    "LAYERS": LAYERS,
+    # Every value distinct from every other, so a wrong variable shows: 0.0 is not SEED's 0.
+    "MIN_FRACTION_ASCENDING": 0.0,
+    "SVM_C": 1.5,
     "SVM_CLASS_WEIGHT": "balanced",
-    "SVM_PIXELS_PER_CELL": "50",
-    "SWEEP_STEPS": "9",
-    "SWEEP_CELLS": "6",
+    "SVM_PIXELS_PER_CELL": 50,
+    "SWEEP_STEPS": 9,
+    "SWEEP_CELLS": 6,
     # Few updates leave every Jacobian zero at the upstream 10,000 (docs/failure-modes.md, 40).
-    "DIRECTION_TEMPERATURE": "1",
-    "SEARCH_THRESHOLD_FEATURES": "2e-3",
-    "SCORE_FLOOR_HA": "0.01",
-    "NUM_WORKERS": "2",
+    "DIRECTION_TEMPERATURE": 1,
+    "SEARCH_THRESHOLD_FEATURES": 2e-3,
+    # Not 0.01, which SEARCH_THRESHOLD_LOGITS holds in the base config.
+    "SCORE_FLOOR_HA": 0.02,
 }
+# What the pilot may change: its size and length, and the layer threshold, so that a model trained
+# for a few updates still reaches the last stage.
+PILOT_ONLY = {"RUN_DIR", "TRAIN_FRACTION", "EPOCHS", "STEPS_PER_EPOCH", "MIN_FRACTION_ASCENDING"}
+# An execution setting, not part of the config: passed to every job like NUM_WORKERS on Colab.
+NUM_WORKERS = "2"
 STAGE_ORDER = (
     "train",
     "infer",
@@ -101,16 +110,15 @@ EVALUATION_SCRIPTS = (
 )
 
 
-def example_names() -> list[str]:
-    return re.findall(r"^([A-Z_]+)=", EXAMPLE.read_text(), flags=re.MULTILINE)
+def base_names() -> list[str]:
+    return list(json.loads(BASE.read_text(encoding="utf-8")))
 
 
-def write_env(name: str, **changes: str) -> Path:
-    """Write the example followed by the test values; a later assignment wins, as in bash."""
-    values = FILLED | changes
-    path = SHELL_ROOT / f"{name}.env"
-    lines = [f"{key}={value}" for key, value in values.items()]
-    path.write_text(EXAMPLE.read_text() + "\n# test values\n" + "\n".join(lines) + "\n")
+def write_config(name: str, **changes: object) -> Path:
+    """Write the base config with the test values over it; a change to None writes null."""
+    values = json.loads(BASE.read_text(encoding="utf-8")) | FILLED | changes
+    path = SHELL_ROOT / f"{name}.json"
+    path.write_text(json.dumps(values, indent=2))
     return path
 
 
@@ -125,6 +133,7 @@ def run_job(*command: str, timeout: float = 600, **variables: str) -> subprocess
         "CUDA_VISIBLE_DEVICES": "",
         # bash words its own errors in the locale; the tests match the English ones.
         "LC_ALL": "C",
+        "NUM_WORKERS": NUM_WORKERS,
         **variables,
     }
     return subprocess.run(  # noqa: S603 - arguments come from the tests
@@ -194,8 +203,8 @@ class PassedJob(NamedTuple):
 
 @pytest.fixture(scope="module")
 def passed_job(shell_root: Path) -> PassedJob:
-    env = write_env("passed")
-    result = run_job("-x", "slurm/full.sbatch", str(env))
+    config = write_config("passed")
+    result = run_job("-x", "slurm/run.sbatch", str(config))
     (shell_root / "passed.log").write_text(result.stdout + result.stderr)
     assert result.returncode == 0, result.stdout[-4000:] + result.stderr[-4000:]
     return PassedJob(shell_root / FILLED["RUN_DIR"], result)
@@ -267,8 +276,8 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         validated = validation.stat().st_mtime_ns
         checkpoint = (run_dir / "best_model.pt").stat().st_mtime_ns
         result = run_job(
-            "slurm/full.sbatch",
-            str(write_env("passed")),
+            "slurm/run.sbatch",
+            str(write_config("passed")),
             FORCE_FROM="calibrate",
             FORCE_VALIDATE="1",
         )
@@ -284,7 +293,7 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
 def test_unknown_force_from_stops_the_job_and_fails_the_check(passed_job: PassedJob) -> None:
     """A typo must not run the stages unforced, which would skip and read as a successful redo."""
     before = status_mtimes(passed_job.run_dir)
-    result = run_job("slurm/full.sbatch", str(write_env("passed")), FORCE_FROM="calibration")
+    result = run_job("slurm/run.sbatch", str(write_config("passed")), FORCE_FROM="calibration")
     assert result.returncode == 1
     assert "FORCE_FROM=calibration is not one of" in result.stderr
     assert "job exit code 1" in result.stdout
@@ -292,57 +301,98 @@ def test_unknown_force_from_stops_the_job_and_fails_the_check(passed_job: Passed
     assert status_mtimes(passed_job.run_dir) == before
 
 
-@pytest.mark.parametrize(
-    ("job", "run_dir"),
-    [("pilot", "runs/pilot/unet-imagenet"), ("full", "runs/unet_imagenet-f1.0")],
-)
-def test_failed_stage_stops_the_job(shell_root: Path, job: str, run_dir: str) -> None:
+def test_failed_stage_stops_the_job(shell_root: Path) -> None:
     """ImageNet weights never downloaded: training fails, and nothing may run after it."""
-    env = write_env("failing", ENCODER_WEIGHTS="imagenet", RUN_DIR=run_dir)
-    command = ["slurm/pilot.sbatch"] if job == "pilot" else ["slurm/full.sbatch", str(env)]
-    result = run_job(*command, ENCODER_WEIGHTS="imagenet")
-    (shell_root / f"failed_{job}.log").write_text(result.stdout + result.stderr)
+    run_dir = "runs/unet_imagenet-f1.0"
+    config = write_config("failing", ENCODER_WEIGHTS="imagenet", RUN_DIR=run_dir)
+    result = run_job("slurm/run.sbatch", str(config))
+    (shell_root / "failed.log").write_text(result.stdout + result.stderr)
     assert result.returncode != 0
     assert "failing stage: train (failed)" in result.stdout
     assert "PIPELINE CHECK: FAIL" in result.stdout
     assert {path.stem for path in (shell_root / run_dir / "status").glob("*.json")} == {"train"}
 
 
-@pytest.mark.parametrize("name", example_names())
+@pytest.mark.parametrize("name", base_names())
 def test_full_job_refuses_an_empty_value_before_any_stage(shell_root: Path, name: str) -> None:
-    """Every value of the example, left empty, stops the job before training, not after."""
+    """Every value of the base config, left null, stops the job before training, not after."""
     run_dir = f"runs/empty_{name.lower()}"
-    changes = {name: "()" if name == "LAYERS" else ""}
-    env = write_env(f"empty_{name}", **({"RUN_DIR": run_dir} | changes))
-    result = run_job("slurm/full.sbatch", str(env), timeout=30)
+    changes = {name: [] if name == "LAYERS" else None}
+    config = write_config(f"empty_{name}", **({"RUN_DIR": run_dir} | changes))
+    result = run_job("slurm/run.sbatch", str(config), timeout=30)
     assert result.returncode != 0
-    assert ("LAYERS is empty" if name == "LAYERS" else f"{name}: parameter null") in result.stderr
+    assert f"{name}: missing or empty" in result.stderr
     assert not (shell_root / run_dir).exists()
     assert "PIPELINE CHECK" not in result.stdout
 
 
-@pytest.mark.parametrize("floor", ["0", "-0.01", "nan", "inf", "0.01ha"])
-def test_full_job_refuses_a_bad_score_floor_before_any_stage(shell_root: Path, floor: str) -> None:
+def test_full_job_refuses_a_misspelled_key_before_any_stage(shell_root: Path) -> None:
+    """A misspelled key would otherwise leave its value at nothing, read as no setting at all."""
+    run_dir = "runs/misspelled"
+    config = write_config("misspelled", RUN_DIR=run_dir, SWEEP_STEP=9)
+    result = run_job("slurm/run.sbatch", str(config), timeout=30)
+    assert result.returncode != 0
+    assert "SWEEP_STEP: unknown key" in result.stderr
+    assert not (shell_root / run_dir).exists()
+
+
+@pytest.mark.parametrize("path", CONFIGS, ids=lambda path: f"{path.parent.name}/{path.stem}")
+def test_versioned_configs_are_accepted_and_name_model_layers(path: Path) -> None:
+    """A layer the model lacks would stop fit_directions only after the whole training."""
+    result = subprocess.run(  # noqa: S603 - arguments come from the tests
+        [sys.executable, "scripts/run_config.py", str(path)],
+        check=False,
+        cwd=support.ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    config = json.loads(path.read_text(encoding="utf-8"))
+    model = garimpo_uncertainty.models.common.build(config["ARCH"], in_channels=6)
+    assert set(config["LAYERS"]) <= set(garimpo_uncertainty.models.common.feature_layers(model))
+
+
+@pytest.mark.parametrize(
+    "name", sorted(path.stem for path in support.ROOT.glob("configs/full/*.json"))
+)
+def test_pilot_config_differs_from_the_full_one_only_in_scale(name: str) -> None:
+    """The pilot checks the code the full run will run, so only its size and length may differ."""
+    full, pilot = (
+        json.loads((support.ROOT / "configs" / scale / f"{name}.json").read_text(encoding="utf-8"))
+        for scale in ("full", "pilot")
+    )
+    differing = {key for key in full.keys() | pilot.keys() if full.get(key) != pilot.get(key)}
+    assert differing == PILOT_ONLY, differing
+    assert pilot["RUN_DIR"] == f"runs/pilot/{name}-f0.01"
+    assert full["RUN_DIR"] == f"runs/{name}-f1.0"
+
+
+@pytest.mark.parametrize("floor", [0, -0.01, float("nan"), float("inf"), "0.01ha"])
+def test_full_job_refuses_a_bad_score_floor_before_any_stage(
+    shell_root: Path, floor: object
+) -> None:
     """`calibrate.py` refuses these too, but only after training; the job must not get that far."""
-    run_dir = f"runs/floor_{floor.replace('.', '_')}"
-    env = write_env(f"floor_{floor}", RUN_DIR=run_dir, SCORE_FLOOR_HA=floor)
-    result = run_job("slurm/full.sbatch", str(env), timeout=60)
+    run_dir = f"runs/floor_{str(floor).replace('.', '_')}"
+    config = write_config(f"floor_{floor}", RUN_DIR=run_dir, SCORE_FLOOR_HA=floor)
+    result = run_job("slurm/run.sbatch", str(config), timeout=60)
     assert result.returncode != 0
     assert f"SCORE_FLOOR_HA must be a positive finite number, got '{floor}'" in result.stderr
     assert not (shell_root / run_dir).exists()
     assert "PIPELINE CHECK" not in result.stdout
 
 
-def test_full_job_needs_an_env_file(shell_root: Path) -> None:
-    result = run_job("slurm/full.sbatch", timeout=30)
+def test_full_job_needs_a_config(shell_root: Path) -> None:
+    result = run_job("slurm/run.sbatch", timeout=30)
     assert result.returncode != 0
-    assert "usage: bash slurm/full.sbatch <values.env>" in result.stderr
+    assert "usage: bash slurm/run.sbatch <config.json>" in result.stderr
 
 
 def test_convnet_needs_no_encoder_weights(shell_root: Path) -> None:
     """Reaching the FORCE_FROM check shows the values passed; the typo then stops the job."""
-    env = write_env("convnet", ARCH="convnet", ENCODER_WEIGHTS="", RUN_DIR="runs/convnet-f1.0")
-    result = run_job("slurm/full.sbatch", str(env), FORCE_FROM="none")
+    config = write_config(
+        "convnet", ARCH="convnet", ENCODER_WEIGHTS=None, RUN_DIR="runs/convnet-f1.0"
+    )
+    result = run_job("slurm/run.sbatch", str(config), FORCE_FROM="none")
     assert result.returncode == 1
     assert "ENCODER_WEIGHTS" not in result.stderr
     assert "FORCE_FROM=none is not one of" in result.stderr
