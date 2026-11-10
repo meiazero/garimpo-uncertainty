@@ -11,7 +11,10 @@ reading the store's memmaps through Drive would make every cell a remote read.
 `runs/` and the logs are copied back from Drive with `rsync -a --ignore-existing`, which copies
 only the files the local disk lacks. A new session gets everything; Run all again in the same
 session keeps the local files, which are never older than Drive's copy, since Drive only receives
-copies of them. A file deleted locally in the session comes back, as no copy uses `--delete`.
+copies of them. A file deleted locally in the session comes back, as no copy uses `--delete`:
+`--delete` toward Drive would wipe the saved runs after a restore that failed. The one file a stage
+deletes, `chosen_layer.json` after a refused choice, is printed by the pipeline check only while
+`choose_layer` is `ok`.
 
 `DATA` is always `/content/garimpo-data` because runs record the data root's path, and a run
 restored under another path refuses ([stages.md](stages.md#run-identity)).
@@ -78,7 +81,8 @@ options, and `print_verdicts` prints the verdict of the last attempt only:
 
 ## The copy every 30 minutes
 
-During a full run, a Python thread copies `runs/` (without `*.tmp` files) and the logs to Drive
+During a full run, a Python thread copies `runs/` (without `*.tmp` files, as the final copy) and
+the logs to Drive
 every 30 minutes, so a session that ends mid-run keeps the finished stages and the last
 checkpoint. The stop cell waits for a copy in progress to finish, so it never writes to Drive at
 the same time as the final copy.
