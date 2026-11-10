@@ -47,7 +47,8 @@ cell before the release raises:
 
 If you interrupt a run cell once, `scripts/run.py` stops the stage, keeps the lines it prints as it
 stops, runs the pipeline check and exits 130. Colab turns a second interrupt into SIGTERM and then
-SIGKILL: the runner kills the stage at once and the check does not run. Then run the cells of
+SIGKILL: the runner kills the stage at once, and the cell ends while the runner, outliving `uv`,
+still runs the check and writes its verdict to the log. Then run the cells of
 section 7 by hand.
 
 ## Optional and reexecution cells

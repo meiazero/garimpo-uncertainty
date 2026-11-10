@@ -282,7 +282,8 @@ def fit_epoch(
     fitted = {
         "train_loss": float(np.mean(losses)),
         "grad_norm_mean": float(np.mean(grad_norms)),
-        "grad_norm_max": max(grad_norms, default=float("nan")),
+        # np.max, not max: a NaN norm, the sign of a diverging run, must not hide behind a number.
+        "grad_norm_max": float(np.max(grad_norms)) if grad_norms else float("nan"),
         "lr": state.optimizer.param_groups[0]["lr"],
         "updates": len(losses),
         "cells": cells,
