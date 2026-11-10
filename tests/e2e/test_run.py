@@ -318,6 +318,20 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
         assert refused.returncode != 0
         assert f"{later[0]} is stale" in refused.stderr
         assert not (tmp_path / "merged").exists()
+        check = [sys.executable, "scripts/pipeline_check.py", "--run-dir", str(run_dir)]
+        check += ["--train-fraction", str(FILLED["TRAIN_FRACTION"])]
+        report = subprocess.run(  # noqa: S603 - arguments come from the test
+            [*check, "--subset-seed", str(FILLED["SUBSET_SEED"])],
+            check=False,
+            cwd=RUN_ROOT,
+            env=runner_env(),
+            capture_output=True,
+            text=True,
+        )
+        assert report.returncode == 1
+        assert f"--- failing stage: {later[0]} (stale)\nchoose_layer ran again after it" in (
+            report.stdout
+        )
 
         result = run_job(str(passed_job.config))
         assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
