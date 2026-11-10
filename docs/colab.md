@@ -6,7 +6,9 @@ Read before changing a cell of `colab.ipynb`, or when a cell behaves unexpectedl
 
 The runtime's disk is erased when the session ends. The store therefore lives in Drive as one
 archive, `data.tar.zst`, which section 2 of the notebook unpacks to the local disk every time, and `runs/`
-and the logs are copied back from Drive the same way. Reading the store's memmaps through Drive
+and the logs are copied back from Drive the same way. Those two copies use `rsync -a --update`: a
+fresh session gets everything, and Run all again in the same session keeps every local file newer
+than its copy in Drive, which the copy every 30 minutes may not have reached yet. Reading the store's memmaps through Drive
 would make every cell a remote read.
 
 `DATA` is always `/content/garimpo-data` because runs record the data root's path, and a run
