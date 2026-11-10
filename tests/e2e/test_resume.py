@@ -19,7 +19,13 @@ import torch
 from tests.e2e import support
 
 # What the clock changes; every other column must match the uninterrupted run.
-TIMINGS = ["seconds", "train_seconds", "validation_seconds", "train_data_wait_seconds"]
+TIMINGS = [
+    "seconds",
+    "train_seconds",
+    "validation_seconds",
+    "train_data_wait_seconds",
+    "train_cells_per_second",
+]
 LAST_PT_TIMEOUT_SECONDS = 300
 # One epoch before the kill, one after it.
 EPOCHS = "2"

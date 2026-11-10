@@ -209,8 +209,9 @@ def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
         assert line in log, line
     for stage in ("validate_data", *garimpo_uncertainty.stages.STAGE_ORDER, "pipeline_check"):
         assert f"=== end {stage}: exit 0 in " in log, stage
-    # The stages' own lines, not only the runner's.
+    # The stages' own lines, not only the runner's: the training's line per epoch among them.
     assert "train: ok in" in log
+    assert f"epoch {FILLED['EPOCHS']}/{FILLED['EPOCHS']}: train_loss " in log
     assert "PIPELINE CHECK: PASS" in log
 
 

@@ -36,7 +36,8 @@ Every run ends with `scripts/pipeline_check.py`, which prints:
 - status, seconds, peak memory and shapes per stage;
 - the failing stage with its error;
 - scenes missing and cells per role;
-- the training history, with Dice, timings, data wait and GPU peaks per epoch;
+- the training history, with losses, Dice, precision, recall, gradient norms, timings, data wait
+  and GPU peaks per epoch;
 - percent monotonic per direction, and the chosen layer with every candidate's fractions;
 - `|cos(v1, w)|`, saturated searches, and PICP and MPIW per method;
 - the run's slots against the hashes in their sidecars.

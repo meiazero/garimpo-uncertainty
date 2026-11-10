@@ -4,6 +4,7 @@ No hyperparameter has a default, so a run states every value it uses.
 """
 
 import argparse
+import datetime as dt
 import json
 import time
 from collections.abc import Callable
@@ -65,21 +66,52 @@ def build_loss(name: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor
     return lambda logits, mask: dice(logits, mask) + bce(logits, mask)
 
 
+def ratio(numerator: int, denominator: int) -> float:
+    return numerator / denominator if denominator else float("nan")
+
+
+def batch_scores(logits: torch.Tensor, masks: torch.Tensor) -> tuple[list[float], torch.Tensor]:
+    """Return the Dice of each cell with mining, and the batch's true, false and missed pixels."""
+    predictions = logits >= 0
+    references = masks > 0
+    intersection = (predictions & references).flatten(1).sum(1)
+    totals = predictions.flatten(1).sum(1) + references.flatten(1).sum(1)
+    has_mining = references.flatten(1).any(1)
+    dice = (2 * intersection / totals.clamp(min=1))[has_mining].tolist()
+    missed = (~predictions & references).sum()
+    return dice, torch.stack([intersection.sum(), (predictions & ~references).sum(), missed])
+
+
 @torch.no_grad()
-def validation_dice(
-    model: torch.nn.Module, loader: torch.utils.data.DataLoader, device: str
-) -> float:
-    """Mean Dice over validation cells with mining; the criterion that picks the best checkpoint."""
+def validate(
+    model: torch.nn.Module,
+    loader: torch.utils.data.DataLoader,
+    device: str,
+    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+) -> dict[str, float]:
+    """Return the validation Dice, loss, precision and recall, in one pass over every cell.
+
+    `val_dice`, the mean over cells with mining, picks the best checkpoint. The loss weighs each
+    batch by its cells; precision and recall count every pixel of every cell.
+    """
     model.eval()
     scores = []
+    weighted_loss = 0.0
+    counted = torch.zeros(3, dtype=torch.long, device=device)
     for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
-        predictions = model(images.to(device)) >= 0
-        references = masks.to(device) > 0
-        intersection = (predictions & references).flatten(1).sum(1)
-        totals = predictions.flatten(1).sum(1) + references.flatten(1).sum(1)
-        has_mining = references.flatten(1).any(1)
-        scores += (2 * intersection / totals.clamp(min=1))[has_mining].tolist()
-    return float(np.mean(scores)) if scores else float("nan")
+        logits = model(images.to(device))
+        references = masks.to(device)
+        weighted_loss += loss_fn(logits, references).item() * len(images)
+        dice, pixels = batch_scores(logits, references)
+        scores += dice
+        counted += pixels
+    true_positive, false_positive, false_negative = counted.tolist()
+    return {
+        "val_dice": float(np.mean(scores)) if scores else float("nan"),
+        "val_loss": weighted_loss / len(loader.dataset),
+        "val_precision": ratio(true_positive, true_positive + false_positive),
+        "val_recall": ratio(true_positive, true_positive + false_negative),
+    }
 
 
 @dataclass
@@ -226,8 +258,10 @@ def fit_epoch(
     device: str,
     started: float,
 ) -> tuple[dict, list[int] | None]:
-    """Return the epoch's loss, updates and data wait, and the last batch's shape."""
+    """Return the epoch's loss, gradient norms, updates, cells and data wait, and the last shape."""
     losses = []
+    grad_norms = []
+    cells = 0
     data_wait = 0.0
     batch_shape = None
     # The wait starts with the epoch's clock, so the two timings share one origin.
@@ -237,13 +271,21 @@ def fit_epoch(
         state.optimizer.zero_grad()
         loss = state.loss_fn(state.model(images.to(device)), masks.to(device))
         loss.backward()
+        # Read only, before the step: a rising norm is the first sign of a diverging run.
+        gradients = [p.grad for p in state.model.parameters() if p.grad is not None]
+        grad_norms.append(torch.nn.utils.get_total_norm(gradients).item())
         state.optimizer.step()
         losses.append(loss.item())
+        cells += len(images)
         batch_shape = list(images.shape)
         ready = time.monotonic()
     fitted = {
         "train_loss": float(np.mean(losses)),
+        "grad_norm_mean": float(np.mean(grad_norms)),
+        "grad_norm_max": float(np.max(grad_norms)),
+        "lr": state.optimizer.param_groups[0]["lr"],
         "updates": len(losses),
+        "cells": cells,
         "train_data_wait_seconds": round(data_wait, 3),
     }
     return fitted, batch_shape
@@ -293,16 +335,18 @@ def run_epoch(
     epoch_start = time.monotonic()
     fitted, batch_shape = fit_epoch(state, train_loader, device, epoch_start)
     train_end = time.monotonic()
+    cells = fitted.pop("cells")
     train_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
     validation_start = time.monotonic()
-    dice = validation_dice(state.model, validation_loader, device)
+    validated = validate(state.model, validation_loader, device, state.loss_fn)
     validation_end = time.monotonic()
     record = {
         "epoch": epoch,
         **fitted,
-        "val_dice": dice,
+        **validated,
         "seconds": round(validation_end - epoch_start, 3),
         "train_seconds": train_end - epoch_start,
+        "train_cells_per_second": cells / (train_end - epoch_start),
         "validation_seconds": validation_end - validation_start,
         "train_peak_gpu_bytes": train_peak,
         "validation_peak_gpu_bytes": garimpo_uncertainty.stages.take_gpu_peak_bytes(),
@@ -322,9 +366,43 @@ def run_epochs(
     for epoch in range(state.first_epoch, args.epochs):
         record, batch_shape = run_epoch(state, train_loader, validation_loader, device, epoch)
         state.history.append(record)
-        print(record, flush=True)
+        previous_best = state.best_dice
         save_epoch(args, state, epoch, record["val_dice"])
+        improved = state.best_dice > previous_best
+        print(epoch_line(record, args.epochs, state, improved=improved), flush=True)
     return batch_shape
+
+
+def start_line(
+    args: argparse.Namespace, state: TrainingState, device: str, train: int, validation: int
+) -> str:
+    """Return what the log says before the first epoch: device, cells, updates and model size."""
+    parameters = sum(p.numel() for p in state.model.parameters())
+    return (
+        f"training on {device}: {train} cells, {args.steps_per_epoch} updates of "
+        f"{args.batch_size} per epoch, epochs {state.first_epoch + 1} to {args.epochs}; "
+        f"validating {validation} cells; {parameters / 1e6:.1f} M parameters"
+    )
+
+
+def epoch_line(record: dict, epochs: int, state: TrainingState, *, improved: bool) -> str:
+    """Return one readable line per epoch for the log; history.csv keeps every value unrounded."""
+    best = "none yet" if state.best_dice == NO_BEST_DICE else f"{state.best_dice:.4f}"
+    remaining = epochs - record["epoch"] - 1
+    eta = remaining * np.mean([epoch["seconds"] for epoch in state.history])
+    peak = record["train_peak_gpu_bytes"]
+    gpu = "" if peak is None else f", gpu {peak / 1024**3:.1f} GB"
+    return (
+        f"epoch {record['epoch'] + 1}/{epochs}: train_loss {record['train_loss']:.4f}, "
+        f"val_loss {record['val_loss']:.4f}, val_dice {record['val_dice']:.4f} "
+        f"(best {best}{', new best' if improved else ''}), "
+        f"val_precision {record['val_precision']:.4f}, val_recall {record['val_recall']:.4f}, "
+        f"lr {record['lr']:.2e}, grad_norm {record['grad_norm_mean']:.3g} "
+        f"(max {record['grad_norm_max']:.3g}), {record['seconds']:.1f} s "
+        f"(data wait {record['train_data_wait_seconds']:.1f} s), "
+        f"{record['train_cells_per_second']:.0f} cells/s{gpu}, "
+        f"eta {dt.timedelta(seconds=round(eta))}"
+    )
 
 
 def train(
@@ -365,6 +443,7 @@ def train(
     validation_loader = garimpo_uncertainty.cell_dataset.loader(
         root, validation_cells, metadata["normalization"], args.batch_size, args.num_workers
     )
+    print(start_line(args, state, device, len(train_cells), len(validation_cells)), flush=True)
     batch_shape = run_epochs(args, state, train_loader, validation_loader, device)
     if state.best_dice == NO_BEST_DICE:
         raise ValueError(
