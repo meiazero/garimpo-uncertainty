@@ -396,7 +396,7 @@ def test_pipeline_check_ignores_a_choice_its_stage_did_not_make(
         assert section.startswith("not shown: choose_layer is failed"), (title, section)
     for title in ("monotonicity for choosing the layer", "|cos(v1, w)|", "losses, validation"):
         section = next(text for name, text in sections.items() if name.startswith(title))
-        assert not section.startswith("not shown"), (title, section)
+        assert not section.startswith(("not shown", "not produced")), (title, section)
 
 
 class AbsentCells(NamedTuple):

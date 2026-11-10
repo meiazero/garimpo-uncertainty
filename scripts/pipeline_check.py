@@ -1,7 +1,8 @@
 """Debugging report of one run: per-stage status, failing error, shapes, timing, peak memory.
 
 It checks that the pipeline ran, not that a method works; a pilot subset says nothing about quality.
-Reads only persisted files and prints what exists, so it also works after a failed stage.
+Reads only persisted files, so it also works after a failed stage; a stage's table is shown only
+while it and every earlier stage are ok, since a restore from Drive brings back older files.
 """
 
 import argparse
@@ -268,7 +269,9 @@ def main() -> None:
     store_problems, tiles = report_store(root, split, tile_ids)
     statuses = {record["stage"]: record["status"] for record in records}
     print_run_tables(args.run_dir, statuses)
-    failed += results_failures(args.run_dir / "metrics" / "results.csv")
+    # A stale results.csv would add failures of an earlier attempt to a verdict already FAIL.
+    if not_current(statuses, "compute_metrics") is None:
+        failed += results_failures(args.run_dir / "metrics" / "results.csv")
     store_problems = report_slots(root, tiles, store_problems, args.workers)
     failed += [{"stage": problem} for problem in store_problems]
     exit_with_verdict(failed)

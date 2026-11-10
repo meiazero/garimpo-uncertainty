@@ -42,6 +42,9 @@ Every run ends with `scripts/pipeline_check.py`, which prints:
 - `|cos(v1, w)|`, saturated searches, and PICP and MPIW per method;
 - the run's slots against the hashes in their sidecars.
 
+A stage's table is shown only while it and every earlier stage are `ok`: a restore from Drive
+brings back the files of an earlier attempt, so a table after a failed stage reads "not shown".
+
 The first failing stage stops the job, so no later stage runs on its missing or stale outputs.
 It receives the script's exit code, so an error outside every stage also reads FAIL. Which statuses
 fail the check: [stages.md](stages.md#statuses).
