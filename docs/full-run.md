@@ -46,7 +46,7 @@ and the time left, and the download's own lines are also appended, timestamped, 
 About the download:
 
 - The download reads the versioned list, so `lists` does not need to run first.
-- It resumes within a session.
+- It resumes when rerun.
 - The 100% list contains every smaller fraction of the same seed. Sizes are in
   [runs.md](runs.md#training-fractions).
 - Downloading with another `--resampling-20m` than the tiles already cut refuses.
