@@ -22,8 +22,27 @@ def read_status(status_dir: Path, stage: str) -> dict:
     return json.loads(path.read_text()) if path.exists() else {"stage": stage, "status": "not_run"}
 
 
-def print_table(title: str, path: Path, build: Callable[[pd.DataFrame], object]) -> None:
+def not_current(statuses: dict[str, str], stage: str) -> str | None:
+    """Name the first stage up to `stage` that is not ok; None when its files are current.
+
+    Nothing is deleted in Drive, so a restore brings back files of an earlier attempt: only ok
+    statuses, all the way up to the stage that wrote them, vouch for a table.
+    """
+    for name in garimpo_uncertainty.stages.STAGE_ORDER:
+        if statuses[name] != "ok":
+            return f"{name} is {statuses[name]}"
+        if name == stage:
+            return None
+    raise ValueError(f"{stage} is not in STAGE_ORDER")
+
+
+def print_table(
+    title: str, path: Path, build: Callable[[pd.DataFrame], object], stale: str | None = None
+) -> None:
     print(f"\n--- {title}")
+    if stale is not None:
+        print(f"not shown: {stale}, so the file may be from an earlier attempt")
+        return
     if not path.exists():
         print(f"not produced: {path}")
         return
@@ -113,12 +132,11 @@ def report_store(
     return store_problems, tiles
 
 
-def print_chosen_layer(path: Path, status: str) -> None:
+def print_chosen_layer(path: Path, stale: str | None) -> None:
     print("\n--- layer chosen from the validation role")
-    # choose_layer deletes the file when no layer qualifies, but a restore from Drive, where
-    # nothing is deleted, brings the old one back: only an ok stage vouches for it.
-    if status != "ok":
-        print(f"not chosen: choose_layer is {status}")
+    # choose_layer deletes the file when no layer qualifies, but a restore brings the old one back.
+    if stale is not None:
+        print(f"not chosen: {stale}")
         return
     if not path.exists():
         print(f"not produced: {path}")
@@ -128,7 +146,8 @@ def print_chosen_layer(path: Path, status: str) -> None:
     print(pd.DataFrame(chosen["candidates"]).set_index("layer").to_string())
 
 
-def print_run_tables(run_dir: Path, choose_layer_status: str) -> None:
+def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
+    """Print each stage's table; history.csv always, as train rewrites it every epoch."""
     print_table(
         "losses, validation metrics, gradient norms, timings and GPU peaks per epoch",
         run_dir / "history.csv",
@@ -138,12 +157,14 @@ def print_run_tables(run_dir: Path, choose_layer_status: str) -> None:
         "monotonicity for choosing the layer (validation role)",
         run_dir / "monotonicity_layer.csv",
         lambda f: f.set_index(["layer", "direction", "role"]),
+        not_current(statuses, "layer_monotonicity"),
     )
-    print_chosen_layer(run_dir / "chosen_layer.json", choose_layer_status)
+    print_chosen_layer(run_dir / "chosen_layer.json", not_current(statuses, "choose_layer"))
     print_table(
         "monotonicity of the chosen layer, on grid points only",
         run_dir / "monotonicity_endpoint.csv",
         lambda f: f.set_index(["layer", "direction", "role"]),
+        not_current(statuses, "endpoint_monotonicity"),
     )
     print_table(
         "|cos(v1, w)| and PCA explained variance per layer",
@@ -159,6 +180,7 @@ def print_run_tables(run_dir: Path, choose_layer_status: str) -> None:
                 "svm_mean_jacobian_projection",
             ]
         ].set_index("layer"),
+        not_current(statuses, "fit_directions"),
     )
     print_table(
         "saturated searches",
@@ -173,6 +195,7 @@ def print_run_tables(run_dir: Path, choose_layer_status: str) -> None:
                 "quantile_saturated_fraction",
             ]
         ].set_index(["alpha", "method", "calibration"]),
+        not_current(statuses, "compute_metrics"),
     )
     print_table(
         "PICP and MPIW per method (pipeline check only)",
@@ -180,6 +203,7 @@ def print_run_tables(run_dir: Path, choose_layer_status: str) -> None:
         lambda f: f[
             ["alpha", "method", "calibration", "n_cells", "n_groups", "picp", "mpiw"]
         ].set_index(["alpha", "method", "calibration"]),
+        not_current(statuses, "compute_metrics"),
     )
 
 
@@ -243,7 +267,7 @@ def main() -> None:
     failed = report_failed_stages(records, args.job_exit_code)
     store_problems, tiles = report_store(root, split, tile_ids)
     statuses = {record["stage"]: record["status"] for record in records}
-    print_run_tables(args.run_dir, statuses["choose_layer"])
+    print_run_tables(args.run_dir, statuses)
     failed += results_failures(args.run_dir / "metrics" / "results.csv")
     store_problems = report_slots(root, tiles, store_problems, args.workers)
     failed += [{"stage": problem} for problem in store_problems]

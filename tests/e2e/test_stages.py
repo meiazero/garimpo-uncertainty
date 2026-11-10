@@ -309,6 +309,30 @@ def test_merge_refuses_two_runs_of_one_variant(
     assert "same model and train_fraction" in same_variant.stderr
 
 
+def test_merge_refuses_a_run_whose_stages_are_not_all_ok(
+    private_convnet: support.FinishedRun, unet_run: support.FinishedRun, data_root: Path
+) -> None:
+    """A failed choice leaves the old tables, or brings them back from Drive; none may merge."""
+    (private_convnet.run_dir / "status" / "choose_layer.json").write_text(
+        json.dumps({"stage": "choose_layer", "status": "failed", "error": "no layer qualifies"})
+    )
+    out = support.ARTIFACTS / "merged_not_ok"
+    refused = support.run(
+        "merge_results.py",
+        "--runs",
+        str(private_convnet.run_dir),
+        str(unet_run.run_dir),
+        "--out",
+        str(out),
+        data_root=data_root,
+        check=False,
+    )
+    assert refused.returncode != 0
+    assert f"{private_convnet.run_dir}: choose_layer is failed" in refused.stderr
+    assert str(unet_run.run_dir) not in refused.stderr
+    assert not out.exists()
+
+
 def test_pipeline_check_passes_on_a_healthy_run(
     unet_run: support.FinishedRun, data_root: Path
 ) -> None:
@@ -348,7 +372,7 @@ def test_pipeline_check_names_the_failed_stage(
 def test_pipeline_check_ignores_a_choice_its_stage_did_not_make(
     private_convnet: support.FinishedRun, data_root: Path
 ) -> None:
-    """Print no chosen layer unless choose_layer's status is ok.
+    """Print no chosen layer, nor any table written after it, unless choose_layer's status is ok.
 
     choose_layer deletes chosen_layer.json when no layer qualifies, but no copy to Drive deletes,
     so the next restore brings the old file back; the report must not print it as the run's choice.
@@ -359,9 +383,20 @@ def test_pipeline_check_ignores_a_choice_its_stage_did_not_make(
     )
     assert (run_dir / "chosen_layer.json").exists()
     report = support.pipeline_check(run_dir, data_root, check=False)
-    section = report.stdout.split("--- layer chosen from the validation role")[1].split("\n---")[0]
-    assert "not chosen: choose_layer is failed" in section
-    assert private_convnet.layer not in section
+    sections = {
+        part.split("\n", 1)[0]: part.split("\n", 1)[1] for part in report.stdout.split("\n--- ")[1:]
+    }
+    chosen = sections["layer chosen from the validation role"]
+    assert "not chosen: choose_layer is failed" in chosen
+    assert private_convnet.layer not in chosen
+    # Written after the choice, so they belong to the old one; those before it are still current.
+    later = ("monotonicity of the chosen layer", "saturated searches", "PICP and MPIW per method")
+    for title in later:
+        section = next(text for name, text in sections.items() if name.startswith(title))
+        assert section.startswith("not shown: choose_layer is failed"), (title, section)
+    for title in ("monotonicity for choosing the layer", "|cos(v1, w)|", "losses, validation"):
+        section = next(text for name, text in sections.items() if name.startswith(title))
+        assert not section.startswith("not shown"), (title, section)
 
 
 class AbsentCells(NamedTuple):
