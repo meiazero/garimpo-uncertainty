@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import NoReturn
 
 import garimpo_uncertainty.run_config
 import garimpo_uncertainty.stages
@@ -57,8 +58,16 @@ class Log:
     def write(self, text: str) -> None:
         line = f"{time.strftime('%H:%M:%S', time.gmtime())} {text}"
         print(line, flush=True)
-        with self.path.open("a", encoding="utf-8") as file:
-            file.write(line + "\n")
+        try:
+            with self.path.open("a", encoding="utf-8") as file:
+                file.write(line + "\n")
+        except OSError as error:
+            # A full disk must not stop the run: the terminal still shows every line.
+            print(f"could not append to {self.path}: {error}", flush=True)
+
+    def copy_lines(self, process: subprocess.Popen) -> None:
+        for line in process.stdout:
+            self.write(line.rstrip("\n"))
 
     def run(self, name: str, command: list[str]) -> int:
         """Run one stage, logging its lines as they come; return its exit code."""
@@ -75,13 +84,26 @@ class Log:
             env=env,
         ) as process:
             try:
-                for line in process.stdout:
-                    self.write(line.rstrip("\n"))
+                self.copy_lines(process)
             except KeyboardInterrupt:
-                # Colab's interrupt reaches this process alone; the stage must stop as well.
-                process.send_signal(signal.SIGINT)
-                process.wait()
+                self.stop(process)
+                self.ended(name, process, start)
                 raise
+        return self.ended(name, process, start)
+
+    def stop(self, process: subprocess.Popen) -> None:
+        """Stop the stage after Ctrl+C and keep its last lines; a second interrupt kills it."""
+        # Colab's interrupt reaches this process alone; the stage must stop as well.
+        process.send_signal(signal.SIGINT)
+        try:
+            # Read on: a stage printing more than the pipe holds would block and never end.
+            self.copy_lines(process)
+        except KeyboardInterrupt:
+            process.kill()
+        process.wait()
+
+    def ended(self, name: str, process: subprocess.Popen, start: float) -> int:
+        """Log the stage's exit code and duration; return the code, positive after a signal."""
         seconds = time.monotonic() - start
         self.write(f"=== end {name}: exit {process.returncode} in {seconds:.1f} s")
         # A stage killed by signal N reports -N; the shell's 128 + N keeps the job's code positive.
@@ -269,7 +291,13 @@ def commit() -> str:
     return found.stdout.strip() or "unknown"
 
 
+def interrupt(_signum: int, _frame: object) -> NoReturn:
+    raise KeyboardInterrupt
+
+
 def main() -> None:
+    # Colab's second interrupt is SIGTERM, and SIGKILL 0.5 s later: kill the stage before that.
+    signal.signal(signal.SIGTERM, interrupt)
     args = parse_args()
     log = Log(Path("outputs/logs") / f"{args.config.parent.name}-{args.config.stem}.log")
     log.write(f"{ATTEMPT}{time.strftime('%Y-%m-%d %H:%M', time.gmtime())} UTC ===")

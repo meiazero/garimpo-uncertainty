@@ -45,8 +45,10 @@ cell before the release raises:
 - A failed `!` line only prints its error, and the cell carries on.
 - The Python cells that can fail catch the error and print it, such as `print_verdicts`.
 
-If you interrupt a run cell, `scripts/run.py` stops the stage, runs the pipeline check and exits
-130; then run the cells of section 7 by hand.
+If you interrupt a run cell once, `scripts/run.py` stops the stage, keeps the lines it prints as it
+stops, runs the pipeline check and exits 130. Colab turns a second interrupt into SIGTERM and then
+SIGKILL: the runner kills the stage at once and the check does not run. Then run the cells of
+section 7 by hand.
 
 ## Optional and reexecution cells
 
@@ -65,6 +67,9 @@ options, and `print_verdicts` prints the verdict of the last attempt only:
 
 - `NO VERDICT`: the job or its check died before the verdict; the log says where.
 - `NO LOG`: the log does not exist yet or could not be read.
+- `NOT RUN`: this session wrote nothing to the log, which still has the time it had in Drive. The
+  run died before its first line (an `argparse` or import error, or no environment), as the cell's
+  output shows, or its cell did not run.
 
 ## The copy every 30 minutes
 

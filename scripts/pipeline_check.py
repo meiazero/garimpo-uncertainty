@@ -81,7 +81,7 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
     if job_exit_code != 0:
         # An import, syntax or argparse error, a refused config or merge_results reach no status.
         failed.append({"stage": f"job exit code {job_exit_code}"})
-        print(f"\n--- job exit code {job_exit_code}: see the job's .err log")
+        print(f"\n--- job exit code {job_exit_code}: see the lines above it in the job's log")
     return failed
 
 

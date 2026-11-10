@@ -6,7 +6,7 @@ training, or a versioned config the runner would refuse; a config value passed t
 the chosen layer not reaching the calibrated stages; --force-from redoing too much, too little, or
 nothing at all on a typo; a stage's exit code lost before the pipeline check; a stage's lines
 missing from the log, or a new attempt overwriting the earlier ones; Ctrl+C leaving the stage
-running, or skipping the check.
+running, losing the lines it prints as it stops, or skipping the check.
 
 The runner reads its scripts and outputs from the working directory, so it runs from RUN_ROOT,
 which links the real scripts/ and holds a synthetic outputs/split.csv, a copy of the data root and
@@ -203,7 +203,7 @@ def test_full_job_runs_every_stage_and_passes_the_check(passed_job: PassedJob) -
 
 
 def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
-    """The log file is what Colab keeps in Drive; a buffered stage would leave its lines out."""
+    """The log file is what Colab keeps in Drive, so every line the job printed must be in it."""
     log = log_of(passed_job.config).read_text(encoding="utf-8")
     for line in passed_job.result.stdout.splitlines():
         assert line in log, line
@@ -313,7 +313,11 @@ def test_failed_stage_stops_the_job(run_root: Path) -> None:
 
 
 def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None:
-    """Colab's interrupt reaches the runner alone: the stage must stop too, and the check run."""
+    """Colab's interrupt reaches the runner alone: the stage must stop too, and the check run.
+
+    The signal comes once training prints, inside its stage; the stage's own traceback, printed
+    after the signal, must still reach the log.
+    """
     run_dir = "runs/interrupted"
     config = write_config("interrupted", RUN_DIR=run_dir)
     with subprocess.Popen(  # noqa: S603 - arguments come from the tests
@@ -325,20 +329,20 @@ def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None
         text=True,
     ) as process:
         assert process.stdout is not None
-        lines = []
         for line in process.stdout:
-            lines.append(line)
-            if "=== start train" in line:
+            if " training on " in line:
                 process.send_signal(signal.SIGINT)
                 break
-        output = "".join(lines) + process.communicate(timeout=300)[0]
-    assert process.returncode == 130, output[-8000:]
-    assert "interrupted by Ctrl+C" in output
-    assert "PIPELINE CHECK: FAIL" in output
-    assert "=== start infer" not in output
-    train = run_root / run_dir / "status" / "train.json"
-    # Absent when the signal came during the imports, before the stage wrote its first status.
-    assert not train.exists() or json.loads(train.read_text())["status"] == "interrupted"
+        process.communicate(timeout=300)
+    assert process.returncode == 130
+    log = log_of(config).read_text(encoding="utf-8")
+    train = json.loads((run_root / run_dir / "status" / "train.json").read_text())
+    assert train["status"] == "interrupted", log[-8000:]
+    assert "KeyboardInterrupt" in log
+    assert "=== end train: exit " in log
+    assert "interrupted by Ctrl+C" in log
+    assert "=== start infer" not in log
+    assert "PIPELINE CHECK: FAIL" in log
 
 
 @pytest.mark.parametrize("name", base_names())

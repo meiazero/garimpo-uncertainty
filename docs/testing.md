@@ -45,7 +45,7 @@ uv run ruff format --check . && uv run ruff check .
 | `test_calibration_rules.py` | Repeated subsampling reduced to split conformal at one cell per group, its draws within and across groups, its seed, its refusal, and simulated coverage at k = 25 in `tests/artifacts/calibration_rules/coverage_k25.json`; the density ratio's cross-fit by group, on the real split's groups and with a fold lacking a population; weights refused by the weighted quantile |
 | `test_stages.py` | Reruns, refusals, saturation, an asymmetric quantile past its upper censoring, absent and misaligned cells, another data root, the score floors, the SVM orientation and a direction fit with no gradient, merge, peak memory records and `pipeline_check.py`, including an incomplete results table |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
-| `test_run.py` | `scripts/run.py` run as Colab runs it, from a root linking the real `scripts/`: a full job to PASS, its log holding every line it printed and every stage's end, each flag that takes a value receiving, in the command the runner logs, the config value its name gives (or a short table of exceptions gives), every config value distinct from the others and each one reaching a stage, the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `--force-from` and `--force-validate` with a second attempt appended to the log, an unknown `--force-from`, a failed stage stopping the job, Ctrl+C stopping the stage and still running the check, every key of `configs/full/unet_scratch.json` left null, a misspelled key, also in the log, a `SCORE_FLOOR_HA` that is not a positive finite number, every versioned config accepted with only layers of its model, and each pilot config differing from its full one only in `RUN_DIR`, `TRAIN_FRACTION`, `EPOCHS`, `STEPS_PER_EPOCH` and `MIN_FRACTION_ASCENDING` |
+| `test_run.py` | `scripts/run.py` run as Colab runs it, from a root linking the real `scripts/`: a full job to PASS, its log holding every line it printed and every stage's end, each flag that takes a value receiving, in the command the runner logs, the config value its name gives (or a short table of exceptions gives), every config value distinct from the others and each one reaching a stage, the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `--force-from` and `--force-validate` with a second attempt appended to the log, an unknown `--force-from`, a failed stage stopping the job, Ctrl+C stopping the training inside its stage, its traceback still reaching the log, and the check still running, every key of `configs/full/unet_scratch.json` left null, a misspelled key, also in the log, a `SCORE_FLOOR_HA` that is not a positive finite number, every versioned config accepted with only layers of its model, and each pilot config differing from its full one only in `RUN_DIR`, `TRAIN_FRACTION`, `EPOCHS`, `STEPS_PER_EPOCH` and `MIN_FRACTION_ASCENDING` |
 | `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
 | `test_workers.py` | Two DataLoader workers on CPU: two trainings with one seed give one model, band statistics and every prediction equal those read without workers |
 
@@ -62,7 +62,8 @@ The stages then get no `--device`, so they choose the GPU through `checkpoints.d
 real run does, and every loader runs with 2 workers and pinned memory. `test_training_artifacts`
 then requires a positive GPU peak in `history.csv`, the `infer` status and `status/train.json`.
 Skipped there: `test_workers.py`, which every stage then covers; the two `test_results.py` tests
-that recompute a stage in the test process on CPU; and the comparison with the uninterrupted run in
+that recompute a stage in the test process on CPU; the `test_training.py` test that recomputes the
+validation metrics from `best_model.pt` on CPU; and the comparison with the uninterrupted run in
 `test_resume.py`, since GPU kernels are not deterministic. No GPU run of this command is recorded
 yet.
 
@@ -72,6 +73,7 @@ yet.
 - real HTTP (STAC, SAS tokens, 429 retries, Zenodo; token renewal and the 429 wait run against a fake
   clock and HTTP), remote reads, real Sentinel-2 scenes
 - `download_data.py all`
+- a second interrupt, which kills the stage: the training stops on the first one
 - the pilot configs' own run: `test_run.py` runs the job on its own values
 - `download_data.py metadata` and `weights`
 - cleanup of the temporary file in `infer.py`
