@@ -112,14 +112,14 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 
 ## Training history
 
-`history.csv` holds one row per epoch, and `train.py` prints the same values, rounded, as one line
-per epoch with the best `val_dice` so far and the time left. Besides the resource fields above:
+`history.csv` holds one row per epoch. `train.py` also prints the main values, rounded, as one
+line per epoch with the best `val_dice` so far and the time left. Besides the resource fields above:
 
 | Field | Meaning |
 |---|---|
 | `train_loss` | Mean loss of the epoch's updates, in training mode, augmented |
 | `grad_norm_mean`, `grad_norm_max` | L2 norm of all gradients before each step: mean and largest of the epoch |
 | `lr` | Learning rate of the optimizer during the epoch |
-| `val_loss` | The training loss on every validation cell, in eval mode, each batch weighed by its cells |
+| `val_loss` | The training loss on every validation cell, in eval mode, each batch weighed by its cells; the Dice term pools each batch, so compare it only at one batch size |
 | `val_dice` | Mean Dice over validation cells with mining; it picks `best_model.pt` |
 | `val_precision`, `val_recall` | Over every validation pixel, mining predicted where the logit is at least 0 |

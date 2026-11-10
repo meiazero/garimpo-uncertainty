@@ -66,7 +66,7 @@ def build_loss(name: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor
     return lambda logits, mask: dice(logits, mask) + bce(logits, mask)
 
 
-def ratio(numerator: int, denominator: int) -> float:
+def ratio(numerator: float, denominator: int) -> float:
     return numerator / denominator if denominator else float("nan")
 
 
@@ -108,7 +108,7 @@ def validate(
     true_positive, false_positive, false_negative = counted.tolist()
     return {
         "val_dice": float(np.mean(scores)) if scores else float("nan"),
-        "val_loss": weighted_loss / len(loader.dataset),
+        "val_loss": ratio(weighted_loss, len(loader.dataset)),
         "val_precision": ratio(true_positive, true_positive + false_positive),
         "val_recall": ratio(true_positive, true_positive + false_negative),
     }
@@ -282,7 +282,7 @@ def fit_epoch(
     fitted = {
         "train_loss": float(np.mean(losses)),
         "grad_norm_mean": float(np.mean(grad_norms)),
-        "grad_norm_max": float(np.max(grad_norms)),
+        "grad_norm_max": max(grad_norms, default=float("nan")),
         "lr": state.optimizer.param_groups[0]["lr"],
         "updates": len(losses),
         "cells": cells,
