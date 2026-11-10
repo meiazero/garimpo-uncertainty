@@ -44,7 +44,7 @@ fail the check: [stages.md](stages.md#statuses).
 
 ## Rerun after a code fix
 
-1. Commit and push the fix from your machine. The session's token is read-only, and the next
+1. Commit and push the fix from your machine. The session's clone cannot push, and the next
    session's clone picks the fix up.
 2. In a new session, choose the first stage the fix affects in the `FORCE_FROM` option of each
    pilot cell, then run step 3. The option applies to its own cell only. It stays set in the open
