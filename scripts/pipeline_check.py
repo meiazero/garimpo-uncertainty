@@ -90,10 +90,8 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
     # says nothing of this run; validate_data decides whether this run's tiles are there.
     required = [r for r in records if r["stage"] != "download_scenes"]
     failed = [r for r in required if r["status"] != "ok"]
-    first_failure = next(
-        (r for r in required if r["status"] in ("failed", "refused", "running", "interrupted")),
-        None,
-    )
+    # not_run has no error to print: the first stage that ran and is not ok is the cause.
+    first_failure = next((r for r in required if r["status"] not in ("ok", "not_run")), None)
     if first_failure is not None:
         print(f"\n--- failing stage: {first_failure['stage']} ({first_failure['status']})")
         print(first_failure.get("error", "no error recorded: the job died inside this stage"))

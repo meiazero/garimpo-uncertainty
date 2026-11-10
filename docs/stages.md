@@ -70,7 +70,8 @@ the input is back a finished stage skips again.
 | `not_run` | no status file exists; printed by the check, never written | fails |
 
 `pipeline_check.py` fails on any status other than `ok` in `validate_data` or a stage of
-`STAGE_ORDER`, and prints the first of them that is `failed`, `refused`, `running` or `interrupted`.
+`STAGE_ORDER`, and prints the first of them that is `failed`, `refused`, `running`, `interrupted`
+or `stale`.
 `download_scenes` is left out, since the download is shared by every fraction and
 `validate_data` decides whether this run's tiles are there.
 
