@@ -33,7 +33,7 @@ last column names a guard that a test in `tests/e2e/` exercises.
 | 24 | A metric change forces a retrain | stages read persisted files; E2E hashes everything around a metrics rerun |
 | 25 | A changed argument silently reuses an old output | stage fingerprint refuses and fails the pipeline check, E2E; a code change is redone by name with `FORCE_FROM` |
 | 26 | A later stage rebuilds the model on another split | split hash in the checkpoint, E2E with a data root missing a test tile; `read_predictions` refuses a `cells.npz` out of the cell table's order, E2E |
-| 27 | An import, syntax or `argparse` error, a bad `FORCE_FROM` or a failed `merge_results` leaves every status `ok` and the check prints PASS | `--job-exit-code` from the EXIT trap, E2E through `slurm/run.sbatch` with an unknown `FORCE_FROM` |
+| 27 | An import, syntax or `argparse` error, or a bad `FORCE_FROM` leaves every status `ok` and the check prints PASS | `--job-exit-code` from the EXIT trap, E2E through `slurm/run.sbatch` with an unknown `FORCE_FROM` |
 | 28 | An outage removes hundreds of industrial training tiles | any other industrial status is `industrial_download_errors`, E2E |
 | 29 | An OOM after training forces a lower batch size and a retrain | `EVAL_BATCH_SIZE` apart from `BATCH_SIZE`; E2E reads each stage's `--batch-size` in the job's `bash -x` trace |
 | 30 | A mask filling the cell has no boundary, so its boundary F1 leaves the means | F1 is 1 for identical masks and 0 otherwise, `n_cells_boundary_by_rule` in `results.csv`, E2E against a count from the masks and probabilities, and a test of `segmentation_metrics` where a mask filling the cell has no boundary while a square inside it has one |

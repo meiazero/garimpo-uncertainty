@@ -80,9 +80,9 @@ Section 5 of the notebook has one cell per model, run in order:
    the same job with its `FORCE_FROM` and `FORCE_VALIDATE` options. An option stays set in the
    open tab, so clear `RUN` once the rerun passes. Reopening the notebook from its link restores
    the values on `main`.
-3. "Print the verdicts of the training" prints one line per model.
+3. "Print the verdicts" prints one line per model.
 
-The copy of `runs/` and the logs to Drive every 30 minutes starts before the pilot and stops in
+The copy of `runs/` and the logs to Drive every 30 minutes starts before the training and stops in
 section 7, which saves the runs and logs once more and releases the GPU.
 
 With the copy every 30 minutes, a session that ends mid-run keeps the finished stages and the

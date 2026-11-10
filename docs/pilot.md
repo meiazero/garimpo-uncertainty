@@ -11,7 +11,7 @@ Each model's pilot config in `configs/pilot/` equals its full config in `configs
 ([decisions.md](decisions.md)) except in its scale: `TRAIN_FRACTION` 0.01, `EPOCHS` 2 and
 `STEPS_PER_EPOCH` 20, so it stays short, `MIN_FRACTION_ASCENDING` 0, so a model trained for 40
 updates still reaches the last stage, and `RUN_DIR` `runs/pilot/<model>-f0.01`. `test_shell.py`
-fails on any other difference. Results go to `runs/pilot/`, never to `outputs/`.
+fails on any other difference. Its runs and result tables go to `runs/pilot/`, never to `outputs/`.
 
 ## Steps
 

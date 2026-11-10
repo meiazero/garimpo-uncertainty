@@ -48,7 +48,7 @@ the pilot passes, and later sessions continue the full runs on their own:
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
 first ([docs/full-run.md](docs/full-run.md#download-the-store)). If the session ends early, run
 Runtime > Run all again in a new one: finished stages are skipped and training resumes. Pilot
-results go to `runs/pilot/`, never to `outputs/`.
+runs and result tables go to `runs/pilot/`, never to `outputs/`.
 Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot.md). The full run:
 [docs/full-run.md](docs/full-run.md).
 
