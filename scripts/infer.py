@@ -99,7 +99,7 @@ def infer_role(
     data_wait = 0.0
     with probability_writer(probabilities_path, len(role_cells)) as write_probabilities:
         ready = time.monotonic()
-        for images, masks, _ in loader:
+        for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
             data_wait += time.monotonic() - ready
             logits = model(images.to(device))
             probabilities = torch.sigmoid(logits).to(torch.float64)

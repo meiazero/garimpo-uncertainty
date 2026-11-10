@@ -100,7 +100,7 @@ def sweep_role(
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
-    for images, _, _ in loader:
+    for images, _, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         features = garimpo_uncertainty.models.common.encode(model, images.to(device))
         logits, _ = garimpo_uncertainty.models.common.split_at(
             model, garimpo_uncertainty.models.common.LOGITS, features

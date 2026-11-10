@@ -133,7 +133,7 @@ def compass_endpoints(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     first = 0
-    for images, _, _ in loader:
+    for images, _, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         last = first + len(images)
         features = garimpo_uncertainty.models.common.encode(model, images.to(device))
         batch_jacobians = jacobians[first:last].astype(np.float64)
