@@ -113,8 +113,13 @@ def report_store(
     return store_problems, tiles
 
 
-def print_chosen_layer(path: Path) -> None:
+def print_chosen_layer(path: Path, status: str) -> None:
     print("\n--- layer chosen from the validation role")
+    # A refused choice deletes the file, but a restore from Drive, where nothing is deleted,
+    # brings the old one back: only an ok stage vouches for it.
+    if status != "ok":
+        print(f"not chosen: choose_layer is {status}")
+        return
     if not path.exists():
         print(f"not produced: {path}")
         return
@@ -123,7 +128,7 @@ def print_chosen_layer(path: Path) -> None:
     print(pd.DataFrame(chosen["candidates"]).set_index("layer").to_string())
 
 
-def print_run_tables(run_dir: Path) -> None:
+def print_run_tables(run_dir: Path, choose_layer_status: str) -> None:
     print_table(
         "losses, validation metrics, gradient norms, timings and GPU peaks per epoch",
         run_dir / "history.csv",
@@ -134,7 +139,7 @@ def print_run_tables(run_dir: Path) -> None:
         run_dir / "monotonicity_layer.csv",
         lambda f: f.set_index(["layer", "direction", "role"]),
     )
-    print_chosen_layer(run_dir / "chosen_layer.json")
+    print_chosen_layer(run_dir / "chosen_layer.json", choose_layer_status)
     print_table(
         "monotonicity of the chosen layer, on grid points only",
         run_dir / "monotonicity_endpoint.csv",
@@ -237,7 +242,8 @@ def main() -> None:
     print_stage_table(records)
     failed = report_failed_stages(records, args.job_exit_code)
     store_problems, tiles = report_store(root, split, tile_ids)
-    print_run_tables(args.run_dir)
+    statuses = {record["stage"]: record["status"] for record in records}
+    print_run_tables(args.run_dir, statuses["choose_layer"])
     failed += results_failures(args.run_dir / "metrics" / "results.csv")
     store_problems = report_slots(root, tiles, store_problems, args.workers)
     failed += [{"stage": problem} for problem in store_problems]

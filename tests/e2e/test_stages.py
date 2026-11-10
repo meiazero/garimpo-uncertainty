@@ -345,6 +345,25 @@ def test_pipeline_check_names_the_failed_stage(
     assert "boom" in report.stdout
 
 
+def test_pipeline_check_ignores_a_choice_its_stage_did_not_make(
+    private_convnet: support.FinishedRun, data_root: Path
+) -> None:
+    """Print no chosen layer unless choose_layer's status is ok.
+
+    A refused choose_layer deletes chosen_layer.json, but no copy to Drive deletes, so the next
+    restore brings the old file back; the report must not print it as the run's choice.
+    """
+    run_dir = private_convnet.run_dir
+    (run_dir / "status" / "choose_layer.json").write_text(
+        json.dumps({"stage": "choose_layer", "status": "failed", "error": "no layer qualifies"})
+    )
+    assert (run_dir / "chosen_layer.json").exists()
+    report = support.pipeline_check(run_dir, data_root, check=False)
+    section = report.stdout.split("--- layer chosen from the validation role")[1].split("\n---")[0]
+    assert "not chosen: choose_layer is failed" in section
+    assert private_convnet.layer not in section
+
+
 class AbsentCells(NamedTuple):
     run_dir: Path
     in_test: int
