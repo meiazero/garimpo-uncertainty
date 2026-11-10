@@ -1,6 +1,6 @@
 # garimpo-uncertainty
 
-Replication package of a master's dissertation on calibrated prediction intervals for the area of
+Replication package for calibrated prediction intervals for the area of
 artisanal mining in Sentinel-2 imagery, evaluated under geographic domain shift. It trains
 segmentation models, builds COMPASS and conformal intervals for the mined area of each cell, and
 reports their coverage and width.

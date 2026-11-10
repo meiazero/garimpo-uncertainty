@@ -23,7 +23,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
    ```
 
 7. On Colab, the Merge step copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit
-   it from your own machine: these are the tables the dissertation reports.
+   it from your own machine: these are the final result tables.
 
 ## Download the store
 

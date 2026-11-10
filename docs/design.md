@@ -66,7 +66,7 @@ flowchart TD
     CAL -.-> METHODS
 
     CM -- "once, by hand, over the four runs" --> MR["merge_results<br/>tables across runs"]
-    MR --> DISS["Dissertation tables and figures"]
+    MR --> DISS["Result tables and figures"]
 ```
 
 ## What the model comparison varies
