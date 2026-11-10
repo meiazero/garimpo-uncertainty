@@ -1,11 +1,13 @@
 # Values of the full run
 
-Read before step 3 of [full-run.md](full-run.md), where the values file is filled in.
+Read before changing a value in `configs/full/`.
 
-`slurm/full.env.example` holds the decided values, so a copy of it starts with them filled in.
-`slurm/full.sbatch` stops on the first open value left empty. The pilot's values outside the
-Decided table are not suggestions. `ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION` name
-the run, one env file each, as listed in [runs.md](runs.md#model-variants).
+Every value of the four runs is decided here, before any run, with its source; where no paper sets
+one, the row says what the choice is for. None is tuned on the pilot, which only checks the code.
+`configs/full/` holds the four runs' configs and `configs/pilot/` the pilot's.
+`scripts/run_config.py` stops a job on a config with a value missing, null, empty or unknown.
+`ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION` name the run, one config each, as listed
+in [runs.md](runs.md#model-variants).
 
 ## Decided
 
@@ -25,16 +27,11 @@ the run, one env file each, as listed in [runs.md](runs.md#model-variants).
 | `BOUNDARY_TOLERANCE_PX` | 5.43 | 0.75% of the image diagonal, Csurka et al. 2013, BMVC; also MATLAB `bfscore`'s default. A 512-pixel cell's diagonal is 724 pixels |
 | ConvNet (`--arch convnet`) | smp's `DeepLabV3`: encoder `models.ENCODER` (ResNet-18, the U-Net's), `encoder_weights=None`, `classes=1`, every other argument at smp's default: `encoder_output_stride` 8, `decoder_channels` 256, `decoder_atrous_rates` (12, 24, 36), ASPP not separable, `decoder_aspp_dropout` 0.5, final upsampling equal to the output stride | User decision, 2026-11-08. In the installed `segmentation_models_pytorch` 0.6.0: defaults at `decoders/deeplabv3/model.py:61-73`, upsampling at `model.py:93-99`; `DeepLabV3Decoder.forward` at `decoders/deeplabv3/decoder.py:64-70` starts from `features[-1]` alone, so no skip connections. Against `unet_scratch` it changes the decoder and, with it, the encoder's output stride: the same ResNet-18 layers, dilated to stride 8 (`model.py:84-91` passes `output_stride` to the encoder) |
 | `alpha` | 0.05, 0.1 and 0.15, every run | Cheung et al. 2026, COMPASS, Table 1; the constant `intervals.ALPHAS`, no flag |
-
-## Open
-
-| Value | Where | What settles it |
-|---|---|---|
-| `EVAL_BATCH_SIZE` | `slurm/full.env.example` | The pilot's GPU peaks; changing it after an OOM refuses nothing |
-| Layers to diagnose (`LAYERS`) | `fit_directions.py` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |
-| Direction temperature (`--direction-temperature`) | `fit_directions.py`, `verify_monotonicity.py`, `compass_scores.py` | The sigmoid temperature of the area whose Jacobian sets the COMPASS-J direction, separate from the metric's 1e4. At 1e4 the gradient vanishes beyond \|logit\| ≈ 5e-3, so cells predicted empty get the PCA mean as direction. Choose it by leave-one-group-out on calibration; the same value in all three stages |
-| `MIN_FRACTION_ASCENDING`: share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen | `choose_layer.py` | Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Read the pilot's `monotonicity_layer.csv` before fixing it. If it is too high, `choose_layer` stops the job naming the best layer and its fraction; resubmitting with another value redoes only `choose_layer` and what follows, since the stages before it skip |
-| SVM `C`, `class_weight`, pixels sampled per cell | `fit_directions.py` | No source: COMPASS takes its direction from a PCA of the Jacobians, and the SVM is this work's own |
-| Steps and cells of the monotonicity sweep | `verify_monotonicity.py` | The sweep's time in the pilot; COMPASS gives no values (Appendix C) |
-| `SEARCH_THRESHOLD_FEATURES` | `compass_scores.py` | Upstream's runner uses 1e-15, 60 bisection steps from 1000; the pilot's 1e-3 takes 20, a third of the cost |
-| Score floor of the relative and local methods | `calibrate.py` | Romano et al. 2019 add γ to the denominator, set to 1 after dividing the response by its mean absolute value; COMPASS has no relative score |
+| `EVAL_BATCH_SIZE` | 16, `BATCH_SIZE` | The stages after training load the model in eval mode with `requires_grad` off (`checkpoints.py:69`), and their one backward pass, the Jacobian, differentiates only the layers after `z` (`directions.jacobian_sum`). At the same batch they hold less than training, which also keeps the whole network's activations, the weight gradients and AdamW's two moments. Results do not depend on it, since in eval mode each sample is independent; changing it after an OOM refuses nothing |
+| Layers to diagnose (`LAYERS`) | U-Net: `decoder.blocks.0` to `decoder.blocks.4`. ConvNet: `decoder.aspp`, `decoder.relu` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |
+| `DIRECTION_TEMPERATURE` | 10000, in `fit_directions`, `verify_monotonicity` and `compass_scores` | Upstream's temperature, the metric's. Its known cost: the gradient vanishes beyond \|logit\| ≈ 5e-3, so cells predicted empty get the PCA mean as direction. A temperature chosen by leave-one-group-out on calibration was not pursued, since the aim is COMPASS's own setting, not a tuned one |
+| `MIN_FRACTION_ASCENDING`: share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen | 0.95 | Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Chosen as 1 minus the smallest alpha, 0.05, so the share of non-monotonic cells stays below the smallest miscoverage the intervals allow. With `SWEEP_CELLS` 20 it needs 19 of 20 cells. If no layer reaches it, `choose_layer` stops the job naming the best layer and its fraction; rerunning with another value redoes only `choose_layer` and what follows |
+| SVM `C`, `class_weight`, pixels sampled per cell | 1.0, `balanced`, 200 | No paper sets them: COMPASS takes its direction from a PCA of the Jacobians, and the SVM is this work's own. `C` is `LinearSVC`'s default (scikit-learn 1.9.1); `balanced` weights mining and background pixels by their inverse frequency, so the boundary is not set by the larger class; 200 pixels per cell bound the fit's size. Not tuned |
+| Steps and cells of the monotonicity sweep | 21 steps, 20 cells per role | COMPASS gives no values (Appendix C). The sweep is `linspace(-beta_max, beta_max, steps)` (`compass2d/compass.py:151`), so 21 steps keep the origin and 10 points per side; 20 cells bound its cost. Not tuned |
+| `SEARCH_THRESHOLD_FEATURES` | 1e-15 | Upstream's runner: 60 bisection steps from 1000. The pilot keeps 1e-3, 20 steps, to stay short |
+| Score floor of the relative and local methods (`SCORE_FLOOR_HA`) | 0.01 ha | One 10 m pixel, the smallest area a cell can show. Romano et al. 2019 add γ to the denominator, set to 1 after dividing the response by its mean absolute value; here the floor stays in hectares instead, so it has a physical meaning. Not tuned |

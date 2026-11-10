@@ -45,14 +45,14 @@ uv run ruff format --check . && uv run ruff check .
 | `test_calibration_rules.py` | Repeated subsampling reduced to split conformal at one cell per group, its draws within and across groups, its seed, its refusal, and simulated coverage at k = 25 in `tests/artifacts/calibration_rules/coverage_k25.json`; the density ratio's cross-fit by group, on the real split's groups and with a fold lacking a population; weights refused by the weighted quantile |
 | `test_stages.py` | Reruns, refusals, saturation, an asymmetric quantile past its upper censoring, absent and misaligned cells, another data root, the score floors, the SVM orientation and a direction fit with no gradient, merge, peak memory records and `pipeline_check.py`, including an incomplete results table |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
-| `test_shell.py` | `slurm/full.sbatch` and `slurm/pilot.sbatch` run as a job runs them, from a root linking the real `slurm/` and `scripts/`: a full job to PASS, each flag of `stages.sh` that takes one variable receiving, in the `bash -x` trace, the value of the variable its name gives (or a short table of exceptions gives), every flag variable's value distinct from the others, no flag variable written braced, defaulted or with `=`, and the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `FORCE_FROM` and `FORCE_VALIDATE`, an unknown `FORCE_FROM`, a failed stage stopping both jobs, every value of `full.env.example` left empty, a `SCORE_FLOOR_HA` that is not a positive finite number |
+| `test_shell.py` | `slurm/full.sbatch` and `slurm/pilot.sbatch` run as a job runs them, from a root linking the real `slurm/` and `scripts/`: a full job to PASS, each flag of `stages.sh` that takes one variable receiving, in the `bash -x` trace, the value of the variable its name gives (or a short table of exceptions gives), every flag variable's value distinct from the others, no flag variable written braced, defaulted or with `=`, and the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `FORCE_FROM` and `FORCE_VALIDATE`, an unknown `FORCE_FROM`, a failed stage stopping both jobs, every key of `configs/full/unet_scratch-f1.0.json` left null, a misspelled key, a `SCORE_FLOOR_HA` that is not a positive finite number, and every versioned config accepted with only layers of its model |
 | `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
 | `test_workers.py` | Two DataLoader workers on CPU: two trainings with one seed give one model, band statistics and every prediction equal those read without workers |
 
 ## On a GPU
 
-Run the suite once on a Colab GPU runtime before the first paid run, with step 1 of `colab.ipynb`
-after its session setup. Its cell runs:
+Run the suite on a Colab GPU runtime before the first paid run, with section 4 of `colab.ipynb`.
+Its cell runs:
 
 ```python
 !GARIMPO_TEST_DEVICE=cuda uv run --no-sync pytest -q

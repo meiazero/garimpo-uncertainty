@@ -93,7 +93,7 @@ Code is not part of any fingerprint. A run calibrated before rows were added to
 resubmit with `FORCE_FROM=calibrate`.
 
 Only a fresh start of `train.py` reads starting weights. Without the file it fails, naming the
-`scripts/download_data.py weights` command of step 2 in [full-run.md](full-run.md). A finished or
+`scripts/download_data.py weights` command of [full-run.md](full-run.md#download-the-store). A finished or
 resumed run needs no weights file and takes the hash it started from out of `run_meta.json`; with
 both absent, `train.py` fails naming both.
 

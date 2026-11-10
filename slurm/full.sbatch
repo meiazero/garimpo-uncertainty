@@ -1,34 +1,15 @@
 #!/bin/bash
-# Full run of one model, every value required from a file written by you:
-#   cp slurm/full.env.example slurm/unet_scratch-f1.0.env    # fill in; see docs/decisions.md
-#   CUDA_VISIBLE_DEVICES=0 bash slurm/full.sbatch slurm/unet_scratch-f1.0.env
+# Full run of one model, every value from its JSON config (docs/decisions.md gives their sources):
+#   CUDA_VISIBLE_DEVICES=0 bash slurm/full.sbatch configs/full/unet_scratch-f1.0.json
 #
 # One run per GPU. NUM_WORKERS sets the data loader processes, such as $(nproc) on Colab.
 #
 # The COMPASS-J layer is chosen inside the run, from the validation role (scripts/choose_layer.py).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-source "${1:?usage: bash slurm/full.sbatch <values.env>}"
-
-: "${ARCH:?}" "${RUN_DIR:?}" "${TRAIN_FRACTION:?}" "${SUBSET_SEED:?}"
-: "${EPOCHS:?}" "${STEPS_PER_EPOCH:?}" "${BATCH_SIZE:?}" "${LR:?}" "${WEIGHT_DECAY:?}"
-: "${EVAL_BATCH_SIZE:?}" "${LOSS:?}" "${SEED:?}" "${SVM_C:?}" "${SVM_CLASS_WEIGHT:?}" "${SVM_PIXELS_PER_CELL:?}"
-: "${SWEEP_STEPS:?}" "${SWEEP_CELLS:?}" "${BETA_RANGE_LOGITS:?}" "${BETA_RANGE_FEATURES:?}"
-: "${DIRECTION_TEMPERATURE:?}"
-[ "$ARCH" != unet ] || : "${ENCODER_WEIGHTS:?}"
-: "${MIN_FRACTION_ASCENDING:?}" "${SEARCH_THRESHOLD_LOGITS:?}" "${SEARCH_THRESHOLD_FEATURES:?}"
-: "${CELLS:?}" "${SCORE_FLOOR_HA:?}" "${BOUNDARY_TOLERANCE_PX:?}"
-[ "${#LAYERS[@]}" -gt 0 ] || { echo "LAYERS is empty" >&2; exit 1; }
-# calibrate.py checks the floor too, but only after training.
-uv run --no-sync python - "$SCORE_FLOOR_HA" <<'EOF'
-import math, sys
-try:
-    floor = float(sys.argv[1])
-except ValueError:
-    floor = math.nan
-if not (math.isfinite(floor) and floor > 0):
-    sys.exit(f"SCORE_FLOOR_HA must be a positive finite number, got '{sys.argv[1]}'")
-EOF
+# An assignment, so a config that run_config.py refuses stops the job before any stage.
+values=$(uv run --no-sync python scripts/run_config.py "${1:?usage: bash slurm/full.sbatch <config.json>}")
+eval "$values"
 
 VALIDATION_REPORT=outputs/data_validation-fraction-$TRAIN_FRACTION-seed-$SUBSET_SEED.json
 VALIDATE_ARGS=(--split-summary outputs/split_summary.json)

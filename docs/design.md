@@ -35,7 +35,7 @@ flowchart TD
     end
     SPLIT -.-> ROLES
 
-    subgraph RUNS["2 · Four runs at 100%: Colab GPU, one env file each"]
+    subgraph RUNS["2 · Four runs at 100%: Colab GPU, one JSON config each"]
         R1["convnet<br/>DeepLabV3, no pretraining"]
         R2["unet_scratch"]
         R3["unet_imagenet"]
