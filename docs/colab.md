@@ -13,7 +13,7 @@ only the files the local disk lacks. A new session gets everything; Run all agai
 session keeps the local files, which are never older than Drive's copy, since Drive only receives
 copies of them. A file deleted locally in the session comes back, as no copy uses `--delete`:
 `--delete` toward Drive would wipe the saved runs after a restore that failed. The one file a stage
-deletes, `chosen_layer.json` after a refused choice, is printed by the pipeline check only while
+deletes, `chosen_layer.json` when no layer qualifies, is printed by the pipeline check only while
 `choose_layer` is `ok`.
 
 `DATA` is always `/content/garimpo-data` because runs record the data root's path, and a run

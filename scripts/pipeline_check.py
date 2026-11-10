@@ -115,8 +115,8 @@ def report_store(
 
 def print_chosen_layer(path: Path, status: str) -> None:
     print("\n--- layer chosen from the validation role")
-    # A refused choice deletes the file, but a restore from Drive, where nothing is deleted,
-    # brings the old one back: only an ok stage vouches for it.
+    # choose_layer deletes the file when no layer qualifies, but a restore from Drive, where
+    # nothing is deleted, brings the old one back: only an ok stage vouches for it.
     if status != "ok":
         print(f"not chosen: choose_layer is {status}")
         return
