@@ -65,6 +65,7 @@ the input is back a finished stage skips again.
 | `ok` | the work finished, or the stage skipped on the same fingerprint | passes |
 | `failed` | the work raised, or an input is missing; `error` and `traceback` record why | fails, printing both |
 | `refused` | outputs exist from another fingerprint | fails, printing the `--force-from` or `--force-validate` that redoes it |
+| `stale` | a stage before it starts its work again, so this one read outputs that are about to change; `error` names that stage, and the completed fingerprint stays, so it skips back to `ok` if its inputs did not change | fails |
 | `interrupted` | Ctrl+C reached the stage's work (`KeyboardInterrupt`); `error` is "Ctrl+C; rerun to resume" and `seconds` the time until then | fails, like `failed` |
 | `not_run` | no status file exists; printed by the check, never written | fails |
 

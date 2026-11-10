@@ -187,10 +187,26 @@ def _skip_or_refuse(status_path: Path, name: str, previous: dict, stage_fingerpr
     raise SystemExit(message)
 
 
+def _mark_later_stale(status_dir: Path, name: str) -> None:
+    """Turn every later ok status to stale, since those stages read what this one is about to redo.
+
+    Done before the work, so a job that dies after it leaves no later stage reading ok, also in a
+    copy to Drive. The completed fingerprint stays: a later stage whose inputs did not change skips.
+    """
+    if name not in STAGE_ORDER:
+        return
+    for later in STAGE_ORDER[STAGE_ORDER.index(name) + 1 :]:
+        path = status_dir / f"{later}.json"
+        record = json.loads(path.read_text()) if path.exists() else {}
+        if record.get("status") == "ok":
+            write_json(path, record | {"status": "stale", "error": f"{name} ran again after it"})
+
+
 def _run_work(
     status_path: Path, name: str, stage_fingerprint: dict, work: Callable[[], dict]
 ) -> None:
     identity = _identity(name)
+    _mark_later_stale(status_path.parent, name)
     write_json(status_path, identity | {"status": "running"})
     start = time.monotonic()
     try:
