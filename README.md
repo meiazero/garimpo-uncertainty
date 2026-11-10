@@ -11,9 +11,9 @@ width.
 - Four runs, all at 100% and all on a ResNet-18 encoder: a U-Net from scratch, from ImageNet
   weights and from Sentinel-2 MoCo weights, and smp's DeepLabV3 as the ConvNet.
 - `compass/` (submodule) holds the adapted COMPASS method, `src/garimpo_uncertainty/` the satellite
-  code, `scripts/` the stages, and `slurm/` the bash scripts that chain them. `outputs/` holds the
-  versioned tables, including `split.csv`, the split used, and `tiles/`, the tiles each training
-  fraction downloads.
+  code, `scripts/` the stages, and `scripts/run.py` the runner that chains them. `outputs/` holds
+  the versioned tables, including `split.csv`, the split used, and `tiles/`, the tiles each
+  training fraction downloads.
 - No model result exists yet. The code has run only under pytest, on synthetic data; the pipeline
   has never run on real scenes or on a GPU.
 
@@ -57,7 +57,7 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 | Document | Covers |
 |---|---|
 | [docs/colab.md](docs/colab.md) | Why the cells of `colab.ipynb` are written as they are: the Drive archive, one command per cell, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
-| [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `FORCE_FROM` |
+| [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `--force-from` |
 | [docs/full-run.md](docs/full-run.md) | The full run step by step, the run configs, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, their sources, and where each is set |
 | [docs/runs.md](docs/runs.md) | Dataset size by role, training fractions, tile lists, model variants, starting weights, layer names |

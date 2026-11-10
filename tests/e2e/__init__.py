@@ -4,9 +4,9 @@ Covered: select_tiles on the real split, the versioned tile lists, the cell stor
 local rasters (tile_origin, process_tile, _read_band, _boa_offset, download_scenes, the lists and
 scenes commands), SAS token renewal and the HTTP 429 wait on a fake clock, validation with
 check_split_counts, every later stage, two training fractions sharing one data root, the job
-scripts in slurm/, training resumed after being killed, and loader workers.
+runner scripts/run.py, training resumed after being killed, and loader workers.
 Not covered: real HTTP (STAC, SAS tokens, 429 retries, Zenodo), remote reads, real Sentinel-2
-scenes, slurm/download.sh, the metadata and weights download commands, GPU unless
+scenes, download_data.py all, the metadata and weights download commands, GPU unless
 GARIMPO_TEST_DEVICE=cuda, the real ImageNet and Sentinel-2 MoCo files (synthetic ones stand in).
 Artifacts stay in tests/artifacts/.
 """

@@ -6,9 +6,10 @@ are. The facts these sections rely on are in [runs.md](runs.md).
 ## The experiment at a glance
 
 The data are downloaded once, on your own machine, and reach the Colab GPU as one archive in Drive.
-Each of the four runs is one `slurm/run.sbatch` job:
-`validate_data`, then the stages of `STAGE_ORDER` in `slurm/stages.sh`, and `pipeline_check` from
-the job's EXIT trap, also after a failed stage. The model trains on `train`; `validation` picks
+Each of the four runs is one `scripts/run.py` job:
+`validate_data`, then the stages of `STAGE_ORDER` in `garimpo_uncertainty/stages.py`, and
+`pipeline_check` last, also after a failed or interrupted stage. The model trains on `train`;
+`validation` picks
 `best_model.pt` and the layer. Intervals are evaluated on `test`, in 50 km clusters no other role
 shares (`validate_data`'s `group_leakage`), and calibrated on the `calibration` role (`external`),
 on it reweighted toward `test` by a density ratio (`external_weighted`), or on the other `test`
@@ -20,7 +21,7 @@ groups, leaving out the evaluated one (`own_region`); CQR's regressor is fitted 
 flowchart TD
     subgraph DATA["1 · Data: a CPU machine, once"]
         Z["Zenodo · Jasansky et al. 2024<br/>tiles and mining polygons"] --> SPLIT["Geographic split<br/>outputs/split.csv"]
-        PC["Planetary Computer<br/>Sentinel-2 L2A"] --> DL["slurm/download.sh<br/>1,179 tiles → 18,864 cells of 512×512"]
+        PC["Planetary Computer<br/>Sentinel-2 L2A"] --> DL["download_data.py all<br/>1,179 tiles → 18,864 cells of 512×512"]
         Z -- "polygons → masks" --> DL
         SPLIT --> DL
         DL --> STORE[("Memmap store · 69.2 GB<br/>+ sidecars, log, starting weights")]
@@ -43,7 +44,7 @@ flowchart TD
     end
     TAR --> RUNS
 
-    subgraph JOB["3 · One slurm/run.sbatch job per run"]
+    subgraph JOB["3 · One scripts/run.py job per run"]
         VD["validate_data<br/>slot hashes, split, counts"] --> T["train · 100 epochs<br/>best_model.pt by validation Dice<br/>last.pt every epoch, resumable"]
         T --> INF["infer<br/>logits of every cell"]
         INF --> FD["fit_directions<br/>Jacobians: PCA and SVM normal"]

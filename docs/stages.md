@@ -26,7 +26,8 @@ Paths without a prefix are inside the run directory.
 | `merge_results.py` | any | small tables of each run | `outputs/results.csv`, `outputs/width_comparisons.csv`, `outputs/coverage_comparisons.csv`, `outputs/q1_spearman.csv`, `outputs/coverage_by_stratum.csv`, `outputs/score_relation.csv`, `outputs/layer_diagnostics.csv`, `outputs/monotonicity_layer.csv`, `outputs/monotonicity_endpoint.csv`, `outputs/chosen_layers.csv` |
 | `pipeline_check.py` | any | status files and tables | prints the debugging report |
 
-`slurm/stages.sh` runs the stages from `train` to `compute_metrics` in its `STAGE_ORDER`: `train`,
+`scripts/run.py` runs the stages from `train` to `compute_metrics` in `STAGE_ORDER`
+(`garimpo_uncertainty/stages.py`): `train`,
 `infer`, `fit_directions`, `layer_monotonicity`, `choose_layer`, `endpoint_monotonicity`,
 `compass_scores`, `calibrate`, `generate_intervals`, `compute_metrics`. These are also the names of
 their status files.
@@ -63,7 +64,7 @@ the input is back a finished stage skips again.
 | `running` | the stage starts; it stays if the process dies inside the stage | fails: "no error recorded: the job died inside this stage" |
 | `ok` | the work finished, or the stage skipped on the same fingerprint | passes |
 | `failed` | the work raised, or an input is missing; `error` and `traceback` record why | fails, printing both |
-| `refused` | outputs exist from another fingerprint | fails, printing the `FORCE_FROM` or `FORCE_VALIDATE` that redoes it |
+| `refused` | outputs exist from another fingerprint | fails, printing the `--force-from` or `--force-validate` that redoes it |
 | `interrupted` | Ctrl+C reached the stage's work (`KeyboardInterrupt`); `error` is "Ctrl+C; rerun to resume" and `seconds` the time until then | fails, like `failed` |
 | `not_run` | no status file exists; printed by the check, never written | fails |
 
@@ -90,7 +91,7 @@ arguments, weights included.
 
 Code is not part of any fingerprint. A run calibrated before rows were added to
 `intervals.COMBINATIONS` still skips `calibrate`, and the pipeline check fails on the absent rows:
-resubmit with `FORCE_FROM=calibrate`.
+rerun with `--force-from calibrate`.
 
 Only a fresh start of `train.py` reads starting weights. Without the file it fails, naming the
 `scripts/download_data.py weights` command of [full-run.md](full-run.md#download-the-store). A finished or
