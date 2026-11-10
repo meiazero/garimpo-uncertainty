@@ -31,18 +31,19 @@ Why the cells are written as they are: [docs/colab.md](docs/colab.md).
 
 ## Quick start
 
-Runtime > Run all runs the notebook's sections in order, on one GPU runtime:
+Runtime > Run all runs the notebook's sections in order, on one GPU runtime. Its `SCALE` option
+runs the pilot, the same four models on 1%, until a full run has a checkpoint; choose `full` once
+the pilot passes, and later sessions continue the full runs on their own:
 
 | Section | What it does |
 |---|---|
 | 1. Setup | Mounts Drive, clones the code, builds the environment |
 | 2. Data | Unpacks the data and restores the earlier runs and logs |
-| 3. Run configs | Shows the values of every run, from `configs/` |
+| 3. Run configs | Chooses the scale with `SCALE` and shows the values of every run |
 | 4. Tests | Runs the suite on the GPU (optional) |
-| 5. Pilot | The pipeline on 1% of the training tiles, to check the code |
-| 6. Training | The four models on all the training tiles |
-| 7. Evaluation | Merges the four runs' tables into `outputs/` |
-| 8. Release | Writes the pending files to Drive and releases the GPU |
+| 5. Training | The four models: on 1% of the training tiles for the pilot, on 100% for the full runs |
+| 6. Evaluation | Merges the four runs' tables, into `outputs/` for the full runs |
+| 7. Release | Writes the pending files to Drive and releases the GPU |
 
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
 first ([docs/full-run.md](docs/full-run.md#download-the-store)). If the session ends early, run

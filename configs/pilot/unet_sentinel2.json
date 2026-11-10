@@ -1,7 +1,7 @@
 {
   "ARCH": "unet",
-  "ENCODER_WEIGHTS": "imagenet",
-  "RUN_DIR": "runs/pilot/unet-imagenet",
+  "ENCODER_WEIGHTS": "sentinel2_moco",
+  "RUN_DIR": "runs/pilot/unet_sentinel2-f0.01",
   "TRAIN_FRACTION": 0.01,
   "SUBSET_SEED": 0,
   "EPOCHS": 2,
@@ -29,7 +29,7 @@
   "BETA_RANGE_FEATURES": 1000,
   "DIRECTION_TEMPERATURE": 10000,
   "SEARCH_THRESHOLD_LOGITS": 0.01,
-  "SEARCH_THRESHOLD_FEATURES": 0.001,
+  "SEARCH_THRESHOLD_FEATURES": 1e-15,
   "CELLS": "all",
   "SCORE_FLOOR_HA": 0.01,
   "BOUNDARY_TOLERANCE_PX": 5.43

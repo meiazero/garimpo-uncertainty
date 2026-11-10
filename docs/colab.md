@@ -46,7 +46,7 @@ cell before the release raises:
   code.
 - The Python cells that can fail catch the error and print it: `start_log` and `print_verdicts`.
 
-If you interrupt a cell, run the cells of section 8 by hand.
+If you interrupt a cell, run the cells of section 7 by hand.
 
 ## Optional and reexecution cells
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sourced by pilot.sbatch and full.sbatch: same stages, same scripts, only the values differ.
+# Sourced by run.sbatch, for the pilot and the full runs alike: only the config differs.
 #
 # Finished stages skip themselves. After fixing code, FORCE_FROM=<stage> redoes that stage and those
 # after it; `train` runs again only when named, so a downstream fix never retrains.

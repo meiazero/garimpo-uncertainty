@@ -1,6 +1,6 @@
 """Print a run's JSON config as bash assignments, refusing it before any stage when it is unusable.
 
-    values=$(uv run --no-sync python scripts/run_config.py configs/full/unet_scratch-f1.0.json)
+    values=$(uv run --no-sync python scripts/run_config.py configs/full/unet_scratch.json)
     eval "$values"
 
 A key left out, null, empty or unknown stops the job here, not as an empty argument after training.
@@ -60,9 +60,8 @@ def problems(config: dict) -> list[str]:
         found.append("LAYERS: must be a list of layer names")
     floor = config.get("SCORE_FLOOR_HA")
     # calibrate.py checks the floor too, but only after training.
-    if not is_empty(floor) and not (
-        isinstance(floor, int | float) and math.isfinite(floor) and floor > 0
-    ):
+    is_number = isinstance(floor, int | float) and not isinstance(floor, bool)
+    if not is_empty(floor) and not (is_number and math.isfinite(floor) and floor > 0):
         found.append(f"SCORE_FLOOR_HA must be a positive finite number, got '{floor}'")
     return found
 

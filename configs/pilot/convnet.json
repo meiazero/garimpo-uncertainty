@@ -1,7 +1,6 @@
 {
-  "ARCH": "unet",
-  "ENCODER_WEIGHTS": "sentinel2_moco",
-  "RUN_DIR": "runs/pilot/unet-sentinel2_moco",
+  "ARCH": "convnet",
+  "RUN_DIR": "runs/pilot/convnet-f0.01",
   "TRAIN_FRACTION": 0.01,
   "SUBSET_SEED": 0,
   "EPOCHS": 2,
@@ -13,11 +12,8 @@
   "LOSS": "dice_bce",
   "SEED": 0,
   "LAYERS": [
-    "decoder.blocks.0",
-    "decoder.blocks.1",
-    "decoder.blocks.2",
-    "decoder.blocks.3",
-    "decoder.blocks.4"
+    "decoder.aspp",
+    "decoder.relu"
   ],
   "MIN_FRACTION_ASCENDING": 0,
   "SVM_C": 1.0,
@@ -29,7 +25,7 @@
   "BETA_RANGE_FEATURES": 1000,
   "DIRECTION_TEMPERATURE": 10000,
   "SEARCH_THRESHOLD_LOGITS": 0.01,
-  "SEARCH_THRESHOLD_FEATURES": 0.001,
+  "SEARCH_THRESHOLD_FEATURES": 1e-15,
   "CELLS": "all",
   "SCORE_FLOOR_HA": 0.01,
   "BOUNDARY_TOLERANCE_PX": 5.43

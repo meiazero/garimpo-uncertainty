@@ -4,7 +4,7 @@ Read before changing a value in `configs/full/`.
 
 Every value of the four runs is decided here, before any run, with its source; where no paper sets
 one, the row says what the choice is for. None is tuned on the pilot, which only checks the code.
-`configs/full/` holds the four runs' configs and `configs/pilot/` the pilot's.
+`configs/full/` holds the four runs' configs and `configs/pilot/` the same four at 1%.
 `scripts/run_config.py` stops a job on a config with a value missing, null, empty or unknown.
 `ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION` name the run, one config each, as listed
 in [runs.md](runs.md#model-variants).
