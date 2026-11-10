@@ -93,8 +93,8 @@ calibration rows (`intervals.COMBINATIONS`) at each of the three levels alpha = 
 | Total | 55 |
 
 Over 4 runs and 3 levels that is 660 rows. `merge_results.py` identifies a run by
-`(model, train_fraction)` and refuses a repeated pair; each run's paired comparisons stay inside
-that run. What the comparison between variants can show is in
+`(model, train_fraction)` and refuses a repeated pair, or a run with any stage not `ok`; each
+run's paired comparisons stay inside that run. What the comparison between variants can show is in
 [design.md](design.md#what-the-model-comparison-varies).
 
 ## Starting weights

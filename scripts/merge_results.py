@@ -58,7 +58,10 @@ def main() -> None:
         if status != "ok"
     ]
     if not_ok:
-        raise SystemExit("every stage of every run must be ok to merge:\n" + "\n".join(not_ok))
+        raise SystemExit(
+            "every stage of every run must be ok to merge; nothing was written, so any tables in "
+            f"{args.out} and in Drive are from an earlier merge:\n" + "\n".join(not_ok)
+        )
 
     args.out.mkdir(parents=True, exist_ok=True)
     for name, relative in TABLES.items():
