@@ -345,14 +345,23 @@ def test_pipeline_check_reads_another_layers_results(passed_job: PassedJob) -> N
     assert f"results contain NaN in PICP or MPIW [{other}]" in verdict
 
 
-def test_pipeline_check_fails_without_the_chosen_layer(passed_job: PassedJob) -> None:
-    """With every status ok but chosen_layer.json gone, the check still ends in a verdict."""
+@pytest.mark.parametrize(("content", "cause"), [(None, "FileNotFoundError"), ("[]", "KeyError")])
+def test_pipeline_check_fails_without_the_chosen_layer(
+    passed_job: PassedJob, content: str | None, cause: str
+) -> None:
+    """Every status ok, but chosen_layer.json gone or garbled: the check still ends in a verdict."""
     run_dir = passed_job.run_dir
     with support.restored_after(run_dir):
-        (run_dir / "chosen_layer.json").unlink()
+        chosen = run_dir / "chosen_layer.json"
+        if content is None:
+            chosen.unlink()
+        else:
+            chosen.write_text(content)
         report = pipeline_check(run_dir, "--layers", *LAYERS)
     assert report.returncode == 1
-    assert "chosen layer unreadable" in report.stdout.split("PIPELINE CHECK: FAIL")[1]
+    failing = report.stdout.split("--- failing stage: chosen_layer.json (unreadable)\n")[1]
+    assert failing.startswith(f"{run_dir / 'chosen_layer.json'}: {cause}")
+    assert "chosen_layer.json" in report.stdout.split("PIPELINE CHECK: FAIL")[1]
 
 
 def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:

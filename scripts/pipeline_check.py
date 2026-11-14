@@ -17,8 +17,9 @@ import garimpo_uncertainty.intervals
 import garimpo_uncertainty.stages
 import garimpo_uncertainty.validation
 
-# A failure found by the check itself, with no stage status of its own.
-NOT_OK = {"status": "unreadable"}
+# What reading chosen_layer.json raises when the file is absent, a directory, or not the object
+# choose_layer writes; the report names it instead of stopping before its verdict.
+UNREADABLE = (OSError, ValueError, KeyError, TypeError)
 
 
 def read_status(status_dir: Path, stage: str) -> dict:
@@ -141,6 +142,14 @@ def report_store(
     return store_problems, tiles
 
 
+def read_chosen(path: Path) -> tuple[dict, pd.DataFrame]:
+    """Return chosen_layer.json and its candidates by layer; raise one of UNREADABLE otherwise."""
+    chosen = json.loads(path.read_text(encoding="utf-8"))
+    if absent := {"layer", "min_fraction_ascending", "candidates"} - set(chosen):
+        raise KeyError(f"no {sorted(absent)}")
+    return chosen, pd.DataFrame(chosen["candidates"]).set_index("layer")
+
+
 def print_chosen_layer(path: Path, stale: str | None) -> None:
     print("\n--- layer chosen from the validation role")
     # choose_layer deletes the file when no layer qualifies, but a restore brings the old one back.
@@ -150,9 +159,13 @@ def print_chosen_layer(path: Path, stale: str | None) -> None:
     if not path.exists():
         print(f"not produced: {path}")
         return
-    chosen = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        chosen, candidates = read_chosen(path)
+    except UNREADABLE as error:
+        print(f"unreadable: {type(error).__name__}: {error}")
+        return
     print(f"{chosen['layer']}, ascending on at least {chosen['min_fraction_ascending']}")
-    print(pd.DataFrame(chosen["candidates"]).set_index("layer").to_string())
+    print(candidates.to_string())
 
 
 def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
@@ -216,31 +229,32 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     )
 
 
-def other_layers(run_dir: Path, layers: list[str], records: list[dict]) -> list[str] | None:
-    """Return the layers of LAYERS other than the chosen one; None when the choice is unreadable.
+def other_layer_records(
+    run_dir: Path, layers: list[str], records: list[dict]
+) -> tuple[list[dict], list[str]]:
+    """Return the other layers' stage statuses, each named after its layer, and those layers.
 
     Empty until the chosen layer's stages are all ok, since run.py runs the others after those.
     """
     statuses = {record["stage"]: record["status"] for record in records}
     if not layers or not_current(statuses, "compute_metrics") is not None:
-        return []
+        return [], []
+    path = run_dir / "chosen_layer.json"
     try:
-        chosen = json.loads((run_dir / "chosen_layer.json").read_text(encoding="utf-8"))["layer"]
-    except (OSError, ValueError, KeyError):
-        return None
-    return [layer for layer in layers if layer != chosen]
-
-
-def other_layer_records(run_dir: Path, others: list[str] | None) -> list[dict]:
-    """Return the statuses of the other layers' stages, each named after its layer."""
-    if others is None:
-        return [{"stage": f"chosen layer unreadable: {run_dir / 'chosen_layer.json'}"} | NOT_OK]
-    return [
+        chosen = read_chosen(path)[0]["layer"]
+        if chosen not in layers:
+            raise ValueError(f"layer {chosen!r} is not one of LAYERS {layers}")
+    except UNREADABLE as error:
+        cause = f"{path}: {type(error).__name__}: {error}"
+        return [{"stage": "chosen_layer.json", "status": "unreadable", "error": cause}], []
+    others = [layer for layer in layers if layer != chosen]
+    layer_records = [
         read_status(run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer / "status", stage)
         | {"stage": f"{stage} [{layer}]"}
         for layer in others
         for stage in garimpo_uncertainty.stages.LAYER_STAGES
     ]
+    return layer_records, others
 
 
 def results_failures(results_path: Path) -> list[dict]:
@@ -263,7 +277,7 @@ def results_failures(results_path: Path) -> list[dict]:
 
 
 def results_tables_failures(
-    run_dir: Path, statuses: dict[str, str], others: list[str] | None
+    run_dir: Path, statuses: dict[str, str], others: list[str]
 ) -> list[dict]:
     """Check the results table of the chosen layer, then of each other layer, while current.
 
@@ -272,7 +286,7 @@ def results_tables_failures(
     failed = []
     if not_current(statuses, "compute_metrics") is None:
         failed += results_failures(run_dir / "metrics" / "results.csv")
-    for layer in others or []:
+    for layer in others:
         if statuses[f"compute_metrics [{layer}]"] == "ok":
             layer_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer
             found = results_failures(layer_dir / "metrics" / "results.csv")
@@ -301,7 +315,7 @@ def exit_with_verdict(failed: list[dict]) -> None:
     print("=" * 78)
 
 
-def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list[str] | None]:
+def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list[str]]:
     """Return every status the run needs, in order, and the other layers they cover."""
     selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
     records = [
@@ -312,8 +326,8 @@ def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list
         read_status(args.run_dir / "status", stage)
         for stage in garimpo_uncertainty.stages.STAGE_ORDER
     ]
-    others = other_layers(args.run_dir, args.layers, records)
-    return records + other_layer_records(args.run_dir, others), others
+    layer_records, others = other_layer_records(args.run_dir, args.layers, records)
+    return records + layer_records, others
 
 
 def main() -> None:

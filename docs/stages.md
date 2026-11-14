@@ -91,10 +91,12 @@ the input is back a finished stage skips again.
 | `stale` | a stage before it starts its work again, so this one read outputs that are about to change; `error` names that stage, and the completed fingerprint stays, so it skips back to `ok` if its inputs did not change | fails |
 | `interrupted` | Ctrl+C reached the stage's work (`KeyboardInterrupt`); `error` is "Ctrl+C; rerun to resume" and `seconds` the time until then | fails, like `failed` |
 | `not_run` | no status file exists; printed by the check, never written | fails |
+| `unreadable` | given `--layers`, every stage of `STAGE_ORDER` is `ok` but `chosen_layer.json` cannot be read, lacks a key `choose_layer` writes, holds candidates that are not a table by layer, or names a layer outside `LAYERS`, so the other layers are unknown; printed by the check under the name `chosen_layer.json`, with the error, never written | fails |
 
 `pipeline_check.py` fails on any status other than `ok` in `validate_data`, a stage of
-`STAGE_ORDER` or, given `--layers`, a stage of another layer, and prints the first of them that is
-`failed`, `refused`, `running`, `interrupted` or `stale`. It also checks each other layer's
+`STAGE_ORDER` or, given `--layers`, a stage of another layer or an unreadable `chosen_layer.json`,
+and prints the first of them that is `failed`, `refused`, `running`, `interrupted`, `stale` or
+`unreadable`. It also checks each other layer's
 `results.csv` as it checks the chosen layer's.
 `download_scenes` is left out, since the download is shared by every fraction and
 `validate_data` decides whether this run's tiles are there.
