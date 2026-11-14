@@ -80,6 +80,7 @@ ascending:
 | `calibration/quantiles.npz` | `cell_index`, and `quantile`, `lower_term`, `upper_term`, `scale` as `[A, K, N]`, `A` indexing `intervals.ALPHAS`, `K` `intervals.COMBINATIONS`, `N` the test cells; `alpha`; per `[A, K]`, score counts, saturation and `infinite_quantile_fraction`; `density_ratio_calibration`, `density_ratio_test` (cross-fitted odds); per `[A, K]`, `side_ratio` of the `a_` rows and `censor_at`, the quantile from which a COMPASS row is the whole cell |
 | `intervals/intervals.npz` | `cell_index`, and `lower`, `upper`, `quantile` as `[A, K, N]`, plus `alpha` and `layer` |
 | `metrics/cell_metrics.npz` | `cell_index`, `dice`, `boundary_f1`, `boundary_by_rule`, one row per test cell |
+| `layers/<layer>/{scores,calibration,intervals,metrics,status}/` | The same files on each layer of `LAYERS` other than the chosen one ([stages.md](stages.md#the-other-layers)) |
 
 Predictions are `uint8` probabilities at 262,144 bytes per cell: the 2,816 validation, calibration
 and test cells take about 0.74 GB per model. Training cells keep their row in

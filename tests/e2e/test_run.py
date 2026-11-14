@@ -44,6 +44,7 @@ NOT_FROM_CONFIG = {
     "--checkpoint",
     "--layers",
     "--layer",
+    "--layer-dir",
     "--use",
     "--report",
     "--split-summary",
@@ -261,6 +262,68 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     assert values_of(endpoint_sweep, "--layers") == [layer]
     assert values_of(commands["compass_scores"][0], "--layer") == [layer]
     assert values_of(commands["generate_intervals"][0], "--layer") == [layer]
+    # Then the same four stages once more, on the layer not chosen, into a directory of its own.
+    (other,) = set(LAYERS) - {layer}
+    other_dir = f"{FILLED['RUN_DIR']}/layers/{other}"
+    for script in garimpo_uncertainty.stages.LAYER_STAGES:
+        main, again = commands[script]
+        assert "--layer-dir" not in main, script
+        assert values_of(again, "--layer-dir") == [other_dir], script
+    assert values_of(commands["compass_scores"][1], "--layer") == [other]
+    assert values_of(commands["generate_intervals"][1], "--layer") == [other]
+
+
+def test_full_job_scores_every_other_layer_apart(passed_job: PassedJob) -> None:
+    """Each other layer gets its own results, read from the same predictions as the chosen one.
+
+    The output-space rows are arithmetic on the shared predictions, so they must match the chosen
+    layer's to the bit; the COMPASS rows run the model in another process, whose last bits may
+    differ on a hybrid CPU (support.one_core), so only COMPASS-J, which reads the layer, must move.
+    """
+    run_dir = passed_job.run_dir
+    layer = support.chosen_layer(run_dir)
+    (other,) = set(LAYERS) - {layer}
+    other_dir = run_dir / "layers" / other
+    for stage in garimpo_uncertainty.stages.LAYER_STAGES:
+        assert json.loads((other_dir / "status" / f"{stage}.json").read_text())["status"] == "ok"
+    chosen = pd.read_csv(run_dir / "metrics" / "results.csv")
+    again = pd.read_csv(other_dir / "metrics" / "results.csv")
+    assert set(chosen.layer) == {layer}
+    assert set(again.layer) == {other}
+    keys = ["alpha", "method", "calibration"]
+    chosen, again = chosen.set_index(keys).sort_index(), again.set_index(keys).sort_index()
+    assert chosen.index.equals(again.index)
+    methods = chosen.index.get_level_values("method")
+    calibrations = chosen.index.get_level_values("calibration")
+    # The weighted rows read the summed features of the layer through the density ratio.
+    shared = ~methods.str.contains("compass") & ~calibrations.str.contains("weighted")
+    layered = methods.str.contains("compass_j")
+    assert shared.any()
+    assert layered.any()
+    columns = ["picp", "mpiw", "n_cells"]
+    pd.testing.assert_frame_equal(chosen[shared][columns], again[shared][columns], check_exact=True)
+    assert not chosen[layered][["mpiw"]].equals(again[layered][["mpiw"]])
+
+
+def pipeline_check(run_dir: Path, *extra: str) -> subprocess.CompletedProcess:
+    command = [sys.executable, "scripts/pipeline_check.py", "--run-dir", str(run_dir)]
+    command += ["--train-fraction", str(FILLED["TRAIN_FRACTION"])]
+    command += ["--subset-seed", str(FILLED["SUBSET_SEED"]), *extra]
+    return subprocess.run(  # noqa: S603 - arguments come from the test
+        command, check=False, cwd=RUN_ROOT, env=runner_env(), capture_output=True, text=True
+    )
+
+
+def test_pipeline_check_names_another_layer_that_never_ran(passed_job: PassedJob) -> None:
+    """A session lost after the chosen layer's stages leaves the other layers' tables absent."""
+    run_dir = passed_job.run_dir
+    (other,) = set(LAYERS) - {support.chosen_layer(run_dir)}
+    assert pipeline_check(run_dir, "--layers", *LAYERS).returncode == 0
+    with support.restored_after(run_dir):
+        shutil.rmtree(run_dir / "layers" / other)
+        report = pipeline_check(run_dir, "--layers", *LAYERS)
+    assert report.returncode == 1
+    assert f"compass_scores [{other}]" in report.stdout.split("PIPELINE CHECK: FAIL")[1]
 
 
 def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
@@ -306,6 +369,11 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
         )
         statuses = {s: json.loads((run_dir / "status" / f"{s}.json").read_text()) for s in later}
         assert {s: r["status"] for s, r in statuses.items()} == dict.fromkeys(later, "stale")
+        # The other layers' stages read the same run, so they cannot vouch for their tables either.
+        (other_status,) = (run_dir / "layers").glob("*/status")
+        for stage in garimpo_uncertainty.stages.LAYER_STAGES:
+            record = json.loads((other_status / f"{stage}.json").read_text())
+            assert record["status"] == "stale", stage
         merge = [sys.executable, "scripts/merge_results.py", "--runs", str(run_dir)]
         refused = subprocess.run(  # noqa: S603 - arguments come from the test
             [*merge, "--out", str(tmp_path / "merged")],

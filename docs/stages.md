@@ -32,6 +32,28 @@ Paths without a prefix are inside the run directory.
 `compass_scores`, `calibrate`, `generate_intervals`, `compute_metrics`. These are also the names of
 their status files.
 
+## The other layers
+
+After `compute_metrics`, `scripts/run.py` runs `compass_scores`, `calibrate`, `generate_intervals`
+and `compute_metrics` (`LAYER_STAGES`) once more on every other layer of `LAYERS`, so the interval
+width can be compared across layers, as Cheung et al. (2026) do in Table 4. Each such stage takes
+`--layer-dir runs/<run>/layers/<layer>`: it reads the checkpoint, `predictions/`, `directions/` and
+`run_meta.json` of the run, and writes its `scores/`, `calibration/`, `intervals/`, `metrics/` and
+`status/` under that directory. The chosen layer's files stay where the table above puts them, so
+`merge_results.py` and the pipeline check's tables read only the chosen layer.
+
+- The chosen layer runs first: a session lost during the other layers keeps its results, and the
+  next attempt skips them and resumes the other layers.
+- The pipeline check, given the run's `LAYERS`, lists each other layer's stages as
+  `<stage> [<layer>]` once the chosen layer's are all `ok`, and fails on any that is not `ok`.
+- A stage before `compass_scores` that runs again marks the other layers' `ok` statuses `stale`
+  too, since they read its files; `--force-from` forces their stages as it forces the run's.
+- Which layer is chosen comes from `chosen_layer.json`. If a rerun chooses another one, the newly
+  chosen layer's old directory under `layers/` stays, unused.
+- `results.csv` of each layer holds every row, `layer` included. Only the `compass_j_*` rows and
+  the `external_weighted` ones, whose density ratio reads the layer's summed features, depend on
+  it; the rest repeat the chosen layer's.
+
 ## Skip, refuse, force
 
 Every stage from `validate_data.py` on, and `download_data.py scenes`, records its status in a

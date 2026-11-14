@@ -64,6 +64,12 @@ def parse_args() -> argparse.Namespace:
         help="exit code of the job; nonzero fails the check even when every status says ok",
     )
     parser.add_argument("--workers", type=int, default=8, help="threads hashing the slots")
+    parser.add_argument(
+        "--layers",
+        nargs="*",
+        default=[],
+        help="the run's LAYERS: every one but the chosen one must have its stages in layers/",
+    )
     return parser.parse_args()
 
 
@@ -206,6 +212,24 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     )
 
 
+def other_layer_records(run_dir: Path, layers: list[str], records: list[dict]) -> list[dict]:
+    """Return the statuses of the other layers' stages, named after their layer.
+
+    Expected only once the chosen layer's stages are all ok, since run.py runs them after those.
+    """
+    statuses = {record["stage"]: record["status"] for record in records}
+    if not layers or not_current(statuses, "compute_metrics") is not None:
+        return []
+    chosen = json.loads((run_dir / "chosen_layer.json").read_text(encoding="utf-8"))["layer"]
+    return [
+        read_status(run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer / "status", stage)
+        | {"stage": f"{stage} [{layer}]"}
+        for layer in layers
+        if layer != chosen
+        for stage in garimpo_uncertainty.stages.LAYER_STAGES
+    ]
+
+
 def results_failures(results_path: Path) -> list[dict]:
     if not results_path.exists():
         # compute_metrics ok without its table: a copy to Drive caught the run between the two.
@@ -262,6 +286,7 @@ def main() -> None:
         read_status(args.run_dir / "status", stage)
         for stage in garimpo_uncertainty.stages.STAGE_ORDER
     ]
+    records += other_layer_records(args.run_dir, args.layers, records)
 
     print_stage_table(records)
     failed = report_failed_stages(records, args.job_exit_code)
