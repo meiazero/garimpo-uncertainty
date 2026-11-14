@@ -74,10 +74,12 @@ def loader(
     *,
     samples: int | None = None,
     augment: bool = False,
+    generator: torch.Generator | None = None,
 ) -> torch.utils.data.DataLoader:
     """In order, or `samples` cells drawn as back-to-back shuffles of every cell.
 
-    A fixed number of samples gives every training fraction the same updates per epoch.
+    A fixed number of samples gives every training fraction the same updates per epoch. Each pass
+    over a loader draws a seed from `generator`, torch's global one when None.
     """
     dataset = CellDataset(root, cells, normalization, augment=augment)
     return torch.utils.data.DataLoader(
@@ -88,6 +90,7 @@ def loader(
         else torch.utils.data.RandomSampler(dataset, num_samples=samples),
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
+        generator=generator,
     )
 
 

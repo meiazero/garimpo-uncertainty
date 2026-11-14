@@ -98,7 +98,7 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 
 | Where | Field | Meaning |
 |---|---|---|
-| `history.csv`, per epoch | `train_seconds`, `validation_seconds` | Unrounded time of each part of the epoch |
+| `history.csv`, per epoch | `train_seconds`, `validation_seconds`, `train_eval_seconds` | Unrounded time of each part of the epoch |
 | `history.csv`, per epoch | `train_cells_per_second` | Training cells per second, data wait included |
 | `history.csv`, per epoch | `train_data_wait_seconds`, `seconds` | Time spent waiting for training data, and the epoch's total |
 | `history.csv`, per epoch | `updates` | Optimizer steps the epoch made, which is `STEPS_PER_EPOCH` |
@@ -124,3 +124,4 @@ line per epoch with the best `val_dice` so far and the time left. Besides the re
 | `val_loss` | The training loss on every validation cell, in eval mode, each batch weighed by its cells; the Dice term pools each batch, so compare it only at one batch size |
 | `val_dice` | Mean Dice over validation cells with mining; it picks `best_model.pt` |
 | `val_precision`, `val_recall` | Over every validation pixel, mining predicted where the logit is at least 0 |
+| `train_eval_dice`, `train_eval_loss`, `train_eval_precision`, `train_eval_recall` | The same four values on a fixed subset of the training cells, as many as the validation ones, in eval mode and unaugmented. Against the `val_` columns they tell underfitting from overfitting, which `train_loss`, augmented and in training mode, cannot. The subset is drawn with `--subset-seed` and its pass leaves the trained weights unchanged |
