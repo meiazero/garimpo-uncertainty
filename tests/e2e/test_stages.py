@@ -61,6 +61,21 @@ def test_a_cpu_run_on_a_gpu_host_records_no_gpu_peak(monkeypatch: pytest.MonkeyP
     assert garimpo_uncertainty.stages.take_gpu_peak_bytes() is None
 
 
+def test_every_stage_records_the_code_it_ran(finished_run: support.FinishedRun) -> None:
+    """A session may pull between two stages of a run, so each status names its own commit."""
+
+    def head(directory: Path) -> str:
+        command = ["git", "-C", str(directory), "rev-parse", "HEAD"]
+        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
+
+    for name in garimpo_uncertainty.stages.STAGE_ORDER:
+        status = json.loads((finished_run.run_dir / "status" / f"{name}.json").read_text())
+        assert status["root_commit"] == head(support.ROOT), name
+        assert status["compass_commit"] == head(support.ROOT / "compass"), name
+        assert isinstance(status["root_dirty"], bool), name
+        assert isinstance(status["compass_dirty"], bool), name
+
+
 def test_metrics_stage_requires_a_tolerance(
     finished_run: support.FinishedRun, data_root: Path
 ) -> None:

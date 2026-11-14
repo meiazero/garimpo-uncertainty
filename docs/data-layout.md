@@ -80,6 +80,7 @@ ascending:
 | `calibration/quantiles.npz` | `cell_index`, and `quantile`, `lower_term`, `upper_term`, `scale` as `[A, K, N]`, `A` indexing `intervals.ALPHAS`, `K` `intervals.COMBINATIONS`, `N` the test cells; `alpha`; per `[A, K]`, score counts, saturation and `infinite_quantile_fraction`; `density_ratio_calibration`, `density_ratio_test` (cross-fitted odds); per `[A, K]`, `side_ratio` of the `a_` rows and `censor_at`, the quantile from which a COMPASS row is the whole cell |
 | `intervals/intervals.npz` | `cell_index`, and `lower`, `upper`, `quantile` as `[A, K, N]`, plus `alpha` and `layer` |
 | `metrics/cell_metrics.npz` | `cell_index`, `dice`, `boundary_f1`, `boundary_by_rule`, one row per test cell |
+| `layers/<layer>/{scores,calibration,intervals,metrics,status}/` | The same files on each layer of `LAYERS` other than the chosen one ([stages.md](stages.md#the-other-layers)) |
 
 Predictions are `uint8` probabilities at 262,144 bytes per cell: the 2,816 validation, calibration
 and test cells take about 0.74 GB per model. Training cells keep their row in
@@ -98,7 +99,7 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 
 | Where | Field | Meaning |
 |---|---|---|
-| `history.csv`, per epoch | `train_seconds`, `validation_seconds` | Unrounded time of each part of the epoch |
+| `history.csv`, per epoch | `train_seconds`, `validation_seconds`, `train_eval_seconds` | Unrounded time of each part of the epoch |
 | `history.csv`, per epoch | `train_cells_per_second` | Training cells per second, data wait included |
 | `history.csv`, per epoch | `train_data_wait_seconds`, `seconds` | Time spent waiting for training data, and the epoch's total |
 | `history.csv`, per epoch | `updates` | Optimizer steps the epoch made, which is `STEPS_PER_EPOCH` |
@@ -107,6 +108,7 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 | `status/infer.json`, `shapes` | `seconds_per_role` | Unrounded time per role, including writing its probabilities |
 | `status/infer.json`, `shapes` | `peak_gpu_bytes_per_role` | GPU peak per role, `null` if no GPU is in use |
 | `status/<stage>.json` | `seconds`, `peak_rss_gb`, `peak_gpu_gb`, `host`, `slurm_job_id` | The stage's last process, so a resumed `train` reports only its last stretch; `history.csv` keeps every epoch. `peak_rss_gb` is the largest single process, not a sum |
+| `status/<stage>.json` | `root_commit`, `root_dirty`, `compass_commit`, `compass_dirty` | The code the stage's last process ran, and whether it had uncommitted changes. Outside a git clone the commits read `unknown` and the flags `true`. A session may pull between two stages of one run, so each stage records its own |
 
 `pipeline_check.py` prints the data wait of both `history.csv` and `infer.py`.
 
@@ -123,3 +125,4 @@ line per epoch with the best `val_dice` so far and the time left. Besides the re
 | `val_loss` | The training loss on every validation cell, in eval mode, each batch weighed by its cells; the Dice term pools each batch, so compare it only at one batch size |
 | `val_dice` | Mean Dice over validation cells with mining; it picks `best_model.pt` |
 | `val_precision`, `val_recall` | Over every validation pixel, mining predicted where the logit is at least 0 |
+| `train_eval_dice`, `train_eval_loss`, `train_eval_precision`, `train_eval_recall` | The same four values on a fixed subset of the training cells, as many as the validation ones, in eval mode and unaugmented. Against the `val_` columns they tell underfitting from overfitting, which `train_loss`, augmented and in training mode, cannot. The subset is drawn with `--subset-seed` and its pass leaves the trained weights unchanged |

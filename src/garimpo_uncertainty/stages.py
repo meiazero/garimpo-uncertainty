@@ -8,10 +8,11 @@ import logging
 import os
 import resource
 import socket
+import subprocess
 import sys
 import time
 import traceback
-from argparse import Namespace
+from argparse import ArgumentParser, Namespace
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -22,6 +23,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # `report` names an output: another job's path for the same selection must redo it, not refuse.
+# `layer_dir` holds the status itself, so no fingerprint is ever compared across two of them.
 IGNORED_ARGUMENTS = {
     "force",
     "device",
@@ -30,8 +32,12 @@ IGNORED_ARGUMENTS = {
     "workers",
     "lightgbm_jobs",
     "report",
+    "layer_dir",
 }
 MISSING_INPUT = "missing"
+# The stages that depend on the COMPASS-J layer; scripts/run.py also runs them on each other layer.
+LAYER_STAGES = ("compass_scores", "calibrate", "generate_intervals", "compute_metrics")
+LAYERS_DIR = "layers"
 # The order scripts/run.py runs a model's stages in, after validate_data; --force-from names one.
 STAGE_ORDER = (
     "train",
@@ -45,6 +51,16 @@ STAGE_ORDER = (
     "generate_intervals",
     "compute_metrics",
 )
+
+
+def add_layer_dir(parser: ArgumentParser) -> None:
+    """Add --layer-dir to a stage of LAYER_STAGES; the caller sets it to --run-dir when absent."""
+    parser.add_argument(
+        "--layer-dir",
+        type=Path,
+        help="where this layer's scores, calibration, intervals, metrics and status go, for a "
+        "layer other than the chosen one (Cheung et al., 2026, Table 4); default: --run-dir",
+    )
 
 
 def log_to_stdout(log_file: Path | None = None) -> None:
@@ -140,11 +156,33 @@ def write_arrays(path: Path, **arrays: np.ndarray) -> None:
         np.savez(file, **arrays)
 
 
+def _git(directory: str, *args: str) -> str:
+    try:
+        command = ["git", "-C", directory, *args]
+        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def code_versions() -> dict[str, str | bool]:
+    """Return the commits of the package and the submodule, as the job actually saw them."""
+    return {
+        "root_commit": _git(".", "rev-parse", "HEAD"),
+        "root_dirty": bool(
+            _git(".", "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")
+        ),
+        "compass_commit": _git("compass", "rev-parse", "HEAD"),
+        "compass_dirty": bool(_git("compass", "status", "--porcelain")),
+    }
+
+
 def _identity(name: str) -> dict:
+    # The code each stage ran, since a session may pull between stages of one run.
     return {
         "stage": name,
         "host": socket.gethostname(),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        **code_versions(),
     }
 
 
@@ -192,11 +230,16 @@ def _mark_later_stale(status_dir: Path, name: str) -> None:
 
     Done before the work, so a job that dies after it leaves no later stage reading ok, also in a
     copy to Drive. The completed fingerprint stays: a later stage whose inputs did not change skips.
+    A stage before the layer's ones also marks every other layer's stages, which read its files.
     """
     if name not in STAGE_ORDER:
         return
-    for later in STAGE_ORDER[STAGE_ORDER.index(name) + 1 :]:
-        path = status_dir / f"{later}.json"
+    later = STAGE_ORDER[STAGE_ORDER.index(name) + 1 :]
+    status_dirs = [status_dir]
+    if STAGE_ORDER.index(name) < STAGE_ORDER.index(LAYER_STAGES[0]):
+        status_dirs += sorted((status_dir.parent / LAYERS_DIR).glob("*/status"))
+    for directory, stage in ((d, s) for d in status_dirs for s in later):
+        path = directory / f"{stage}.json"
         record = json.loads(path.read_text()) if path.exists() else {}
         if record.get("status") == "ok":
             write_json(path, record | {"status": "stale", "error": f"{name} ran again after it"})

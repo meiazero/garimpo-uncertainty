@@ -218,6 +218,28 @@ class Stages:
 
     def calibrated(self, layer: str) -> list[tuple[str, list[str]]]:
         """Return the stages after the layer choice, each on the chosen layer."""
+        endpoint = script(
+            "verify_monotonicity", *self.sweep, "--use", "endpoint", "--layers", layer
+        )
+        return [("endpoint_monotonicity", endpoint), *self.on_layer(layer)]
+
+    def other_layers(self, chosen: str) -> list[tuple[str, list[str]]]:
+        """Return the layer's stages on every other layer of LAYERS, each into layers/<layer>/.
+
+        Cheung et al. (2026), Table 4, compare the interval width across layers. The chosen layer's
+        files stay where they were, so nothing reading a run's results changes.
+        """
+        run_dir = self.config["RUN_DIR"]
+        layers_dir = garimpo_uncertainty.stages.LAYERS_DIR
+        return [
+            stage
+            for layer in self.config["LAYERS"]
+            if layer != chosen
+            for stage in self.on_layer(layer, "--layer-dir", f"{run_dir}/{layers_dir}/{layer}")
+        ]
+
+    def on_layer(self, layer: str, *where: str) -> list[tuple[str, list[str]]]:
+        """Return the stages of LAYER_STAGES on one layer; `where` sends their files elsewhere."""
         scores = [
             *self.common,
             "--layer",
@@ -241,15 +263,12 @@ class Stages:
             *self.flags("--boundary-tolerance-px", "BOUNDARY_TOLERANCE_PX"),
             *self.flags("--seed", "SEED"),
         ]
+        intervals = [*self.common, "--layer", layer]
         return [
-            (
-                "endpoint_monotonicity",
-                script("verify_monotonicity", *self.sweep, "--use", "endpoint", "--layers", layer),
-            ),
-            ("compass_scores", script("compass_scores", *scores)),
-            ("calibrate", script("calibrate", *calibrate)),
-            ("generate_intervals", script("generate_intervals", *self.common, "--layer", layer)),
-            ("compute_metrics", script("compute_metrics", *metrics)),
+            ("compass_scores", script("compass_scores", *scores, *where)),
+            ("calibrate", script("calibrate", *calibrate, *where)),
+            ("generate_intervals", script("generate_intervals", *intervals, *where)),
+            ("compute_metrics", script("compute_metrics", *metrics, *where)),
         ]
 
 
@@ -265,7 +284,10 @@ def run_in_order(log: Log, commands: list[tuple[str, list[str]]], force_from: st
 
 
 def run_stages(log: Log, stages: Stages, force_from: str | None) -> int:
-    """Run the stages up to the layer choice, then the others on the chosen layer."""
+    """Run the stages up to the layer choice, the others on the chosen layer, then other layers.
+
+    The chosen layer's results come first, so a session lost during the other layers keeps them.
+    """
     if code := run_in_order(log, stages.diagnostics(), force_from):
         return code
     chosen = Path(stages.config["RUN_DIR"]) / "chosen_layer.json"
@@ -275,7 +297,9 @@ def run_stages(log: Log, stages: Stages, force_from: str | None) -> int:
         log.write(f"Could not read the chosen layer from {chosen}: {error!r}")
         return 1
     log.write(f"chosen layer: {layer}")
-    return run_in_order(log, stages.calibrated(layer), force_from)
+    return run_in_order(log, stages.calibrated(layer), force_from) or run_in_order(
+        log, stages.other_layers(layer), force_from
+    )
 
 
 def commit() -> str:
@@ -336,6 +360,8 @@ def main() -> None:
             str(config["SUBSET_SEED"]),
             "--job-exit-code",
             str(code),
+            "--layers",
+            *config["LAYERS"],
         ),
     )
     # A stage's exit code wins; a failed check alone still fails the job.
