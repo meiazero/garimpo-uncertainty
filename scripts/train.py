@@ -210,7 +210,7 @@ def new_metadata(
             cells, args.train_fraction, args.subset_seed
         ),
         "arguments": {k: str(v) for k, v in vars(args).items()},
-        **garimpo_uncertainty.checkpoints.code_versions(),
+        **garimpo_uncertainty.stages.code_versions(),
     }
 
 

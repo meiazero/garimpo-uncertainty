@@ -8,6 +8,7 @@ import logging
 import os
 import resource
 import socket
+import subprocess
 import sys
 import time
 import traceback
@@ -140,11 +141,33 @@ def write_arrays(path: Path, **arrays: np.ndarray) -> None:
         np.savez(file, **arrays)
 
 
+def _git(directory: str, *args: str) -> str:
+    try:
+        command = ["git", "-C", directory, *args]
+        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def code_versions() -> dict[str, str | bool]:
+    """Return the commits of the package and the submodule, as the job actually saw them."""
+    return {
+        "root_commit": _git(".", "rev-parse", "HEAD"),
+        "root_dirty": bool(
+            _git(".", "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")
+        ),
+        "compass_commit": _git("compass", "rev-parse", "HEAD"),
+        "compass_dirty": bool(_git("compass", "status", "--porcelain")),
+    }
+
+
 def _identity(name: str) -> dict:
+    # The code each stage ran, since a session may pull between stages of one run.
     return {
         "stage": name,
         "host": socket.gethostname(),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        **code_versions(),
     }
 
 

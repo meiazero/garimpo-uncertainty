@@ -2,7 +2,6 @@
 
 import hashlib
 import logging
-import subprocess
 from pathlib import Path
 
 import pandas as pd
@@ -15,26 +14,6 @@ import garimpo_uncertainty.stages
 logger = logging.getLogger(__name__)
 
 
-def _git(directory: str, *args: str) -> str:
-    try:
-        command = ["git", "-C", directory, *args]
-        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-
-
-def code_versions() -> dict[str, str | bool]:
-    """Return the commits of the package and the submodule, as the job actually saw them."""
-    return {
-        "root_commit": _git(".", "rev-parse", "HEAD"),
-        "root_dirty": bool(
-            _git(".", "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")
-        ),
-        "compass_commit": _git("compass", "rev-parse", "HEAD"),
-        "compass_dirty": bool(_git("compass", "status", "--porcelain")),
-    }
-
-
 def file_sha256(path: Path) -> str:
     with path.open("rb") as file:
         return hashlib.file_digest(file, "sha256").hexdigest()
@@ -42,7 +21,7 @@ def file_sha256(path: Path) -> str:
 
 def warn_on_code_change(metadata: dict) -> None:
     """Warn, not fail: adjusting code between stages is expected while debugging the pilot."""
-    current = code_versions()
+    current = garimpo_uncertainty.stages.code_versions()
     for key in ("root_commit", "compass_commit"):
         if metadata[key] != current[key]:
             logger.warning(
