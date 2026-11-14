@@ -9,9 +9,10 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 2. Each run reads every value from its config in `configs/full/` ([below](#the-run-configs)). To
    change one, edit the file, then commit and push it from your machine: each session starts from a
    fresh clone, which cannot push.
-3. On a GPU runtime, choose `SCALE` `full` in section 3 of `colab.ipynb` and run Runtime > Run all.
-   Section 5 trains the four models one after another ([below](#the-run-cells)). Each run chooses the layer from the validation role
-   and continues; `chosen_layer.json` records why.
+3. On a GPU runtime, choose `SCALE` `full` in section 3 of `notebooks/01_run_experiment.ipynb` and
+   run Runtime > Run all. Section 5 trains the four models one after another
+   ([below](#the-run-cells)). Each run chooses the layer from the validation role and continues;
+   `chosen_layer.json` records why.
 4. If the session ends first, run Runtime > Run all again in a new session. `SCALE` at `auto` finds
    the full runs' `last.pt` restored from Drive and continues them: finished stages skip and
    training resumes from its last checkpoint. The cell prints which runs it found.

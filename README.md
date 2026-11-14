@@ -19,10 +19,11 @@ width.
 
 ## Install
 
-The experiment runs on Google Colab through `colab.ipynb`, which explains each of its cells.
+The experiment runs on Google Colab through `notebooks/01_run_experiment.ipynb`, which explains
+each of its cells.
 
 1. Open the notebook from GitHub, in every session, at
-   <https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/colab.ipynb>.
+   <https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/notebooks/01_run_experiment.ipynb>.
    A copy uploaded or saved to Drive keeps the cells of the day it was made.
 2. Choose a GPU runtime, then run Runtime > Run all. The setup mounts Drive, clones the code, runs
    `uv sync`, and restores the data and earlier runs from Drive.
@@ -56,7 +57,7 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 
 | Document | Covers |
 |---|---|
-| [docs/colab.md](docs/colab.md) | Why the cells of `colab.ipynb` are written as they are: the Drive archive, one command per cell, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
+| [docs/colab.md](docs/colab.md) | Why the cells of the run notebook are written as they are: the Drive archive, one command per cell, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
 | [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `--force-from` |
 | [docs/full-run.md](docs/full-run.md) | The full run step by step, the run configs, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, their sources, and where each is set |

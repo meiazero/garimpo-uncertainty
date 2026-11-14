@@ -1,6 +1,7 @@
 # Colab sessions
 
-Read before changing a cell of `colab.ipynb`, or when a cell behaves unexpectedly.
+Read before changing a cell of `notebooks/01_run_experiment.ipynb`, or when a cell behaves
+unexpectedly.
 
 ## The store is an archive in Drive
 
