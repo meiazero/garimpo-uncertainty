@@ -42,8 +42,8 @@ the pilot passes, and later sessions continue the full runs on their own:
 | 2. Data | Unpacks the data and restores the earlier runs and logs |
 | 3. Run configs | Chooses the scale with `SCALE` and shows the values of every run |
 | 4. Tests | Runs the suite on the GPU (optional) |
-| 5. Training | The four models: on 1% of the training tiles for the pilot, on 100% for the full runs |
-| 6. Evaluation | Merges the four runs' tables, into `outputs/` for the full runs |
+| 5. Runs | The four models, each trained and taken through every stage: on 1% of the training tiles for the pilot, on 100% for the full runs |
+| 6. Merge | Merges the four runs' tables, into `outputs/` for the full runs |
 | 7. Release | Writes the pending files to Drive and releases the GPU |
 
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
