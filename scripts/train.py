@@ -339,7 +339,10 @@ def evaluate_epoch(state: TrainingState, loaders: Loaders, device: str) -> dict:
     validated = validate(state.model, loaders.validation, device, state.loss_fn, "val")
     validation_end = time.monotonic()
     validation_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
-    scored = validate(state.model, loaders.train_eval, device, state.loss_fn, "train_eval")
+    # Each pass over a loader draws a seed from torch's CPU generator. Restoring it afterwards keeps
+    # the training's random stream, and with it the trained weights, as they are without this pass.
+    with torch.random.fork_rng(devices=[]):
+        scored = validate(state.model, loaders.train_eval, device, state.loss_fn, "train_eval")
     return {
         **validated,
         **scored,
@@ -433,9 +436,8 @@ def build_loaders(
     """Return the augmented training loader and the two eval-mode ones."""
     batch_size, workers = args.batch_size, args.num_workers
     # ponytail: as many training cells as validation ones, so the pass costs what validation does;
-    # a TRAIN_EVAL_CELLS config value is the upgrade if a run needs another size. Picked by pandas
-    # and passed over with a generator of its own, the pass leaves torch's global RNG, and with it
-    # the trained weights, exactly as without it.
+    # a TRAIN_EVAL_CELLS config value is the upgrade if a run needs another size. pandas draws them,
+    # so torch's random stream is left alone.
     train_eval_cells = train_cells.sample(
         n=min(len(validation_cells), len(train_cells)), random_state=args.subset_seed
     ).sort_index()
@@ -453,12 +455,7 @@ def build_loaders(
             root, validation_cells, normalization, batch_size, workers
         ),
         train_eval=garimpo_uncertainty.cell_dataset.loader(
-            root,
-            train_eval_cells,
-            normalization,
-            batch_size,
-            workers,
-            generator=torch.Generator().manual_seed(args.seed),
+            root, train_eval_cells, normalization, batch_size, workers
         ),
     )
 
