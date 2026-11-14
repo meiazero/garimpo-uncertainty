@@ -164,4 +164,4 @@ ban-relative-imports = "all"
 # The output of a script is its purpose.
 "scripts/*" = ["T201"]
 # A Colab form line cannot wrap, and the notebook's prints are its output.
-"colab.ipynb" = ["E501", "T201"]
+"notebooks/*.ipynb" = ["E501", "T201"]

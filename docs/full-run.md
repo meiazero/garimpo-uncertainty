@@ -9,9 +9,10 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 2. Each run reads every value from its config in `configs/full/` ([below](#the-run-configs)). To
    change one, edit the file, then commit and push it from your machine: each session starts from a
    fresh clone, which cannot push.
-3. On a GPU runtime, choose `SCALE` `full` in section 3 of `colab.ipynb` and run Runtime > Run all.
-   Section 5 trains the four models one after another ([below](#the-run-cells)). Each run chooses the layer from the validation role
-   and continues; `chosen_layer.json` records why.
+3. On a GPU runtime, choose `SCALE` `full` in section 3 of `notebooks/01_run_experiment.ipynb` and
+   run Runtime > Run all. Section 5 runs the four models one after another
+   ([below](#the-run-cells)). Each run chooses the layer from the validation role and continues;
+   `chosen_layer.json` records why.
 4. If the session ends first, run Runtime > Run all again in a new session. `SCALE` at `auto` finds
    the full runs' `last.pt` restored from Drive and continues them: finished stages skip and
    training resumes from its last checkpoint. The cell prints which runs it found.
@@ -73,7 +74,7 @@ About the download:
 
 Section 5 of the notebook has one cell per model, run in order:
 
-1. "Train <model>" runs `uv run --no-sync python scripts/run.py configs/<scale>/<model>.json`,
+1. "Run <model>" runs `uv run --no-sync python scripts/run.py configs/<scale>/<model>.json`,
    with `<scale>` `full` for the full runs. `--num-workers` defaults to the runtime's CPUs. The
    runner prints each stage's command, lines, exit code and duration with the UTC time, and
    appends them to `outputs/logs/<scale>-<model>.log`.
@@ -84,8 +85,8 @@ Section 5 of the notebook has one cell per model, run in order:
    the values on `main`.
 3. "Print the verdicts" prints one line per model.
 
-The copy of `runs/` and the logs to Drive every 30 minutes starts before the training and stops in
-section 7, which saves the runs and logs once more and releases the GPU.
+The copy of `runs/` and the logs to Drive every 30 minutes starts at the top of section 5 and stops
+in section 7, which saves the runs and logs once more and releases the GPU.
 
 With the copy every 30 minutes, a session that ends mid-run keeps the finished stages and the
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after

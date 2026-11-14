@@ -51,8 +51,8 @@ uv run ruff format --check . && uv run ruff check .
 
 ## On a GPU
 
-Run the suite on a Colab GPU runtime before the first paid run, with section 4 of `colab.ipynb`.
-Its cell runs:
+Run the suite on a Colab GPU runtime before the first paid run, with section 4 of
+`notebooks/01_run_experiment.ipynb`. Its cell runs:
 
 ```python
 !GARIMPO_TEST_DEVICE=cuda uv run --no-sync pytest -q

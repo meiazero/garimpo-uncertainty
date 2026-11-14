@@ -26,7 +26,7 @@ import garimpo_uncertainty.run_config
 import garimpo_uncertainty.stages
 
 STAGE_ORDER = garimpo_uncertainty.stages.STAGE_ORDER
-# colab.ipynb's print_verdicts splits the log on this marker to read the last attempt only.
+# The run notebook's print_verdicts splits the log on this marker to read the last attempt only.
 ATTEMPT = "=== attempt started "
 
 

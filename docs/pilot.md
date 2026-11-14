@@ -17,8 +17,9 @@ fails on any other difference. Its runs and result tables go to `runs/pilot/`, n
 
 1. Put the data archive in Drive as `MyDrive/garimpo/data.tar.zst`
    ([full-run.md](full-run.md#download-the-store)). This is needed once.
-2. On a GPU runtime, run Runtime > Run all in `colab.ipynb`. Section 3's `SCALE`, at `auto`, runs
-   the pilot while no full run has a checkpoint; choose `pilot` to run it after that.
+2. On a GPU runtime, run Runtime > Run all in `notebooks/01_run_experiment.ipynb`. Section 3's
+   `SCALE`, at `auto`, runs the pilot while no full run has a checkpoint; choose `pilot` to run it
+   after that.
 3. Read the verdicts section 5 prints, then the pipeline check at the end of each model's log,
    `outputs/logs/pilot-<model>.log`, also copied to `logs/` in Drive.
 
