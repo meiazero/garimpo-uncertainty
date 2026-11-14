@@ -68,7 +68,8 @@ status file:
 A stage skips its work when its outputs exist from the same fingerprint, stops with status
 `refused` when they exist from another one, and redoes the work with `--force`. The fingerprint
 holds the arguments that change a result (not `--force`, `--device`, `--num-workers`,
-`--batch-size` after training, `--workers`, `--lightgbm-jobs` or `--report`) and each input file's
+`--batch-size` after training, `--workers`, `--lightgbm-jobs`, `--report` or `--layer-dir`, which
+holds the status itself) and each input file's
 path, size and modification time. A refusal keeps the last completed fingerprint, so it never turns
 into a rerun on the next attempt.
 
@@ -91,9 +92,10 @@ the input is back a finished stage skips again.
 | `interrupted` | Ctrl+C reached the stage's work (`KeyboardInterrupt`); `error` is "Ctrl+C; rerun to resume" and `seconds` the time until then | fails, like `failed` |
 | `not_run` | no status file exists; printed by the check, never written | fails |
 
-`pipeline_check.py` fails on any status other than `ok` in `validate_data` or a stage of
-`STAGE_ORDER`, and prints the first of them that is `failed`, `refused`, `running`, `interrupted`
-or `stale`.
+`pipeline_check.py` fails on any status other than `ok` in `validate_data`, a stage of
+`STAGE_ORDER` or, given `--layers`, a stage of another layer, and prints the first of them that is
+`failed`, `refused`, `running`, `interrupted` or `stale`. It also checks each other layer's
+`results.csv` as it checks the chosen layer's.
 `download_scenes` is left out, since the download is shared by every fraction and
 `validate_data` decides whether this run's tiles are there.
 

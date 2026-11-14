@@ -17,6 +17,9 @@ import garimpo_uncertainty.intervals
 import garimpo_uncertainty.stages
 import garimpo_uncertainty.validation
 
+# A failure found by the check itself, with no stage status of its own.
+NOT_OK = {"status": "unreadable"}
+
 
 def read_status(status_dir: Path, stage: str) -> dict:
     path = status_dir / f"{stage}.json"
@@ -77,10 +80,11 @@ def print_stage_table(records: list[dict]) -> None:
     print("=" * 78)
     print("PIPELINE CHECK: debugging report of the run, not a result about any method")
     print("=" * 78)
-    print(f"{'stage':<22}{'status':<10}{'seconds':>9}{'rss GB':>9}{'gpu GB':>9}  job")
+    width = max(len(record["stage"]) for record in records) + 2
+    print(f"{'stage':<{width}}{'status':<10}{'seconds':>9}{'rss GB':>9}{'gpu GB':>9}  job")
     for record in records:
         print(
-            f"{record['stage']:<22}{record['status']:<10}{record.get('seconds', ''):>9}"
+            f"{record['stage']:<{width}}{record['status']:<10}{record.get('seconds', ''):>9}"
             f"{record.get('peak_rss_gb', ''):>9}{record.get('peak_gpu_gb', ''):>9}"
             f"  {record.get('slurm_job_id') or ''}"
         )
@@ -212,20 +216,29 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     )
 
 
-def other_layer_records(run_dir: Path, layers: list[str], records: list[dict]) -> list[dict]:
-    """Return the statuses of the other layers' stages, named after their layer.
+def other_layers(run_dir: Path, layers: list[str], records: list[dict]) -> list[str] | None:
+    """Return the layers of LAYERS other than the chosen one; None when the choice is unreadable.
 
-    Expected only once the chosen layer's stages are all ok, since run.py runs them after those.
+    Empty until the chosen layer's stages are all ok, since run.py runs the others after those.
     """
     statuses = {record["stage"]: record["status"] for record in records}
     if not layers or not_current(statuses, "compute_metrics") is not None:
         return []
-    chosen = json.loads((run_dir / "chosen_layer.json").read_text(encoding="utf-8"))["layer"]
+    try:
+        chosen = json.loads((run_dir / "chosen_layer.json").read_text(encoding="utf-8"))["layer"]
+    except (OSError, ValueError, KeyError):
+        return None
+    return [layer for layer in layers if layer != chosen]
+
+
+def other_layer_records(run_dir: Path, others: list[str] | None) -> list[dict]:
+    """Return the statuses of the other layers' stages, each named after its layer."""
+    if others is None:
+        return [{"stage": f"chosen layer unreadable: {run_dir / 'chosen_layer.json'}"} | NOT_OK]
     return [
         read_status(run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer / "status", stage)
         | {"stage": f"{stage} [{layer}]"}
-        for layer in layers
-        if layer != chosen
+        for layer in others
         for stage in garimpo_uncertainty.stages.LAYER_STAGES
     ]
 
@@ -249,6 +262,24 @@ def results_failures(results_path: Path) -> list[dict]:
     return failures
 
 
+def results_tables_failures(
+    run_dir: Path, statuses: dict[str, str], others: list[str] | None
+) -> list[dict]:
+    """Check the results table of the chosen layer, then of each other layer, while current.
+
+    A stale results.csv would add failures of an earlier attempt to a verdict already FAIL.
+    """
+    failed = []
+    if not_current(statuses, "compute_metrics") is None:
+        failed += results_failures(run_dir / "metrics" / "results.csv")
+    for layer in others or []:
+        if statuses[f"compute_metrics [{layer}]"] == "ok":
+            layer_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer
+            found = results_failures(layer_dir / "metrics" / "results.csv")
+            failed += [{"stage": f"{failure['stage']} [{layer}]"} for failure in found]
+    return failed
+
+
 def report_slots(
     root: Path, tiles: pd.DataFrame | None, store_problems: list[str], workers: int
 ) -> list[str]:
@@ -270,13 +301,8 @@ def exit_with_verdict(failed: list[dict]) -> None:
     print("=" * 78)
 
 
-def main() -> None:
-    args = parse_args()
-    root = garimpo_uncertainty.data.data_root()
-    split = pd.read_csv(args.split)
-    tile_ids = garimpo_uncertainty.data.select_tiles(
-        split, args.train_fraction, args.subset_seed
-    ).tile_id.tolist()
+def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list[str] | None]:
+    """Return every status the run needs, in order, and the other layers they cover."""
     selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
     records = [
         read_status(root / "status", "download_scenes"),
@@ -286,16 +312,25 @@ def main() -> None:
         read_status(args.run_dir / "status", stage)
         for stage in garimpo_uncertainty.stages.STAGE_ORDER
     ]
-    records += other_layer_records(args.run_dir, args.layers, records)
+    others = other_layers(args.run_dir, args.layers, records)
+    return records + other_layer_records(args.run_dir, others), others
+
+
+def main() -> None:
+    args = parse_args()
+    root = garimpo_uncertainty.data.data_root()
+    split = pd.read_csv(args.split)
+    tile_ids = garimpo_uncertainty.data.select_tiles(
+        split, args.train_fraction, args.subset_seed
+    ).tile_id.tolist()
+    records, others = read_records(args, root)
 
     print_stage_table(records)
     failed = report_failed_stages(records, args.job_exit_code)
     store_problems, tiles = report_store(root, split, tile_ids)
     statuses = {record["stage"]: record["status"] for record in records}
     print_run_tables(args.run_dir, statuses)
-    # A stale results.csv would add failures of an earlier attempt to a verdict already FAIL.
-    if not_current(statuses, "compute_metrics") is None:
-        failed += results_failures(args.run_dir / "metrics" / "results.csv")
+    failed += results_tables_failures(args.run_dir, statuses, others)
     store_problems = report_slots(root, tiles, store_problems, args.workers)
     failed += [{"stage": problem} for problem in store_problems]
     exit_with_verdict(failed)

@@ -108,7 +108,7 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 | `status/infer.json`, `shapes` | `seconds_per_role` | Unrounded time per role, including writing its probabilities |
 | `status/infer.json`, `shapes` | `peak_gpu_bytes_per_role` | GPU peak per role, `null` if no GPU is in use |
 | `status/<stage>.json` | `seconds`, `peak_rss_gb`, `peak_gpu_gb`, `host`, `slurm_job_id` | The stage's last process, so a resumed `train` reports only its last stretch; `history.csv` keeps every epoch. `peak_rss_gb` is the largest single process, not a sum |
-| `status/<stage>.json` | `root_commit`, `root_dirty`, `compass_commit`, `compass_dirty` | The code the stage's last process ran, and whether it had uncommitted changes; `unknown` outside a git clone. A session may pull between two stages of one run, so each stage records its own |
+| `status/<stage>.json` | `root_commit`, `root_dirty`, `compass_commit`, `compass_dirty` | The code the stage's last process ran, and whether it had uncommitted changes. Outside a git clone the commits read `unknown` and the flags `true`. A session may pull between two stages of one run, so each stage records its own |
 
 `pipeline_check.py` prints the data wait of both `history.csv` and `infer.py`.
 
