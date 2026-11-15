@@ -89,7 +89,7 @@ def test_moved_sidecar_without_store_still_reaches_a_verdict(damaged: DamagedRun
     sidecar = next(p for p in sidecars if json.loads(p.read_text())["status"] == "ok")
     record = json.loads(sidecar.read_text())
     sidecar.write_text(json.dumps(record | {"tile_index": record["tile_index"] + 1}))
-    assert_report_fails(damaged, "sidecars_moved")
+    assert_report_fails(damaged, "sidecars_refused: tile_index in the sidecars")
 
 
 def test_nothing_vouches_for_the_tiles_without_store_and_sidecars(damaged: DamagedRun) -> None:

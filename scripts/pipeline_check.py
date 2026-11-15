@@ -124,9 +124,9 @@ def report_store(
         try:
             tiles = garimpo_uncertainty.data.tile_records(root, split, tile_ids)
         except ValueError as error:
-            # Without the store nothing read the sidecars before, so their refusal must reach the
-            # verdict instead of a traceback.
-            return [*store_problems, f"sidecars_moved: {error}"], None
+            # Without the store nothing read the sidecars before, so a moved or unreadable one must
+            # reach the verdict instead of a traceback.
+            return [*store_problems, f"sidecars_refused: {error}"], None
         print("\n--- scenes of this run's tiles by scale, role and status")
         print(
             tiles.groupby(["scale", "role", "status"]).size().rename("tiles").to_frame().to_string()
