@@ -33,7 +33,8 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("compass_j_svm", "own_region"),
 )
 # Mondrian calibration by predicted mining, the stratum known when an interval is used: one quantile
-# for cells predicted empty, one for the rest. conformal_simple here is classic Mondrian CP.
+# for cells predicted empty, one for the rest. Each is the pooled group quantile, without classic
+# Mondrian CP's finite-sample correction, so a small stratum can undercover (Dunn et al., 2022).
 MONDRIAN_METHODS = (
     "conformal_simple",
     "conformal_local",
