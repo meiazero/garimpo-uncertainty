@@ -64,6 +64,8 @@ SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
 DENSITY_RATIO_FOLDS = 5  # group folds of the cross-fitted domain classifier
 ALPHAS = (0.05, 0.1, 0.15)  # Cheung et al. (2026), Table 1
 COMPASS_METHODS = ("compass_l", "compass_j_pca", "compass_j_svm")  # the rows of scores/scores.npz
+# The rows whose intervals depend on the COMPASS-J layer (Cheung et al., 2026, Table 4).
+LAYER_METHODS = ("compass_j_pca", "compass_j_svm", "a_compass_j_pca", "a_compass_j_svm")
 # Upstream's values, also in Cheung et al. (2026), Appendix E.
 CQR_PARAMETERS = {
     "learning_rate": 0.1,

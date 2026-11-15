@@ -306,6 +306,47 @@ def test_merge_records_each_runs_chosen_layer(
     assert (chosen.min_fraction_ascending == 0).all()
 
 
+def test_merge_keeps_the_compass_j_rows_of_every_layer(
+    merged_results: pd.DataFrame, convnet_run: support.FinishedRun, unet_run: support.FinishedRun
+) -> None:
+    """Each run's two layers, the chosen one's rows equal to its results.csv."""
+    by_layer = pd.read_csv(support.ARTIFACTS / "merged" / "layer_results.csv")
+    methods = garimpo_uncertainty.intervals.LAYER_METHODS
+    for run in (convnet_run, unet_run):
+        variant = garimpo_uncertainty.data.read_run_metadata(run.run_dir)["variant"]
+        rows = by_layer[by_layer.model == variant]
+        assert set(rows.layer) == set(support.RUN_ORDER[run.arch][1:])
+        assert set(rows.method) == set(methods)
+        chosen = pd.read_csv(run.run_dir / "metrics" / "results.csv")
+        pd.testing.assert_frame_equal(
+            rows[rows.layer == run.layer].reset_index(drop=True),
+            chosen[chosen.method.isin(methods)].reset_index(drop=True),
+        )
+
+
+def test_merge_refuses_a_run_whose_other_layer_failed(
+    private_convnet: support.FinishedRun, unet_run: support.FinishedRun, data_root: Path
+) -> None:
+    """layer_results.csv reads every layer, so a failed one must stop the merge as the main ones."""
+    (other,) = set(support.RUN_ORDER["convnet"][1:]) - {private_convnet.layer}
+    status = private_convnet.run_dir / "layers" / other / "status" / "compute_metrics.json"
+    status.write_text(json.dumps({"stage": "compute_metrics", "status": "failed", "error": "x"}))
+    out = support.ARTIFACTS / "merged_layer_failed"
+    refused = support.run(
+        "merge_results.py",
+        "--runs",
+        str(private_convnet.run_dir),
+        str(unet_run.run_dir),
+        "--out",
+        str(out),
+        data_root=data_root,
+        check=False,
+    )
+    assert refused.returncode != 0
+    assert f"compute_metrics [{other}] is failed" in refused.stderr
+    assert not out.exists()
+
+
 def test_merge_refuses_two_runs_of_one_variant(
     convnet_run: support.FinishedRun, saturated_run: Path, data_root: Path
 ) -> None:

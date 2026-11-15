@@ -25,6 +25,7 @@ Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Ama
 | Tiles and cells per training fraction | `scripts/download_data.py lists` | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
 | Data checks, scenes missing, clouds and nodata per role, per fraction | `scripts/validate_data.py` | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
 | PICP, MPIW, interval score, MAE, bias, relative error, Dice, boundary F1, with 95% group bootstrap, one row per model x fraction x alpha (0.05, 0.10, 0.15, as in Cheung et al. 2026, Table 1) x method x calibration | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/results.csv` |
+| PICP and MPIW of the COMPASS-J rows on every layer of `LAYERS`, the chosen one included, to compare widths across layers (Cheung et al. 2026, Table 4) | `scripts/compute_metrics.py` with `--layer-dir`, `merge_results.py` | `outputs/layer_results.csv` |
 | Paired width differences between methods | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/width_comparisons.csv` |
 | Paired coverage differences between methods and calibrations (Q3) | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/coverage_comparisons.csv` |
 | Spearman of area error with Dice and boundary F1, per model (Q1) | `scripts/compute_metrics.py`, `merge_results.py` | `outputs/q1_spearman.csv` |
