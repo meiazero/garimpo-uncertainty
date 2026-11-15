@@ -53,7 +53,10 @@ def stage_statuses(run_dir: Path) -> dict[str, str]:
     # Without a choice there is no list of the other layers to check.
     if statuses["choose_layer"] != "ok":
         return statuses
-    others = list(layer_dirs(run_dir).items())[1:]
+    try:
+        others = list(layer_dirs(run_dir).items())[1:]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return statuses | {"chosen_layer.json": f"unreadable ({type(error).__name__}: {error})"}
     return statuses | {
         f"{stage} [{layer}]": read_status(layer_dir / "status", stage)
         for layer, layer_dir in others
@@ -67,8 +70,15 @@ def layer_results(run_dir: Path) -> pd.DataFrame:
         for layer_dir in layer_dirs(run_dir).values()
     ]
     table = pd.concat(frames, ignore_index=True)
-    # The other methods' rows repeat unchanged in every layer's results.csv.
-    return table[table.method.isin(garimpo_uncertainty.intervals.LAYER_METHODS)]
+    return table[garimpo_uncertainty.intervals.depends_on_layer(table)]
+
+
+def merged_table(runs: list[Path], identities: list[dict], relative: str) -> pd.DataFrame:
+    frames = []
+    for run_dir, identity in zip(runs, identities, strict=True):
+        frame = read_table(run_dir / relative)
+        frames.append(frame.assign(**{k: v for k, v in identity.items() if k not in frame}))
+    return pd.concat(frames, ignore_index=True)
 
 
 def main() -> None:
@@ -96,17 +106,17 @@ def main() -> None:
             + "\n".join(not_ok)
         )
 
+    # Read everything first: a table missing under an ok status must not leave a partial merge.
+    tables = {
+        name: merged_table(args.runs, identities, relative) for name, relative in TABLES.items()
+    }
+    tables["layer_results.csv"] = pd.concat(
+        [layer_results(run_dir) for run_dir in args.runs], ignore_index=True
+    )
     args.out.mkdir(parents=True, exist_ok=True)
-    for name, relative in TABLES.items():
-        frames = []
-        for run_dir, identity in zip(args.runs, identities, strict=True):
-            frame = read_table(run_dir / relative)
-            frames.append(frame.assign(**{k: v for k, v in identity.items() if k not in frame}))
-        pd.concat(frames, ignore_index=True).to_csv(args.out / name, index=False)
-        print(f"{args.out / name}: {sum(len(f) for f in frames)} rows")
-    by_layer = pd.concat([layer_results(run_dir) for run_dir in args.runs], ignore_index=True)
-    by_layer.to_csv(args.out / "layer_results.csv", index=False)
-    print(f"{args.out / 'layer_results.csv'}: {len(by_layer)} rows")
+    for name, table in tables.items():
+        table.to_csv(args.out / name, index=False)
+        print(f"{args.out / name}: {len(table)} rows")
 
 
 if __name__ == "__main__":

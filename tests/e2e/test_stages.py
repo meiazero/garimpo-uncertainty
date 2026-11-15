@@ -311,16 +311,16 @@ def test_merge_keeps_the_compass_j_rows_of_every_layer(
 ) -> None:
     """Each run's two layers, the chosen one's rows equal to its results.csv."""
     by_layer = pd.read_csv(support.ARTIFACTS / "merged" / "layer_results.csv")
-    methods = garimpo_uncertainty.intervals.LAYER_METHODS
     for run in (convnet_run, unet_run):
         variant = garimpo_uncertainty.data.read_run_metadata(run.run_dir)["variant"]
         rows = by_layer[by_layer.model == variant]
         assert set(rows.layer) == set(support.RUN_ORDER[run.arch][1:])
-        assert set(rows.method) == set(methods)
+        assert set(garimpo_uncertainty.intervals.LAYER_METHODS) <= set(rows.method)
+        assert "external_weighted" in set(rows.calibration)
         chosen = pd.read_csv(run.run_dir / "metrics" / "results.csv")
         pd.testing.assert_frame_equal(
             rows[rows.layer == run.layer].reset_index(drop=True),
-            chosen[chosen.method.isin(methods)].reset_index(drop=True),
+            chosen[garimpo_uncertainty.intervals.depends_on_layer(chosen)].reset_index(drop=True),
         )
 
 
