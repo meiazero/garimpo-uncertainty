@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.intervals
 import garimpo_uncertainty.stages
 
 TABLES = {
@@ -31,12 +32,53 @@ def read_table(path: Path) -> pd.DataFrame:
     return pd.DataFrame([{k: chosen[k] for k in ("layer", "min_fraction_ascending")}])
 
 
+def layer_dirs(run_dir: Path) -> dict[str, Path]:
+    """Every candidate layer and where its stages wrote, the chosen one first, at the run's root."""
+    chosen = json.loads((run_dir / "chosen_layer.json").read_text(encoding="utf-8"))
+    others = [c["layer"] for c in chosen["candidates"] if c["layer"] != chosen["layer"]]
+    layers_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR
+    return {chosen["layer"]: run_dir} | {layer: layers_dir / layer for layer in others}
+
+
+def read_status(status_dir: Path, stage: str) -> str:
+    path = status_dir / f"{stage}.json"
+    return json.loads(path.read_text())["status"] if path.exists() else "not_run"
+
+
 def stage_statuses(run_dir: Path) -> dict[str, str]:
-    statuses = {}
-    for stage in garimpo_uncertainty.stages.STAGE_ORDER:
-        path = run_dir / "status" / f"{stage}.json"
-        statuses[stage] = json.loads(path.read_text())["status"] if path.exists() else "not_run"
-    return statuses
+    statuses = {
+        stage: read_status(run_dir / "status", stage)
+        for stage in garimpo_uncertainty.stages.STAGE_ORDER
+    }
+    # Without a choice there is no list of the other layers to check.
+    if statuses["choose_layer"] != "ok":
+        return statuses
+    try:
+        others = list(layer_dirs(run_dir).items())[1:]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return statuses | {"chosen_layer.json": f"unreadable ({type(error).__name__}: {error})"}
+    return statuses | {
+        f"{stage} [{layer}]": read_status(layer_dir / "status", stage)
+        for layer, layer_dir in others
+        for stage in garimpo_uncertainty.stages.LAYER_STAGES
+    }
+
+
+def layer_results(run_dir: Path) -> pd.DataFrame:
+    frames = [
+        pd.read_csv(layer_dir / "metrics" / "results.csv")
+        for layer_dir in layer_dirs(run_dir).values()
+    ]
+    table = pd.concat(frames, ignore_index=True)
+    return table[garimpo_uncertainty.intervals.depends_on_layer(table)]
+
+
+def merged_table(runs: list[Path], identities: list[dict], relative: str) -> pd.DataFrame:
+    frames = []
+    for run_dir, identity in zip(runs, identities, strict=True):
+        frame = read_table(run_dir / relative)
+        frames.append(frame.assign(**{k: v for k, v in identity.items() if k not in frame}))
+    return pd.concat(frames, ignore_index=True)
 
 
 def main() -> None:
@@ -51,8 +93,6 @@ def main() -> None:
     if len(set(keys)) != len(keys):
         raise SystemExit(f"two runs of the same model and train_fraction would merge: {keys}")
     # A failed stage leaves its earlier tables, and a restore from Drive brings deleted ones back.
-    # Only STAGE_ORDER: the other layers' stages in layers/ write no table merged here, and the
-    # pipeline check fails a run where they are not ok.
     not_ok = [
         f"{run_dir}: {stage} is {status}"
         for run_dir in args.runs
@@ -61,19 +101,22 @@ def main() -> None:
     ]
     if not_ok:
         raise SystemExit(
-            "every stage of STAGE_ORDER of every run must be ok to merge; nothing was written, so "
-            f"any tables in {args.out} and in Drive are from an earlier merge:\n"
+            "every stage of every run, other layers included, must be ok to merge; nothing was "
+            f"written, so any tables in {args.out} and in Drive are from an earlier merge:\n"
             + "\n".join(not_ok)
         )
 
+    # Read everything first: a table missing under an ok status must not leave a partial merge.
+    tables = {
+        name: merged_table(args.runs, identities, relative) for name, relative in TABLES.items()
+    }
+    tables["layer_results.csv"] = pd.concat(
+        [layer_results(run_dir) for run_dir in args.runs], ignore_index=True
+    )
     args.out.mkdir(parents=True, exist_ok=True)
-    for name, relative in TABLES.items():
-        frames = []
-        for run_dir, identity in zip(args.runs, identities, strict=True):
-            frame = read_table(run_dir / relative)
-            frames.append(frame.assign(**{k: v for k, v in identity.items() if k not in frame}))
-        pd.concat(frames, ignore_index=True).to_csv(args.out / name, index=False)
-        print(f"{args.out / name}: {sum(len(f) for f in frames)} rows")
+    for name, table in tables.items():
+        table.to_csv(args.out / name, index=False)
+        print(f"{args.out / name}: {len(table)} rows")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ import torch
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
 import garimpo_uncertainty.models.common
+import garimpo_uncertainty.stages
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "tests" / "artifacts" / "e2e"
@@ -169,9 +170,22 @@ def build_once(name: str, build: Callable[[], object]) -> None:
 
 def finish_run(arch: str, run_dir: Path, data_root: Path) -> FinishedRun:
     run("train.py", *train_args(arch, run_dir), data_root=data_root)
-    layer = run_stages_after_training(run_dir, list(RUN_ORDER[arch][1:]), data_root)
+    layers = list(RUN_ORDER[arch][1:])
+    layer = run_stages_after_training(run_dir, layers, data_root)
     compute_metrics(run_dir, BOUNDARY_TOLERANCE, data_root)
+    run_other_layers(run_dir, layers, data_root)
     return FinishedRun(arch, run_dir, layer)
+
+
+def run_other_layers(run_dir: Path, layers: list[str], data_root: Path) -> None:
+    """Run the layer stages on every other layer, into layers/<layer>/, as scripts/run.py."""
+    for layer in layers:
+        if layer != chosen_layer(run_dir):
+            layer_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer
+            run_scores_and_intervals(
+                run_dir, layer, data_root, beta_range="100", threshold="1e-3", layer_dir=layer_dir
+            )
+            compute_metrics(run_dir, BOUNDARY_TOLERANCE, data_root, layer_dir=layer_dir)
 
 
 def chosen_layer(run_dir: Path) -> str:
@@ -399,10 +413,18 @@ def pipeline_check(
 
 
 def compute_metrics(
-    run_dir: Path, tolerance: float, data_root: Path, force: bool = False, check: bool = True
+    run_dir: Path,
+    tolerance: float,
+    data_root: Path,
+    force: bool = False,
+    check: bool = True,
+    *,
+    layer_dir: Path | None = None,
 ) -> subprocess.CompletedProcess:
     """Run the metrics stage while asserting that it never imported torch."""
     args = ["--run-dir", str(run_dir), "--boundary-tolerance-px", str(tolerance)]
+    if layer_dir is not None:
+        args += ["--layer-dir", str(layer_dir)]
     if force:
         args.append("--force")
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
@@ -468,9 +490,16 @@ def sweep(run_dir: Path, use: str, layers: list[str], data_root: Path) -> None:
 
 
 def run_scores_and_intervals(
-    run_dir: Path, layer: str, data_root: Path, beta_range: str, threshold: str
+    run_dir: Path,
+    layer: str,
+    data_root: Path,
+    beta_range: str,
+    threshold: str,
+    *,
+    layer_dir: Path | None = None,
 ) -> None:
     common = checkpoint_args(run_dir)
+    where = [] if layer_dir is None else ["--layer-dir", str(layer_dir)]
     run(
         "compass_scores.py",
         *common,
@@ -480,6 +509,7 @@ def run_scores_and_intervals(
         beta_range,
         "--search-threshold-features",
         threshold,
+        *where,
         data_root=data_root,
     )
     run(
@@ -490,9 +520,10 @@ def run_scores_and_intervals(
         "all",
         "--score-floor-ha",
         "0.01",
+        *where,
         data_root=data_root,
     )
-    run("generate_intervals.py", *common, "--layer", layer, data_root=data_root)
+    run("generate_intervals.py", *common, "--layer", layer, *where, data_root=data_root)
 
 
 def file_hashes(directory: Path) -> dict[str, str]:

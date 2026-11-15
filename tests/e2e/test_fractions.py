@@ -46,10 +46,10 @@ SMOOTH_DIRECTIONS = ("--direction-temperature", "1")
 
 
 def finish_run(run_dir: Path) -> None:
-    support.run_stages_after_training(
-        run_dir, list(support.RUN_ORDER["convnet"][1:]), ROOT, SMOOTH_DIRECTIONS
-    )
+    layers = list(support.RUN_ORDER["convnet"][1:])
+    support.run_stages_after_training(run_dir, layers, ROOT, SMOOTH_DIRECTIONS)
     support.compute_metrics(run_dir, support.BOUNDARY_TOLERANCE, ROOT)
+    support.run_other_layers(run_dir, layers, ROOT)
 
 
 def slots_of(cell_index: np.ndarray) -> dict[str, bytes]:
