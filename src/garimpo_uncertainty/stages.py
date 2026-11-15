@@ -156,9 +156,13 @@ def write_arrays(path: Path, **arrays: np.ndarray) -> None:
         np.savez(file, **arrays)
 
 
-def _git(directory: str, *args: str) -> str:
+# The checkout this package runs from, so the records do not depend on the working directory.
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _git(directory: Path, *args: str) -> str:
     try:
-        command = ["git", "-C", directory, *args]
+        command = ["git", "-C", str(directory), *args]
         return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
@@ -167,12 +171,12 @@ def _git(directory: str, *args: str) -> str:
 def code_versions() -> dict[str, str | bool]:
     """Return the commits of the package and the submodule, as the job actually saw them."""
     return {
-        "root_commit": _git(".", "rev-parse", "HEAD"),
+        "root_commit": _git(ROOT, "rev-parse", "HEAD"),
         "root_dirty": bool(
-            _git(".", "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")
+            _git(ROOT, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")
         ),
-        "compass_commit": _git("compass", "rev-parse", "HEAD"),
-        "compass_dirty": bool(_git("compass", "status", "--porcelain")),
+        "compass_commit": _git(ROOT / "compass", "rev-parse", "HEAD"),
+        "compass_dirty": bool(_git(ROOT / "compass", "status", "--porcelain")),
     }
 
 
