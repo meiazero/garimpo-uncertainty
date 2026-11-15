@@ -25,7 +25,9 @@ def test_training_artifacts(finished_run: support.FinishedRun) -> None:
     # Raw timings, unrounded: the parts of an epoch must fit inside the epoch's rounded total.
     assert (history.train_seconds > 0).all()
     assert (history.validation_seconds > 0).all()
-    assert (history.train_seconds + history.validation_seconds <= history.seconds + 0.001).all()
+    assert (history.train_eval_seconds > 0).all()
+    parts = history.train_seconds + history.validation_seconds + history.train_eval_seconds
+    assert (parts <= history.seconds + 0.001).all()
     assert (history.train_data_wait_seconds <= history.train_seconds + 0.001).all()
     infer = json.loads((run_dir / "status" / "infer.json").read_text(encoding="utf-8"))["shapes"]
     assert set(infer["seconds_per_role"]) == set(garimpo_uncertainty.data.ROLES)
@@ -56,7 +58,7 @@ def test_history_records_what_a_training_needs_watching(finished_run: support.Fi
     """Losses, learning rate, gradient norms and throughput, per epoch, all usable numbers."""
     history = pd.read_csv(finished_run.run_dir / "history.csv")
     # Positive: a norm taken after zero_grad would be zero.
-    for column in ("train_loss", "val_loss", "grad_norm_mean", "grad_norm_max"):
+    for column in ("train_loss", "val_loss", "train_eval_loss", "grad_norm_mean", "grad_norm_max"):
         assert (np.isfinite(history[column]) & (history[column] > 0)).all(), column
     # Over 10 updates the two differ, so swapped keys would show.
     assert (history.grad_norm_max > history.grad_norm_mean).all()
@@ -64,6 +66,10 @@ def test_history_records_what_a_training_needs_watching(finished_run: support.Fi
     assert (history.lr == float(arguments[arguments.index("--lr") + 1])).all()
     assert ((history.val_precision >= 0) & (history.val_precision <= 1)).all()
     assert ((history.val_recall >= 0) & (history.val_recall <= 1)).all()
+    for column in ("train_eval_dice", "train_eval_precision", "train_eval_recall"):
+        assert ((history[column] >= 0) & (history[column] <= 1)).all(), column
+    # Its own cells: a pass that scored the validation cells again would repeat val_loss.
+    assert (history.train_eval_loss != history.val_loss).all()
     # The cells the epoch trained on, steps times batch, not every training cell of the run.
     batch = int(arguments[arguments.index("--batch-size") + 1])
     trained = history.train_cells_per_second * history.train_seconds

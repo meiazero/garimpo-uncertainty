@@ -23,6 +23,7 @@ TIMINGS = [
     "seconds",
     "train_seconds",
     "validation_seconds",
+    "train_eval_seconds",
     "train_data_wait_seconds",
     "train_cells_per_second",
 ]

@@ -73,7 +73,7 @@ def tables_at_level(
     identity: dict,
 ) -> dict[str, pd.DataFrame]:
     """Return the interval tables at one level of ALPHAS, each row carrying that alpha."""
-    saturation = read_saturation(args.run_dir)
+    saturation = read_saturation(args.layer_dir)
     alpha = float(intervals.alphas[a])
     at_level = identity | {"alpha": alpha}
     results, widths, coverages = garimpo_uncertainty.evaluation.summarize(
@@ -109,7 +109,7 @@ def metric_tables(
     test_cells: pd.DataFrame,
     segmentation: dict[str, np.ndarray],
 ) -> dict[str, pd.DataFrame]:
-    intervals = read_intervals(args.run_dir)
+    intervals = read_intervals(args.layer_dir)
     cells = aligned_cells(test_cells, segmentation, intervals.cell_index)
     identity = {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]}
     levels = [
@@ -155,7 +155,7 @@ def compute(
     )
     frames = metric_tables(args, metadata, test_cells, segmentation)
     identity = {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]}
-    frames["score_relation"] = score_relation(args.run_dir, cells, identity)
+    frames["score_relation"] = score_relation(args.layer_dir, cells, identity)
     garimpo_uncertainty.stages.write_arrays(
         cell_metrics_path, cell_index=test_cells.cell_index.to_numpy(), **segmentation
     )
@@ -168,6 +168,7 @@ def compute(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
+    garimpo_uncertainty.stages.add_layer_dir(parser)
     parser.add_argument(
         "--boundary-tolerance-px",
         type=float,
@@ -180,11 +181,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    args.layer_dir = args.layer_dir or args.run_dir
     garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
-    run_dir = args.run_dir
-    metrics_dir = run_dir / "metrics"
+    run_dir, layer_dir = args.run_dir, args.layer_dir
+    metrics_dir = layer_dir / "metrics"
     tables = (
         "results",
         "width_comparisons",
@@ -198,13 +200,13 @@ def main() -> None:
     inputs = [
         run_dir / "predictions" / "cells.npz",
         run_dir / "predictions" / "test.npy",
-        run_dir / "intervals" / "intervals.npz",
-        run_dir / "calibration" / "quantiles.npz",
-        run_dir / "scores" / "scores.npz",
+        layer_dir / "intervals" / "intervals.npz",
+        layer_dir / "calibration" / "quantiles.npz",
+        layer_dir / "scores" / "scores.npz",
     ]
 
     garimpo_uncertainty.stages.run_stage(
-        run_dir / "status",
+        layer_dir / "status",
         "compute_metrics",
         [cell_metrics_path, *outputs.values()],
         garimpo_uncertainty.stages.fingerprint(

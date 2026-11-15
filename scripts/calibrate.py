@@ -193,7 +193,7 @@ def read_scores(
     """Return the scores and the density ratio of test over calibration features at both."""
     by_role = {role: cells[cells.role == role] for role in ("validation", "calibration", "test")}
     calibration_cells, test_cells = by_role["calibration"], by_role["test"]
-    with np.load(args.run_dir / "scores" / "scores.npz") as stored:
+    with np.load(args.layer_dir / "scores" / "scores.npz") as stored:
         at = {
             role: garimpo_uncertainty.data.positions_of(
                 stored["cell_index"], frame.cell_index.to_numpy()
@@ -405,6 +405,7 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
+    garimpo_uncertainty.stages.add_layer_dir(parser)
     parser.add_argument(
         "--cells",
         choices=["all", "nonempty"],
@@ -421,17 +422,18 @@ def main() -> None:
     parser.add_argument("--lightgbm-jobs", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    args.layer_dir = args.layer_dir or args.run_dir
     # An infinite floor turns every relative margin into NaN.
     if not (math.isfinite(args.score_floor_ha) and args.score_floor_ha > 0):
         parser.error(f"--score-floor-ha must be positive and finite, got {args.score_floor_ha}")
     garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
-    run_dir = args.run_dir
-    quantiles_path = run_dir / "calibration" / "quantiles.npz"
-    inputs = [run_dir / "predictions" / "cells.npz", run_dir / "scores" / "scores.npz"]
+    run_dir, layer_dir = args.run_dir, args.layer_dir
+    quantiles_path = layer_dir / "calibration" / "quantiles.npz"
+    inputs = [run_dir / "predictions" / "cells.npz", layer_dir / "scores" / "scores.npz"]
     garimpo_uncertainty.stages.run_stage(
-        run_dir / "status",
+        layer_dir / "status",
         "calibrate",
         [quantiles_path],
         garimpo_uncertainty.stages.fingerprint(

@@ -32,6 +32,28 @@ Paths without a prefix are inside the run directory.
 `compass_scores`, `calibrate`, `generate_intervals`, `compute_metrics`. These are also the names of
 their status files.
 
+## The other layers
+
+After `compute_metrics`, `scripts/run.py` runs `compass_scores`, `calibrate`, `generate_intervals`
+and `compute_metrics` (`LAYER_STAGES`) once more on every other layer of `LAYERS`, so the interval
+width can be compared across layers, as Cheung et al. (2026) do in Table 4. Each such stage takes
+`--layer-dir runs/<run>/layers/<layer>`: it reads the checkpoint, `predictions/`, `directions/` and
+`run_meta.json` of the run, and writes its `scores/`, `calibration/`, `intervals/`, `metrics/` and
+`status/` under that directory. The chosen layer's files stay where the table above puts them, so
+`merge_results.py` and the pipeline check's tables read only the chosen layer.
+
+- The chosen layer runs first: a session lost during the other layers keeps its results, and the
+  next attempt skips them and resumes the other layers.
+- The pipeline check, given the run's `LAYERS`, lists each other layer's stages as
+  `<stage> [<layer>]` once the chosen layer's are all `ok`, and fails on any that is not `ok`.
+- A stage before `compass_scores` that runs again marks the other layers' `ok` statuses `stale`
+  too, since they read its files; `--force-from` forces their stages as it forces the run's.
+- Which layer is chosen comes from `chosen_layer.json`. If a rerun chooses another one, the newly
+  chosen layer's old directory under `layers/` stays, unused.
+- `results.csv` of each layer holds every row, `layer` included. Only the `compass_j_*` rows and
+  the `external_weighted` ones, whose density ratio reads the layer's summed features, depend on
+  it; the rest repeat the chosen layer's.
+
 ## Skip, refuse, force
 
 Every stage from `validate_data.py` on, and `download_data.py scenes`, records its status in a
@@ -46,7 +68,8 @@ status file:
 A stage skips its work when its outputs exist from the same fingerprint, stops with status
 `refused` when they exist from another one, and redoes the work with `--force`. The fingerprint
 holds the arguments that change a result (not `--force`, `--device`, `--num-workers`,
-`--batch-size` after training, `--workers`, `--lightgbm-jobs` or `--report`) and each input file's
+`--batch-size` after training, `--workers`, `--lightgbm-jobs`, `--report` or `--layer-dir`, which
+holds the status itself) and each input file's
 path, size and modification time. A refusal keeps the last completed fingerprint, so it never turns
 into a rerun on the next attempt.
 
@@ -68,10 +91,13 @@ the input is back a finished stage skips again.
 | `stale` | a stage before it starts its work again, so this one read outputs that are about to change; `error` names that stage, and the completed fingerprint stays, so it skips back to `ok` if its inputs did not change | fails |
 | `interrupted` | Ctrl+C reached the stage's work (`KeyboardInterrupt`); `error` is "Ctrl+C; rerun to resume" and `seconds` the time until then | fails, like `failed` |
 | `not_run` | no status file exists; printed by the check, never written | fails |
+| `unreadable` | given `--layers`, every stage of `STAGE_ORDER` is `ok` but `chosen_layer.json` cannot be read, lacks a key `choose_layer` writes, holds candidates that are not a table by layer, or names a layer outside `LAYERS`, so the other layers are unknown; printed by the check under the name `chosen_layer.json`, with the error, never written | fails |
 
-`pipeline_check.py` fails on any status other than `ok` in `validate_data` or a stage of
-`STAGE_ORDER`, and prints the first of them that is `failed`, `refused`, `running`, `interrupted`
-or `stale`.
+`pipeline_check.py` fails on any status other than `ok` in `validate_data`, a stage of
+`STAGE_ORDER` or, given `--layers`, a stage of another layer or an unreadable `chosen_layer.json`,
+and prints the first of them that is `failed`, `refused`, `running`, `interrupted`, `stale` or
+`unreadable`. It also checks each other layer's
+`results.csv` as it checks the chosen layer's.
 `download_scenes` is left out, since the download is shared by every fraction and
 `validate_data` decides whether this run's tiles are there.
 

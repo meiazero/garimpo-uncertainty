@@ -176,8 +176,8 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
         args.checkpoint, predictions, device
     )
     fitted = compass2d.directions.Directions.load(args.run_dir / "directions" / f"{args.layer}.npz")
-    calibrated = Calibrated.read(args.run_dir)
-    with np.load(args.run_dir / "calibration" / "quantiles.npz") as stored:
+    calibrated = Calibrated.read(args.layer_dir)
+    with np.load(args.layer_dir / "calibration" / "quantiles.npz") as stored:
         cell_index = stored["cell_index"]
         alpha = stored["alpha"]
         # Terms are NaN on COMPASS rows, which compass_endpoints then fills.
@@ -190,7 +190,7 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
         model,
         calibrated,
         test,
-        read_jacobians(args.run_dir, cell_index),
+        read_jacobians(args.layer_dir, cell_index),
         fitted,
         root=root,
         metadata=metadata,
@@ -218,27 +218,29 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--layer", required=True)
+    garimpo_uncertainty.stages.add_layer_dir(parser)
     parser.add_argument("--temperature", type=float, default=compass2d.metrics.UPSTREAM_TEMPERATURE)
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    args.layer_dir = args.layer_dir or args.run_dir
     garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
-    run_dir = args.run_dir
-    output = run_dir / "intervals" / "intervals.npz"
+    run_dir, layer_dir = args.run_dir, args.layer_dir
+    output = layer_dir / "intervals" / "intervals.npz"
     inputs = [
         args.checkpoint,
         run_dir / "predictions" / "cells.npz",
-        run_dir / "calibration" / "quantiles.npz",
-        run_dir / "scores" / "scores.npz",
+        layer_dir / "calibration" / "quantiles.npz",
+        layer_dir / "scores" / "scores.npz",
         run_dir / "directions" / f"{args.layer}.npz",
     ]
     garimpo_uncertainty.stages.run_stage(
-        run_dir / "status",
+        layer_dir / "status",
         "generate_intervals",
         [output],
         garimpo_uncertainty.stages.fingerprint(

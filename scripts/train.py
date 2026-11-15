@@ -88,8 +88,9 @@ def validate(
     loader: torch.utils.data.DataLoader,
     device: str,
     loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    prefix: str,
 ) -> dict[str, float]:
-    """Return the validation Dice, loss, precision and recall, in one pass over every cell.
+    """Return the Dice, loss, precision and recall in eval mode, in one pass over every cell.
 
     `val_dice`, the mean over cells with mining, picks the best checkpoint. The loss weighs each
     batch by its cells; precision and recall count every pixel of every cell.
@@ -107,10 +108,10 @@ def validate(
         counted += pixels
     true_positive, false_positive, false_negative = counted.tolist()
     return {
-        "val_dice": float(np.mean(scores)) if scores else float("nan"),
-        "val_loss": ratio(weighted_loss, len(loader.dataset)),
-        "val_precision": ratio(true_positive, true_positive + false_positive),
-        "val_recall": ratio(true_positive, true_positive + false_negative),
+        f"{prefix}_dice": float(np.mean(scores)) if scores else float("nan"),
+        f"{prefix}_loss": ratio(weighted_loss, len(loader.dataset)),
+        f"{prefix}_precision": ratio(true_positive, true_positive + false_positive),
+        f"{prefix}_recall": ratio(true_positive, true_positive + false_negative),
     }
 
 
@@ -210,7 +211,7 @@ def new_metadata(
             cells, args.train_fraction, args.subset_seed
         ),
         "arguments": {k: str(v) for k, v in vars(args).items()},
-        **garimpo_uncertainty.checkpoints.code_versions(),
+        **garimpo_uncertainty.stages.code_versions(),
     }
 
 
@@ -323,49 +324,65 @@ def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice:
     )
 
 
+@dataclass
+class Loaders:
+    train: torch.utils.data.DataLoader
+    validation: torch.utils.data.DataLoader
+    # Training cells in eval mode, unaugmented: with val_dice, it tells underfitting from
+    # overfitting, which train_loss cannot, being augmented and in training mode.
+    train_eval: torch.utils.data.DataLoader
+
+
+def evaluate_epoch(state: TrainingState, loaders: Loaders, device: str) -> dict:
+    """Score the validation cells, then the training subset, both in eval mode, with their times."""
+    validation_start = time.monotonic()
+    validated = validate(state.model, loaders.validation, device, state.loss_fn, "val")
+    validation_end = time.monotonic()
+    validation_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
+    # Each pass over a loader draws a seed from torch's CPU generator. Restoring it afterwards keeps
+    # the training's random stream, and with it the trained weights, as they are without this pass.
+    with torch.random.fork_rng(devices=[]):
+        scored = validate(state.model, loaders.train_eval, device, state.loss_fn, "train_eval")
+    return {
+        **validated,
+        **scored,
+        "validation_seconds": validation_end - validation_start,
+        "train_eval_seconds": time.monotonic() - validation_end,
+        "validation_peak_gpu_bytes": validation_peak,
+    }
+
+
 def run_epoch(
-    state: TrainingState,
-    train_loader: torch.utils.data.DataLoader,
-    validation_loader: torch.utils.data.DataLoader,
-    device: str,
-    epoch: int,
+    state: TrainingState, loaders: Loaders, device: str, epoch: int
 ) -> tuple[dict, list[int] | None]:
-    """Train and validate once; return the epoch's raw record and the last batch's shape."""
+    """Train, validate and score the training subset once; return the record and the last shape."""
     garimpo_uncertainty.stages.take_gpu_peak_bytes()
     state.model.train()
     epoch_start = time.monotonic()
-    fitted, batch_shape = fit_epoch(state, train_loader, device, epoch_start)
+    fitted, batch_shape = fit_epoch(state, loaders.train, device, epoch_start)
     train_end = time.monotonic()
     cells = fitted.pop("cells")
     train_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
-    validation_start = time.monotonic()
-    validated = validate(state.model, validation_loader, device, state.loss_fn)
-    validation_end = time.monotonic()
+    evaluated = evaluate_epoch(state, loaders, device)
     record = {
         "epoch": epoch,
         **fitted,
-        **validated,
-        "seconds": round(validation_end - epoch_start, 3),
+        **evaluated,
+        "seconds": round(time.monotonic() - epoch_start, 3),
         "train_seconds": train_end - epoch_start,
         "train_cells_per_second": cells / (train_end - epoch_start),
-        "validation_seconds": validation_end - validation_start,
         "train_peak_gpu_bytes": train_peak,
-        "validation_peak_gpu_bytes": garimpo_uncertainty.stages.take_gpu_peak_bytes(),
     }
     return record, batch_shape
 
 
 def run_epochs(
-    args: argparse.Namespace,
-    state: TrainingState,
-    train_loader: torch.utils.data.DataLoader,
-    validation_loader: torch.utils.data.DataLoader,
-    device: str,
+    args: argparse.Namespace, state: TrainingState, loaders: Loaders, device: str
 ) -> list[int] | None:
     """Train up to args.epochs; return the shape of the last batch, None if no epoch ran."""
     batch_shape = None
     for epoch in range(state.first_epoch, args.epochs):
-        record, batch_shape = run_epoch(state, train_loader, validation_loader, device, epoch)
+        record, batch_shape = run_epoch(state, loaders, device, epoch)
         state.history.append(record)
         previous_best = state.best_dice
         save_epoch(args, state, epoch, record["val_dice"])
@@ -375,14 +392,16 @@ def run_epochs(
 
 
 def start_line(
-    args: argparse.Namespace, state: TrainingState, device: str, train: int, validation: int
+    args: argparse.Namespace, state: TrainingState, device: str, loaders: Loaders
 ) -> str:
     """Return what the log says before the first epoch: device, cells, updates and model size."""
     parameters = sum(p.numel() for p in state.model.parameters())
     return (
-        f"training on {device}: {train} cells, {args.steps_per_epoch} updates of "
-        f"{args.batch_size} per epoch, epochs {state.first_epoch + 1} to {args.epochs}; "
-        f"validating {validation} cells; {parameters / 1e6:.1f} M parameters"
+        f"training on {device}: {len(loaders.train.dataset)} cells, {args.steps_per_epoch} "
+        f"updates of {args.batch_size} per epoch, epochs {state.first_epoch + 1} to "
+        f"{args.epochs}; validating {len(loaders.validation.dataset)} cells; scoring "
+        f"{len(loaders.train_eval.dataset)} training cells in eval mode; "
+        f"{parameters / 1e6:.1f} M parameters"
     )
 
 
@@ -397,12 +416,47 @@ def epoch_line(record: dict, epochs: int, state: TrainingState, *, improved: boo
         f"epoch {record['epoch'] + 1}/{epochs}: train_loss {record['train_loss']:.4f}, "
         f"val_loss {record['val_loss']:.4f}, val_dice {record['val_dice']:.4f} "
         f"(best {best}{', new best' if improved else ''}), "
+        f"train_eval_dice {record['train_eval_dice']:.4f}, "
         f"val_precision {record['val_precision']:.4f}, val_recall {record['val_recall']:.4f}, "
         f"lr {record['lr']:.2e}, grad_norm {record['grad_norm_mean']:.3g} "
         f"(max {record['grad_norm_max']:.3g}), {record['seconds']:.1f} s "
         f"(data wait {record['train_data_wait_seconds']:.1f} s), "
         f"{record['train_cells_per_second']:.0f} cells/s{gpu}, "
         f"eta {dt.timedelta(seconds=round(eta))}"
+    )
+
+
+def build_loaders(
+    args: argparse.Namespace,
+    root: Path,
+    normalization: dict[str, list[float]],
+    train_cells: pd.DataFrame,
+    validation_cells: pd.DataFrame,
+) -> Loaders:
+    """Return the augmented training loader and the two eval-mode ones."""
+    batch_size, workers = args.batch_size, args.num_workers
+    # ponytail: as many training cells as validation ones, so the pass costs what validation does;
+    # a TRAIN_EVAL_CELLS config value is the upgrade if a run needs another size. pandas draws them,
+    # so torch's random stream is left alone.
+    train_eval_cells = train_cells.sample(
+        n=min(len(validation_cells), len(train_cells)), random_state=args.subset_seed
+    ).sort_index()
+    return Loaders(
+        train=garimpo_uncertainty.cell_dataset.loader(
+            root,
+            train_cells,
+            normalization,
+            batch_size,
+            workers,
+            samples=args.steps_per_epoch * batch_size,
+            augment=True,
+        ),
+        validation=garimpo_uncertainty.cell_dataset.loader(
+            root, validation_cells, normalization, batch_size, workers
+        ),
+        train_eval=garimpo_uncertainty.cell_dataset.loader(
+            root, train_eval_cells, normalization, batch_size, workers
+        ),
     )
 
 
@@ -432,20 +486,9 @@ def train(
     garimpo_uncertainty.stages.write_json(args.run_dir / "run_meta.json", metadata)
 
     state = start_training(args, device, metadata, weights_file, resume)
-    train_loader = garimpo_uncertainty.cell_dataset.loader(
-        root,
-        train_cells,
-        metadata["normalization"],
-        args.batch_size,
-        args.num_workers,
-        samples=args.steps_per_epoch * args.batch_size,
-        augment=True,
-    )
-    validation_loader = garimpo_uncertainty.cell_dataset.loader(
-        root, validation_cells, metadata["normalization"], args.batch_size, args.num_workers
-    )
-    print(start_line(args, state, device, len(train_cells), len(validation_cells)), flush=True)
-    batch_shape = run_epochs(args, state, train_loader, validation_loader, device)
+    loaders = build_loaders(args, root, metadata["normalization"], train_cells, validation_cells)
+    print(start_line(args, state, device, loaders), flush=True)
+    batch_shape = run_epochs(args, state, loaders, device)
     if state.best_dice == NO_BEST_DICE:
         raise ValueError(
             "every val_dice is NaN, so no best_model.pt was written: "
