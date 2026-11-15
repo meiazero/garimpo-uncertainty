@@ -51,6 +51,8 @@ def main() -> None:
     if len(set(keys)) != len(keys):
         raise SystemExit(f"two runs of the same model and train_fraction would merge: {keys}")
     # A failed stage leaves its earlier tables, and a restore from Drive brings deleted ones back.
+    # Only STAGE_ORDER: the other layers' stages in layers/ write no table merged here, and the
+    # pipeline check fails a run where they are not ok.
     not_ok = [
         f"{run_dir}: {stage} is {status}"
         for run_dir in args.runs
@@ -59,8 +61,9 @@ def main() -> None:
     ]
     if not_ok:
         raise SystemExit(
-            "every stage of every run must be ok to merge; nothing was written, so any tables in "
-            f"{args.out} and in Drive are from an earlier merge:\n" + "\n".join(not_ok)
+            "every stage of STAGE_ORDER of every run must be ok to merge; nothing was written, so "
+            f"any tables in {args.out} and in Drive are from an earlier merge:\n"
+            + "\n".join(not_ok)
         )
 
     args.out.mkdir(parents=True, exist_ok=True)
