@@ -560,6 +560,9 @@ def main() -> None:
     tile_ids = garimpo_uncertainty.data.select_tiles(
         split, args.train_fraction, args.subset_seed
     ).tile_id.tolist()
+    identity = garimpo_uncertainty.data.tiles_identity(root, split, tile_ids)
+    # In args, so a resume refuses tiles re-cut since last.pt, as it refuses other weights.
+    args.tiles_sha256 = next(iter(identity.values()))
     keep_unfinished_training(args.run_dir, force=args.force)
     garimpo_uncertainty.stages.run_stage(
         args.run_dir / "status",
@@ -569,7 +572,7 @@ def main() -> None:
             args,
             [],
             keep=["batch_size"],
-            hashed=garimpo_uncertainty.data.tiles_identity(root, split, tile_ids),
+            hashed=identity,
         ),
         lambda: train(args, root, device, split, tile_ids),
         force=args.force,

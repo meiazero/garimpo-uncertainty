@@ -115,7 +115,7 @@ Only `train.py` ever updates weights. `best_model.pt` stores the model configura
 starting weights, seed, normalization, fraction, subset seed, the run's tile ids, split hash and the
 commits of root and submodule. Later stages take the normalization from it and need no weights file.
 They refuse a checkpoint from another split, and `train.py` refuses to resume `last.pt` under other
-arguments, weights included.
+arguments, weights and the hash of the run's tile sidecars included.
 
 Code is not part of any fingerprint. A run calibrated before rows were added to
 `intervals.COMBINATIONS` still skips `calibrate`, and the pipeline check fails on the absent rows:

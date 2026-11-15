@@ -159,7 +159,21 @@ def test_interrupted_run_refuses_another_fraction(scratch_small_run: GrownRoot) 
     SMALL_STATUS.unlink()
     resumed = support.run("train.py", *small_args(fraction="1.0"), data_root=ROOT, check=False)
     assert resumed.returncode != 0
-    assert "['train_fraction']" in json.loads(SMALL_STATUS.read_text())["error"]
+    assert "'train_fraction'" in json.loads(SMALL_STATUS.read_text())["error"]
+
+
+def test_interrupted_run_refuses_a_recut_tile(scratch_small_run: GrownRoot) -> None:
+    """last.pt's weights and normalization came from the old pixels, so it must not resume."""
+    small = scratch_small_run.small
+    tile = int(small[small.role == "train"].tile_id.iloc[0])
+    sidecar = ROOT / "tiles" / f"{tile}.json"
+    original = sidecar.read_text()
+    SMALL_STATUS.unlink()
+    sidecar.write_text(json.dumps(json.loads(original) | {"resampling_20m": "nearest"}))
+    resumed = support.run("train.py", *small_args(), data_root=ROOT, check=False)
+    sidecar.write_text(original)
+    assert resumed.returncode != 0
+    assert "['tiles_sha256']" in json.loads(SMALL_STATUS.read_text())["error"]
 
 
 def test_recut_of_a_tile_of_the_run_refuses(scratch_small_run: GrownRoot) -> None:
