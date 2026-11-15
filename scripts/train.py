@@ -145,8 +145,9 @@ def read_resume(args: argparse.Namespace) -> dict | None:
     if resume["arguments"] != arguments:
         different = sorted(k for k in arguments if resume["arguments"].get(k) != arguments[k])
         raise ValueError(
-            f"last.pt was written with other values of {different}: rerun with those values to "
-            "resume it, or delete last.pt to start over with these"
+            f"last.pt was written with other values of {different}: rerun with those values, or "
+            "with the tiles it trained on for tiles_sha256, to resume it, or delete last.pt to "
+            "start over with these"
         )
     print(f"resuming after epoch {resume['epoch']}")
     return resume
