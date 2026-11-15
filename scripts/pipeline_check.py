@@ -121,7 +121,12 @@ def report_store(
     store_problems = garimpo_uncertainty.validation.unusable_store(root, split, tile_ids)
     tiles = None
     if not store_problems or store_problems[0].startswith("store_missing"):
-        tiles = garimpo_uncertainty.data.tile_records(root, split, tile_ids)
+        try:
+            tiles = garimpo_uncertainty.data.tile_records(root, split, tile_ids)
+        except ValueError as error:
+            # Without the store nothing read the sidecars before, so their refusal must reach the
+            # verdict instead of a traceback.
+            return [*store_problems, f"sidecars_moved: {error}"], None
         print("\n--- scenes of this run's tiles by scale, role and status")
         print(
             tiles.groupby(["scale", "role", "status"]).size().rename("tiles").to_frame().to_string()
