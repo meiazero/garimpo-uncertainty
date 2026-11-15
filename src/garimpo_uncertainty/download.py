@@ -84,11 +84,18 @@ def download_weights(root: Path, encoder_weights: list[str]) -> None:
         "sentinel2_moco": (SENTINEL2_MOCO_URL, SENTINEL2_MOCO_HASH),
     }
     for choice in encoder_weights:
+        url, hash_prefix = sources[choice]
         target = garimpo_uncertainty.data.starting_weights_path(root, choice)
-        if not target.exists():
-            url, hash_prefix = sources[choice]
-            target.parent.mkdir(parents=True, exist_ok=True)
-            torch.hub.download_url_to_file(url, str(target), hash_prefix=hash_prefix)
+        # Checked when present too: other weights there would train and record their own hash.
+        if target.exists() and _sha256(target).startswith(hash_prefix):
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        torch.hub.download_url_to_file(url, str(target), hash_prefix=hash_prefix)
+
+
+def _sha256(path: Path) -> str:
+    with path.open("rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 def _md5(path: Path) -> str:

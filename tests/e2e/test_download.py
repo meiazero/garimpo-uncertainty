@@ -811,3 +811,30 @@ def test_rate_limit_waits_as_told_and_other_errors_stop(monkeypatch: pytest.Monk
     with pytest.raises(TimeoutError, match="still rate limited"):
         download._get_json(download.STAC + "S2")
     assert len(requested) == 8
+
+
+def test_present_weights_with_another_hash_are_fetched_again(tmp_path: Path) -> None:
+    """A file at the weights path proves nothing until its hash matches the published prefix."""
+    import torch.hub  # noqa: PLC0415 - as download_weights, the only torch user here
+
+    target = garimpo_uncertainty.data.starting_weights_path(tmp_path, "imagenet")
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"other weights")
+    fetched = []
+
+    def fake_fetch(url: str, destination: str, hash_prefix: str) -> None:
+        fetched.append(url)
+        Path(destination).write_bytes(b"published weights")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(torch.hub, "download_url_to_file", fake_fetch)
+        patch.setattr(
+            download,
+            "IMAGENET_HASH",
+            hashlib.sha256(b"published weights").hexdigest()[:8],
+        )
+        download.download_weights(tmp_path, ["imagenet"])
+        assert fetched == [download.IMAGENET_URL]
+        download.download_weights(tmp_path, ["imagenet"])
+    assert fetched == [download.IMAGENET_URL]
+    assert target.read_bytes() == b"published weights"
