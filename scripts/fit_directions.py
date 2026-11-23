@@ -17,6 +17,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages
 
@@ -129,10 +130,10 @@ def fit_layers(
     rows = []
     for layer, path in layer_paths.items():
         fitted, row = fit_layer(model, layer, train_cells, root, metadata, args=args, device=device)
-        with garimpo_uncertainty.stages.atomic(path) as temporary:
+        with garimpo_uncertainty.files.atomic(path) as temporary:
             fitted.save(temporary)
         rows.append(row)
-    with garimpo_uncertainty.stages.atomic(diagnostics_path) as temporary:
+    with garimpo_uncertainty.files.atomic(diagnostics_path) as temporary:
         pd.DataFrame(rows).to_csv(temporary, index=False)
     shapes = {row["layer"]: row["feature_shape"] for row in rows}
     return shapes | {"available_layers": available}

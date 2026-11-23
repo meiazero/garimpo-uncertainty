@@ -20,6 +20,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages
@@ -201,7 +202,7 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
     )
     widen_saturated(calibrated, test.cell_ha.to_numpy(), lower, upper)
     lower, upper = garimpo_uncertainty.intervals.clip_to_cell(lower, upper, test.cell_ha.to_numpy())
-    garimpo_uncertainty.stages.write_arrays(
+    garimpo_uncertainty.files.write_arrays(
         output,
         cell_index=cell_index,
         lower=lower,

@@ -20,6 +20,7 @@ import pandas as pd
 import torch
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.stages
 
@@ -370,7 +371,7 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
     def stacked(field: str) -> np.ndarray:
         return np.stack([getattr(rows, field) for rows in by_alpha])
 
-    garimpo_uncertainty.stages.write_arrays(
+    garimpo_uncertainty.files.write_arrays(
         quantiles_path,
         cell_index=test_cells.cell_index.to_numpy(),
         quantile=stacked("quantile"),

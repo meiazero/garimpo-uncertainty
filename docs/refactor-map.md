@@ -31,7 +31,7 @@ Constraints every fix keeps:
 
 ## Fixes
 
-- [ ] 1. Move the file helpers out of the stage runner into `files.py`, so library modules stop importing pipeline infrastructure. (7 files)
+- [x] 1. Move the file helpers out of the stage runner into `files.py`, so library modules stop importing pipeline infrastructure. (7 files)
   - `src/garimpo_uncertainty/checkpoints.py:24` and `:33` import `stages` for `code_versions` and `atomic`.
   - `src/garimpo_uncertainty/download.py:68`, `:185`, `:262` import `stages` for `atomic` and `write_json`.
   - SHA-256 is written three times: `checkpoints.py:17`, `download.py:96`, and `scripts/download_data.py:30`, the last reading the whole file into memory.

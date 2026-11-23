@@ -15,6 +15,7 @@ import pandas as pd
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
+import garimpo_uncertainty.files
 import garimpo_uncertainty.stages
 
 
@@ -156,11 +157,11 @@ def compute(
     frames = metric_tables(args, metadata, test_cells, segmentation)
     identity = {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]}
     frames["score_relation"] = score_relation(args.layer_dir, cells, identity)
-    garimpo_uncertainty.stages.write_arrays(
+    garimpo_uncertainty.files.write_arrays(
         cell_metrics_path, cell_index=test_cells.cell_index.to_numpy(), **segmentation
     )
     for name, frame in frames.items():
-        with garimpo_uncertainty.stages.atomic(outputs[name]) as temporary:
+        with garimpo_uncertainty.files.atomic(outputs[name]) as temporary:
             frame.to_csv(temporary, index=False)
     return {name: list(frame.shape) for name, frame in frames.items()}
 

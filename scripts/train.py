@@ -19,6 +19,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.models
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.models.unet
@@ -43,7 +44,7 @@ def starting_weights_sha256(args: argparse.Namespace, root: Path) -> str | None:
     if weights_file is None:
         return None
     if weights_file.exists():
-        return garimpo_uncertainty.checkpoints.file_sha256(weights_file)
+        return garimpo_uncertainty.files.file_sha256(weights_file)
     if not (args.run_dir / "run_meta.json").exists():
         garimpo_uncertainty.stages.fail_stage(
             args.run_dir / "status",
@@ -212,7 +213,7 @@ def new_metadata(
             cells, args.train_fraction, args.subset_seed
         ),
         "arguments": {k: str(v) for k, v in vars(args).items()},
-        **garimpo_uncertainty.stages.code_versions(),
+        **garimpo_uncertainty.files.code_versions(),
     }
 
 
@@ -297,7 +298,7 @@ def fit_epoch(
 def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice: float) -> None:
     """Write the epoch's history and checkpoints; best_model.pt only when its Dice improved."""
     # Every epoch, so a job killed at its limit still reports what it measured.
-    with garimpo_uncertainty.stages.atomic(args.run_dir / "history.csv") as temporary:
+    with garimpo_uncertainty.files.atomic(args.run_dir / "history.csv") as temporary:
         pd.DataFrame(state.history).to_csv(temporary, index=False)
     score = NO_BEST_DICE if np.isnan(dice) else dice
     weights = {k: v.cpu() for k, v in state.model.state_dict().items()}
@@ -484,7 +485,7 @@ def train(
     else:
         metadata = resume["meta"]
         garimpo_uncertainty.data.check_split(metadata, cells)
-    garimpo_uncertainty.stages.write_json(args.run_dir / "run_meta.json", metadata)
+    garimpo_uncertainty.files.write_json(args.run_dir / "run_meta.json", metadata)
 
     state = start_training(args, device, metadata, weights_file, resume)
     loaders = build_loaders(args, root, metadata["normalization"], train_cells, validation_cells)
