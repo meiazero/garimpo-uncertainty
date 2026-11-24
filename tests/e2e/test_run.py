@@ -433,6 +433,7 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         assert (run_dir / "best_model.pt").stat().st_mtime_ns == checkpoint
     log = log_of(passed_job.model).read_text(encoding="utf-8")
     attempts = log.split(ATTEMPT)[1:]
+    assert len(attempts) >= 2
     assert "PIPELINE CHECK: PASS" in attempts[0]
     assert "PIPELINE CHECK: PASS" in attempts[-1]
 
