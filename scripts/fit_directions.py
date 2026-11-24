@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
@@ -166,11 +167,11 @@ def main() -> None:
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
-    directions_dir = args.run_dir / "directions"
-    diagnostics_path = directions_dir / "diagnostics.csv"
-    layer_paths = {layer: directions_dir / f"{layer}.npz" for layer in args.layers}
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    diagnostics_path = run.direction_diagnostics
+    layer_paths = {layer: run.directions(layer) for layer in args.layers}
     garimpo_uncertainty.stages.run_stage(
-        args.run_dir / "status",
+        run.status,
         "fit_directions",
         [diagnostics_path, *layer_paths.values()],
         garimpo_uncertainty.stages.fingerprint(

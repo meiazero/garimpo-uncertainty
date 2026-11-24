@@ -16,6 +16,7 @@ import pandas as pd
 import segmentation_models_pytorch
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
@@ -45,12 +46,13 @@ def starting_weights_sha256(args: argparse.Namespace, root: Path) -> str | None:
         return None
     if weights_file.exists():
         return garimpo_uncertainty.files.file_sha256(weights_file)
-    if not (args.run_dir / "run_meta.json").exists():
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    if not run.run_meta.exists():
         garimpo_uncertainty.stages.fail_stage(
-            args.run_dir / "status",
+            run.status,
             "train",
             f"train: cannot tell which weights this run used: {weights_file} and "
-            f"{args.run_dir / 'run_meta.json'} are both absent. On a node with internet run "
+            f"{run.run_meta} are both absent. On a node with internet run "
             f"scripts/download_data.py weights --encoder-weights {args.encoder_weights}, or "
             "restore run_meta.json with the run.",
         )
@@ -136,7 +138,7 @@ DISCARDED = {"discarded": True}
 
 def read_resume(args: argparse.Namespace) -> dict | None:
     """Return last.pt when this run continues it; refuse one written with other arguments."""
-    last_path = args.run_dir / "last.pt"
+    last_path = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).last_checkpoint
     if not last_path.exists() or args.force:
         return None
     resume = torch.load(last_path, map_location="cpu", weights_only=True)
@@ -162,17 +164,18 @@ def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
     from its end: a deleted file would come back with the next restore from Drive, whose rsync
     has no --delete, where the mark replaces it.
     """
-    last = run_dir / "last.pt"
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
+    last = run.last_checkpoint
     if not force or not last.exists():
         return
     if torch.load(last, map_location="cpu", weights_only=True) == DISCARDED:
         return
-    status_path = run_dir / "status" / "train.json"
+    status_path = run.status / "train.json"
     status = json.loads(status_path.read_text()) if status_path.exists() else {}
     # Starting the work drops completed_fingerprint, so only a finished training still has it.
     if "completed_fingerprint" not in status:
         garimpo_uncertainty.stages.fail_stage(
-            run_dir / "status",
+            run.status,
             "train",
             f"{last} holds an unfinished training (status {status.get('status', 'absent')}): "
             f"run without --force (--force-from train) to resume it, or delete {last} to start "
@@ -297,19 +300,20 @@ def fit_epoch(
 
 def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice: float) -> None:
     """Write the epoch's history and checkpoints; best_model.pt only when its Dice improved."""
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
     # Every epoch, so a job killed at its limit still reports what it measured.
-    with garimpo_uncertainty.files.atomic(args.run_dir / "history.csv") as temporary:
+    with garimpo_uncertainty.files.atomic(run.history) as temporary:
         pd.DataFrame(state.history).to_csv(temporary, index=False)
     score = NO_BEST_DICE if np.isnan(dice) else dice
     weights = {k: v.cpu() for k, v in state.model.state_dict().items()}
     if score > state.best_dice:
         state.best_dice = score
         garimpo_uncertainty.checkpoints.save(
-            args.run_dir / "best_model.pt",
+            run.best_model,
             {"model": weights, "meta": state.metadata, "epoch": epoch, "val_dice": dice},
         )
     garimpo_uncertainty.checkpoints.save(
-        args.run_dir / "last.pt",
+        run.last_checkpoint,
         {
             "model": weights,
             "optimizer": state.optimizer.state_dict(),
@@ -485,7 +489,9 @@ def train(
     else:
         metadata = resume["meta"]
         garimpo_uncertainty.data.check_split(metadata, cells)
-    garimpo_uncertainty.files.write_json(args.run_dir / "run_meta.json", metadata)
+    garimpo_uncertainty.files.write_json(
+        garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).run_meta, metadata
+    )
 
     state = start_training(args, device, metadata, weights_file, resume)
     loaders = build_loaders(args, root, metadata["normalization"], train_cells, validation_cells)
@@ -566,10 +572,11 @@ def main() -> None:
     # In args, so a resume refuses tiles re-cut since last.pt, as it refuses other weights.
     args.tiles_sha256 = next(iter(identity.values()))
     keep_unfinished_training(args.run_dir, force=args.force)
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
     garimpo_uncertainty.stages.run_stage(
-        args.run_dir / "status",
+        run.status,
         "train",
-        [args.run_dir / "best_model.pt", args.run_dir / "history.csv"],
+        [run.best_model, run.history],
         garimpo_uncertainty.stages.fingerprint(
             args,
             [],

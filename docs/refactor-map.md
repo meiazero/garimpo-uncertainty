@@ -14,7 +14,7 @@ src/garimpo_uncertainty/
   __main__.py, cli.py          `garimpo <stage|run|check|merge|status>`, each subcommand imported lazily
   config.py                    RunConfig: compose, validate, derive RUN_DIR and log name
   artifacts.py                 RunPaths: run root and layer root
-  files.py                     atomic writes, JSON/NPZ, sha256, code versions, project root
+  files.py                     atomic writes, JSON/NPZ, sha256, code versions
   checkpoints.py, intervals.py, evaluation.py
   data/{store,cell_dataset,download,validation}.py
   models/                      unchanged
@@ -35,10 +35,7 @@ Constraints every fix keeps:
   - `src/garimpo_uncertainty/checkpoints.py:24` and `:33` import `stages` for `code_versions` and `atomic`.
   - `src/garimpo_uncertainty/download.py:68`, `:185`, `:262` import `stages` for `atomic` and `write_json`.
   - SHA-256 is written three times: `checkpoints.py:17`, `download.py:96`, and `scripts/download_data.py:30`, the last reading the whole file into memory.
-- [ ] 2. Resolve every repository path from the project root, not the working directory, so `garimpo` runs from any folder. (~8 files, after 1)
-  - `outputs/...` defaults are relative to the cwd in `scripts/train.py:520`, `validate_data.py:30`, `pipeline_check.py:60`, `download_data.py:125`, `:156-160`, `run.py:126-128`, `run.py:326`, `scripts/split/make_split.py:69`.
-  - `src/garimpo_uncertainty/stages.py:160` already derives `ROOT` from the checkout; nothing else uses it.
-- [ ] 3. Name every artifact once in `RunPaths`, with a run root and a layer root, so writer and readers cannot drift. (~12 files)
+- [x] 3. Name every artifact once in `RunPaths`, with a run root and a layer root, so writer and readers cannot drift. (~12 files)
   - `chosen_layer.json` is spelled 8 times (`scripts/choose_layer.py:58`, `pipeline_check.py:189`, `:247`, `merge_results.py:37`, `run.py:293`, …); `scores.npz` 7, `quantiles.npz` 6, `results.csv` 6, `cells.npz` 5, across 9 scripts and `src/garimpo_uncertainty/data.py`.
   - A layer stage reads shared predictions from the run root and its own scores from the layer root (`scripts/calibrate.py:432`); one root cannot express that.
   - The evaluated roles (validation, calibration, test) are restated in `scripts/infer.py:26`, `calibrate.py:194`, `compass_scores.py:201`. `verify_monotonicity.py:24` selects roles by purpose and stays explicit.
@@ -52,7 +49,7 @@ Constraints every fix keeps:
   - `tests/e2e/support.py:310` (`train_args`), `:354` (`checkpoint_args`) and its other builders are a third copy.
   - `--num-workers` defaults to 4 in 6 stages (`scripts/infer.py:120`, `train.py:546`, …) while `run.py:45` defaults it to the CPU count.
   - `scripts/run.py:133` reads `GARIMPO_TEST_CELL_PX`, a test-only variable, in production code.
-- [ ] 6. Move every stage from `scripts/` into `garimpo_uncertainty.stages`, behind the `garimpo` CLI with lazy imports; `scripts/` keeps only `split/`. (~30 files, after 1, 2, 3)
+- [ ] 6. Move every stage from `scripts/` into `garimpo_uncertainty.stages`, behind the `garimpo` CLI with lazy imports; `scripts/` keeps only `split/`. (~30 files, after 1, 3)
   - Stage logic lives in non-importable scripts: `scripts/train.py` (584 lines), `calibrate.py` (448), `pipeline_check.py` (359).
   - Call sites by path: `tests/e2e/support.py:296`, `test_resume.py:41`, `:161`, `test_run.py:119`, `:160` (parses `scripts/` out of the log), `:175` (symlinks `scripts/` into a fake cwd), `:313`, `:417`, `:429`; by `runpy`: `support.py:105` (`TORCH_FREE`), `test_results.py:853`, `test_download.py:611`, `test_tile_lists.py:112`.
   - Messages and docs: `scripts/train.py:53`, `:479`, `README.md:14`, `docs/outputs.md` (18), `docs/full-run.md` (8), the notebook (12), 7 other docs.
@@ -68,6 +65,8 @@ Constraints every fix keeps:
   - Drive restore, the copy every 30 minutes and `release_runtime` stay in the notebook: they exist only on Colab.
 
 ## Cut after review
+
+- Fix 2, paths from the project root: fingerprints and `last.pt` record cwd-relative paths (`outputs/split.csv`, `runs/...`), and `tests/e2e/test_run.py` runs the runner from a workspace of its own. The working directory stays the workspace, as on Colab (`%cd {CODE}`).
 
 - A shared stage preamble: `checkpoints.default_device()` is already one function; repeating its call is no duplication.
 - `garimpo split`: `outputs/split.csv` is frozen and versioned; its build stays a one-shot script.

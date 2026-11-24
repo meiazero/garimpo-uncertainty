@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.stages
@@ -175,27 +176,28 @@ def print_chosen_layer(path: Path, stale: str | None) -> None:
 
 def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     """Print each stage's table; history.csv always, as train rewrites it every epoch."""
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
     print_table(
         "losses, validation metrics, gradient norms, timings and GPU peaks per epoch",
-        run_dir / "history.csv",
+        run.history,
         lambda f: f.set_index("epoch"),
     )
     print_table(
         "monotonicity for choosing the layer (validation role)",
-        run_dir / "monotonicity_layer.csv",
+        run.monotonicity("layer"),
         lambda f: f.set_index(["layer", "direction", "role"]),
         not_current(statuses, "layer_monotonicity"),
     )
-    print_chosen_layer(run_dir / "chosen_layer.json", not_current(statuses, "choose_layer"))
+    print_chosen_layer(run.chosen_layer, not_current(statuses, "choose_layer"))
     print_table(
         "monotonicity of the chosen layer, on grid points only",
-        run_dir / "monotonicity_endpoint.csv",
+        run.monotonicity("endpoint"),
         lambda f: f.set_index(["layer", "direction", "role"]),
         not_current(statuses, "endpoint_monotonicity"),
     )
     print_table(
         "|cos(v1, w)| and PCA explained variance per layer",
-        run_dir / "directions" / "diagnostics.csv",
+        run.direction_diagnostics,
         lambda f: f[
             [
                 "layer",
@@ -211,7 +213,7 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     )
     print_table(
         "saturated searches",
-        run_dir / "metrics" / "results.csv",
+        run.results,
         lambda f: f.dropna(subset=["n_saturated_calibration"])[
             [
                 "alpha",
@@ -226,7 +228,7 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     )
     print_table(
         "PICP and MPIW per method (pipeline check only)",
-        run_dir / "metrics" / "results.csv",
+        run.results,
         lambda f: f[
             ["alpha", "method", "calibration", "n_cells", "n_groups", "picp", "mpiw"]
         ].set_index(["alpha", "method", "calibration"]),
@@ -244,18 +246,18 @@ def other_layer_records(
     statuses = {record["stage"]: record["status"] for record in records}
     if not layers or not_current(statuses, "compute_metrics") is not None:
         return [], []
-    path = run_dir / "chosen_layer.json"
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
+    path = run.chosen_layer
     try:
         chosen = read_chosen(path)[0]["layer"]
         if chosen not in layers:
             raise ValueError(f"layer {chosen!r} is not one of LAYERS {layers}")
     except UNREADABLE as error:
         cause = f"{path}: {type(error).__name__}: {error}"
-        return [{"stage": "chosen_layer.json", "status": "unreadable", "error": cause}], []
+        return [{"stage": path.name, "status": "unreadable", "error": cause}], []
     others = [layer for layer in layers if layer != chosen]
     layer_records = [
-        read_status(run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer / "status", stage)
-        | {"stage": f"{stage} [{layer}]"}
+        read_status(run.other_layer(layer).layer_status, stage) | {"stage": f"{stage} [{layer}]"}
         for layer in others
         for stage in garimpo_uncertainty.stages.LAYER_STAGES
     ]
@@ -289,12 +291,12 @@ def results_tables_failures(
     A stale results.csv would add failures of an earlier attempt to a verdict already FAIL.
     """
     failed = []
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
     if not_current(statuses, "compute_metrics") is None:
-        failed += results_failures(run_dir / "metrics" / "results.csv")
+        failed += results_failures(run.results)
     for layer in others:
         if statuses[f"compute_metrics [{layer}]"] == "ok":
-            layer_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer
-            found = results_failures(layer_dir / "metrics" / "results.csv")
+            found = results_failures(run.other_layer(layer).results)
             failed += [{"stage": f"{failure['stage']} [{layer}]"} for failure in found]
     return failed
 
@@ -328,7 +330,7 @@ def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list
         read_status(root / "status" / selection, "validate_data"),
     ]
     records += [
-        read_status(args.run_dir / "status", stage)
+        read_status(garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).status, stage)
         for stage in garimpo_uncertainty.stages.STAGE_ORDER
     ]
     layer_records, others = other_layer_records(args.run_dir, args.layers, records)

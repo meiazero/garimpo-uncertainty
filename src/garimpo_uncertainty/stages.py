@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import NoReturn
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.files
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,6 @@ IGNORED_ARGUMENTS = {
 MISSING_INPUT = "missing"
 # The stages that depend on the COMPASS-J layer; scripts/run.py also runs them on each other layer.
 LAYER_STAGES = ("compass_scores", "calibrate", "generate_intervals", "compute_metrics")
-LAYERS_DIR = "layers"
 # The order scripts/run.py runs a model's stages in, after validate_data; --force-from names one.
 STAGE_ORDER = (
     "train",
@@ -197,7 +197,9 @@ def _mark_later_stale(status_dir: Path, name: str) -> None:
     later = STAGE_ORDER[STAGE_ORDER.index(name) + 1 :]
     status_dirs = [status_dir]
     if STAGE_ORDER.index(name) < STAGE_ORDER.index(LAYER_STAGES[0]):
-        status_dirs += sorted((status_dir.parent / LAYERS_DIR).glob("*/status"))
+        status_dirs += sorted(
+            (status_dir.parent / garimpo_uncertainty.artifacts.LAYERS_DIR).glob("*/status")
+        )
     for directory, stage in ((d, s) for d in status_dirs for s in later):
         path = directory / f"{stage}.json"
         record = json.loads(path.read_text()) if path.exists() else {}

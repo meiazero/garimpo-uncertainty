@@ -19,10 +19,10 @@ import rasterio.transform
 import shapely
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.stages
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "tests" / "artifacts" / "e2e"
@@ -181,7 +181,7 @@ def run_other_layers(run_dir: Path, layers: list[str], data_root: Path) -> None:
     """Run the layer stages on every other layer, into layers/<layer>/, as scripts/run.py."""
     for layer in layers:
         if layer != chosen_layer(run_dir):
-            layer_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer
+            layer_dir = run_dir / garimpo_uncertainty.artifacts.LAYERS_DIR / layer
             run_scores_and_intervals(
                 run_dir, layer, data_root, beta_range="100", threshold="1e-3", layer_dir=layer_dir
             )

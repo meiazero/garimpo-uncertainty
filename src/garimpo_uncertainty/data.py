@@ -14,6 +14,8 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
+import garimpo_uncertainty.artifacts
+
 BANDS = ("B02", "B03", "B04", "B08", "B11", "B12")
 RED_INDEX, NIR_INDEX = 2, 3
 TILE_PX = 2048
@@ -24,6 +26,8 @@ REFLECTANCE_SCALE = 10_000
 CLOUD_SCL_CLASSES = (3, 8, 9, 10)  # cloud shadow, medium and high cloud, thin cirrus
 HELD_OUT_REGIONS = {"Amazonia BR", "Americas, other"}  # same set as scripts/split/make_split.py
 ROLES = ("train", "validation", "calibration", "test")
+# The roles every stage after training scores; the training role only fits.
+EVALUATED_ROLES = ROLES[1:]
 TRAIN_FRACTIONS = (0.01, 0.05, 0.10, 1.0)
 # vector_ha needs the polygon, so no array can recompute it; mask_ha is the writer's claim that
 # validate_data.py checks against masks.npy.
@@ -223,12 +227,12 @@ def tiles_identity(root: Path, split: pd.DataFrame, tile_ids: list[int]) -> dict
 
 def read_run_metadata(run_dir: Path) -> dict:
     """JSON twin of the checkpoint metadata, so stages with no torch can check the split."""
-    return json.loads((run_dir / "run_meta.json").read_text())
+    return json.loads(garimpo_uncertainty.artifacts.RunPaths.of(run_dir).run_meta.read_text())
 
 
 def run_identity(root: Path, run_dir: Path) -> dict[str, str | None]:
     """Return tiles_identity for a stage after training, which recorded the run's tiles."""
-    path = run_dir / "run_meta.json"
+    path = garimpo_uncertainty.artifacts.RunPaths.of(run_dir).run_meta
     if not path.exists():
         return {str(path): None}
     metadata = read_run_metadata(run_dir)
@@ -244,9 +248,9 @@ def read_run_cells(root: Path, run_dir: Path) -> pd.DataFrame:
 
 
 def read_predictions(root: Path, run_dir: Path) -> pd.DataFrame:
-    """Return the run's cell table with infer.py's columns, which align with it by position."""
+    """Return the run's cell table with infer's columns, which align with it by position."""
     cells = read_run_cells(root, run_dir)
-    with np.load(run_dir / "predictions" / "cells.npz") as stored:
+    with np.load(garimpo_uncertainty.artifacts.RunPaths.of(run_dir).predictions) as stored:
         if not np.array_equal(stored["cell_index"], cells.cell_index.to_numpy()):
             raise ValueError("predictions/cells.npz does not align with this run's cell table")
         names = [name for name in stored.files if name != "cell_index"]

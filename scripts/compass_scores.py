@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
@@ -133,7 +134,8 @@ def score_cells(
     device: str,
 ) -> dict[str, np.ndarray]:
     """Return arrays aligned with `cells`; scores have one row per COMPASS_METHODS entry."""
-    fitted = compass2d.directions.Directions.load(args.run_dir / "directions" / f"{args.layer}.npz")
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    fitted = compass2d.directions.Directions.load(run.directions(args.layer))
     methods = garimpo_uncertainty.intervals.COMPASS_METHODS
     arrays = {
         name: np.empty((len(methods), len(cells)), dtype=bool if "saturated" in name else float)
@@ -192,16 +194,16 @@ def main() -> None:
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
-    scores_path = args.layer_dir / "scores" / "scores.npz"
-    inputs = [args.checkpoint, args.run_dir / "directions" / f"{args.layer}.npz"]
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
+    inputs = [args.checkpoint, run.directions(args.layer)]
 
     def work() -> dict:
         cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
         model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
         # Validation cells fix the asymmetric rows' side ratio, apart from calibration.
-        evaluated = cells[cells.role.isin(["validation", "calibration", "test"])]
+        evaluated = cells[cells.role.isin(garimpo_uncertainty.data.EVALUATED_ROLES)]
         arrays = score_cells(model, evaluated, root, metadata, args, device=device)
-        garimpo_uncertainty.files.write_arrays(scores_path, **arrays)
+        garimpo_uncertainty.files.write_arrays(run.scores, **arrays)
         return {
             "jacobians": list(arrays["jacobians"].shape),
             "feature_sums": list(arrays["feature_sums"].shape),
@@ -215,9 +217,9 @@ def main() -> None:
         }
 
     garimpo_uncertainty.stages.run_stage(
-        args.layer_dir / "status",
+        run.layer_status,
         "compass_scores",
-        [scores_path],
+        [run.scores],
         garimpo_uncertainty.stages.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),

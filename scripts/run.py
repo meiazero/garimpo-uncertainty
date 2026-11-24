@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 from typing import NoReturn
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.run_config
 import garimpo_uncertainty.stages
 
@@ -140,12 +141,12 @@ class Stages:
 
     def __init__(self, config: dict, num_workers: int) -> None:
         self.config = config
-        run_dir = config["RUN_DIR"]
+        self.run = garimpo_uncertainty.artifacts.RunPaths.of(Path(config["RUN_DIR"]))
         self.common = [
             "--checkpoint",
-            f"{run_dir}/best_model.pt",
+            str(self.run.best_model),
             "--run-dir",
-            run_dir,
+            config["RUN_DIR"],
             "--batch-size",
             self.value("EVAL_BATCH_SIZE"),
             "--num-workers",
@@ -229,13 +230,13 @@ class Stages:
         Cheung et al. (2026), Table 4, compare the interval width across layers. The chosen layer's
         files stay where they were, so nothing reading a run's results changes.
         """
-        run_dir = self.config["RUN_DIR"]
-        layers_dir = garimpo_uncertainty.stages.LAYERS_DIR
         return [
             stage
             for layer in self.config["LAYERS"]
             if layer != chosen
-            for stage in self.on_layer(layer, "--layer-dir", f"{run_dir}/{layers_dir}/{layer}")
+            for stage in self.on_layer(
+                layer, "--layer-dir", str(self.run.other_layer(layer).layer_root)
+            )
         ]
 
     def on_layer(self, layer: str, *where: str) -> list[tuple[str, list[str]]]:
@@ -290,7 +291,7 @@ def run_stages(log: Log, stages: Stages, force_from: str | None) -> int:
     """
     if code := run_in_order(log, stages.diagnostics(), force_from):
         return code
-    chosen = Path(stages.config["RUN_DIR"]) / "chosen_layer.json"
+    chosen = stages.run.chosen_layer
     try:
         layer = json.loads(chosen.read_text(encoding="utf-8"))["layer"]
     except (OSError, ValueError, KeyError) as error:

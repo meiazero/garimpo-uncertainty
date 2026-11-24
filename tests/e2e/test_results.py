@@ -566,7 +566,7 @@ def test_a_mask_filling_the_cell_has_no_boundary_to_match(tmp_path: Path) -> Non
     (tmp_path / "predictions").mkdir()
     np.save(tmp_path / "predictions" / "test.npy", np.stack([full, square]) * 255)
     metrics = garimpo_uncertainty.evaluation.segmentation_metrics(
-        tmp_path, np.array([0, 1]), tmp_path / "predictions", tolerance_px=1.0
+        tmp_path, np.array([0, 1]), tmp_path / "predictions" / "test.npy", tolerance_px=1.0
     )
     assert metrics["boundary_by_rule"].tolist() == [True, False]
     assert metrics["boundary_f1"].tolist() == [1.0, 1.0]
@@ -871,7 +871,7 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     upper = np.full_like(evaluation.all_upper, np.nan)
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(garimpo_uncertainty.cell_dataset.CellDataset, "__getitem__", counted_read)
-        calibrated = stage["Calibrated"].read(evaluation.run_dir)
+        calibrated = stage["Calibrated"].read(evaluation.run_dir / "calibration" / "quantiles.npz")
         stage["compass_endpoints"](
             model,
             calibrated,

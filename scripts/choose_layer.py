@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.files
 import garimpo_uncertainty.stages
 
@@ -54,9 +55,10 @@ def main() -> None:
     args = parser.parse_args()
     garimpo_uncertainty.stages.log_to_stdout()
 
-    diagnostics_path = args.run_dir / "directions" / "diagnostics.csv"
-    monotonicity_path = args.run_dir / "monotonicity_layer.csv"
-    output = args.run_dir / "chosen_layer.json"
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    diagnostics_path = run.direction_diagnostics
+    monotonicity_path = run.monotonicity("layer")
+    output = run.chosen_layer
 
     def work() -> dict:
         # A refusal must not leave an earlier choice for the pipeline check to print as this one.
@@ -74,7 +76,7 @@ def main() -> None:
         return {"layer": layer, "candidates": len(table)}
 
     garimpo_uncertainty.stages.run_stage(
-        args.run_dir / "status",
+        run.status,
         "choose_layer",
         [output],
         garimpo_uncertainty.stages.fingerprint(args, [diagnostics_path, monotonicity_path]),

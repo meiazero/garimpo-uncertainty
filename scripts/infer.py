@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
@@ -24,7 +25,6 @@ import garimpo_uncertainty.evaluation
 import garimpo_uncertainty.files
 import garimpo_uncertainty.stages
 
-PERSISTED_ROLES = ("validation", "calibration", "test")
 AREA_COLUMNS = ("v", "vhat", "p_sum", "pixel_var", "cell_ha")
 
 
@@ -125,14 +125,13 @@ def main() -> None:
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
-    prediction_dir = args.run_dir / "predictions"
-    cells_path = prediction_dir / "cells.npz"
-    arrays = {role: prediction_dir / f"{role}.npy" for role in PERSISTED_ROLES}
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    arrays = {role: run.probabilities(role) for role in garimpo_uncertainty.data.EVALUATED_ROLES}
 
     def work() -> dict:
         cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
         model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
-        prediction_dir.mkdir(parents=True, exist_ok=True)
+        run.predictions.parent.mkdir(parents=True, exist_ok=True)
         columns = {name: np.empty(len(cells)) for name in AREA_COLUMNS}
         data_wait, role_seconds, role_peaks = {}, {}, {}
         for role in garimpo_uncertainty.data.ROLES:
@@ -153,7 +152,7 @@ def main() -> None:
             role_peaks[role] = garimpo_uncertainty.stages.take_gpu_peak_bytes()
             data_wait[role] = round(wait, 3)
         garimpo_uncertainty.files.write_arrays(
-            cells_path, cell_index=cells.cell_index.to_numpy(), **columns
+            run.predictions, cell_index=cells.cell_index.to_numpy(), **columns
         )
         shapes = {role: list(np.load(path, mmap_mode="r").shape) for role, path in arrays.items()}
         return shapes | {
@@ -164,9 +163,9 @@ def main() -> None:
         }
 
     garimpo_uncertainty.stages.run_stage(
-        args.run_dir / "status",
+        run.status,
         "infer",
-        [cells_path, *arrays.values()],
+        [run.predictions, *arrays.values()],
         garimpo_uncertainty.stages.fingerprint(
             args,
             [args.checkpoint],

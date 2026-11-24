@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
@@ -192,9 +193,10 @@ def read_scores(
     cells: pd.DataFrame, args: argparse.Namespace
 ) -> tuple[CompassScores, np.ndarray, np.ndarray]:
     """Return the scores and the density ratio of test over calibration features at both."""
-    by_role = {role: cells[cells.role == role] for role in ("validation", "calibration", "test")}
+    by_role = {role: cells[cells.role == role] for role in garimpo_uncertainty.data.EVALUATED_ROLES}
     calibration_cells, test_cells = by_role["calibration"], by_role["test"]
-    with np.load(args.layer_dir / "scores" / "scores.npz") as stored:
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
+    with np.load(run.scores) as stored:
         at = {
             role: garimpo_uncertainty.data.positions_of(
                 stored["cell_index"], frame.cell_index.to_numpy()
@@ -430,17 +432,17 @@ def main() -> None:
     garimpo_uncertainty.stages.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
-    run_dir, layer_dir = args.run_dir, args.layer_dir
-    quantiles_path = layer_dir / "calibration" / "quantiles.npz"
-    inputs = [run_dir / "predictions" / "cells.npz", layer_dir / "scores" / "scores.npz"]
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
     garimpo_uncertainty.stages.run_stage(
-        layer_dir / "status",
+        run.layer_status,
         "calibrate",
-        [quantiles_path],
+        [run.quantiles],
         garimpo_uncertainty.stages.fingerprint(
-            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
+            args,
+            [run.predictions, run.scores],
+            hashed=garimpo_uncertainty.data.run_identity(root, run.root),
         ),
-        lambda: calibrate(args, root, quantiles_path),
+        lambda: calibrate(args, root, run.quantiles),
         force=args.force,
     )
 
