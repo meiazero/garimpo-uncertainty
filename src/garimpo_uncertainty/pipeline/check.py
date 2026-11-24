@@ -17,10 +17,6 @@ import garimpo_uncertainty.intervals
 import garimpo_uncertainty.pipeline.runner
 import garimpo_uncertainty.validation
 
-PASS, FAIL = "PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL"
-# Each run's log ends with one of these; `garimpo status` reads them back.
-VERDICTS = (PASS, FAIL)
-
 
 def not_current(statuses: dict[str, str], stage: str) -> str | None:
     """Name the first stage up to `stage` that is not ok; None when its files are current.
@@ -93,7 +89,9 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
     """Print the first failing stage and the job's exit code; return what failed."""
     # download_scenes is shared by every fraction, so another fraction's download running or failing
     # says nothing of this run; validate_data decides whether this run's tiles are there.
-    required = [r for r in records if r["stage"] != "download_scenes"]
+    required = [
+        r for r in records if r["stage"] != garimpo_uncertainty.pipeline.runner.DOWNLOAD_SCENES
+    ]
     failed = [r for r in required if r["status"] != "ok"]
     # not_run has no error to print: the first stage that ran and is not ok is the cause.
     first_failure = next(
@@ -121,7 +119,7 @@ def report_store(
     """Print the run's scenes and cells as far as the store allows; return problems and tiles."""
     store_problems = garimpo_uncertainty.validation.unusable_store(root, split, tile_ids)
     tiles = None
-    if not store_problems or store_problems[0].startswith("store_missing"):
+    if not store_problems or garimpo_uncertainty.data.missing_arrays(root):
         try:
             tiles = garimpo_uncertainty.data.tile_records(root, split, tile_ids)
         except ValueError as error:
@@ -314,10 +312,11 @@ def report_slots(
 def exit_with_verdict(failed: list[dict]) -> None:
     print("\n" + "=" * 78)
     if failed:
-        print(f"{FAIL} at {[r['stage'] for r in failed]}")
+        print(f"{garimpo_uncertainty.pipeline.runner.FAIL} at {[r['stage'] for r in failed]}")
         print("=" * 78)
         raise SystemExit(1)
-    print(f"{PASS} (every stage ran; this says nothing about method quality)")
+    passed = garimpo_uncertainty.pipeline.runner.PASS
+    print(f"{passed} (every stage ran; this says nothing about method quality)")
     print("=" * 78)
 
 
@@ -325,7 +324,9 @@ def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list
     """Return every status the run needs, in order, and the other layers they cover."""
     selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
     records = [
-        garimpo_uncertainty.pipeline.runner.read_status(root / "status", "download_scenes"),
+        garimpo_uncertainty.pipeline.runner.read_status(
+            root / "status", garimpo_uncertainty.pipeline.runner.DOWNLOAD_SCENES
+        ),
         garimpo_uncertainty.pipeline.runner.read_status(
             root / "status" / selection, "validate_data"
         ),

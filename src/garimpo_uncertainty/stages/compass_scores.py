@@ -40,6 +40,16 @@ class BatchScores(NamedTuple):
     feature_sums: np.ndarray
 
 
+def search_limits(args: argparse.Namespace) -> dict[str, tuple[float, float]]:
+    """Return each COMPASS method's search range and threshold; only COMPASS-L moves the logits."""
+    logits = (args.beta_range_logits, args.search_threshold_logits)
+    features = (args.beta_range_features, args.search_threshold_features)
+    return {
+        method: logits if method == "compass_l" else features
+        for method in garimpo_uncertainty.intervals.COMPASS_METHODS
+    }
+
+
 def batch_spaces(
     model: torch.nn.Module,
     features: list[torch.Tensor],
@@ -52,12 +62,7 @@ def batch_spaces(
         split.decode, split.z, args.direction_temperature
     )
     spaces = garimpo_uncertainty.compass_j.spaces(split, jacobian, fitted, args.temperature)
-    logits_limits = (args.beta_range_logits, args.search_threshold_logits)
-    features_limits = (args.beta_range_features, args.search_threshold_features)
-    searched = [
-        (spaces[method], *(logits_limits if method == "compass_l" else features_limits))
-        for method in garimpo_uncertainty.intervals.COMPASS_METHODS
-    ]
+    searched = [(spaces[method], *limits) for method, limits in search_limits(args).items()]
     return searched, jacobian, split.z.flatten(2).sum(2).cpu().numpy()
 
 
@@ -123,9 +128,7 @@ def score_cells(
     return {
         "cell_index": cells.cell_index.to_numpy(),
         **arrays,
-        "beta_range": np.array(
-            [args.beta_range_logits, args.beta_range_features, args.beta_range_features]
-        ),
+        "beta_range": np.array([beta_range for beta_range, _ in search_limits(args).values()]),
         "jacobians": np.concatenate(jacobians),
         "feature_sums": np.concatenate(feature_sums),
     }

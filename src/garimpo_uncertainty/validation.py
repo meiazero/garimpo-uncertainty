@@ -17,7 +17,10 @@ import garimpo_uncertainty.data
 MAX_EXAMPLES = 5
 QUANTILES = (0.0, 0.5, 0.9, 0.99, 1.0)
 # Anything else may be an outage, which must not silently remove hundreds of training tiles.
-EXCLUDABLE_INDUSTRIAL_STATUSES = ("missing_item", "no_mask_polygon")
+EXCLUDABLE_INDUSTRIAL_STATUSES = (
+    garimpo_uncertainty.data.MISSING_ITEM,
+    garimpo_uncertainty.data.NO_MASK_POLYGON,
+)
 DIAGNOSTICS_NOTE = "reported only, with no threshold; these values cannot fail the stage"
 # Beyond 11 a value is no Sentinel-2 scene classification class.
 MAX_SCL_CLASS = 11

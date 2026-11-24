@@ -12,8 +12,7 @@ import pandas as pd
 
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.config
-import garimpo_uncertainty.pipeline.check
-import garimpo_uncertainty.pipeline.run
+import garimpo_uncertainty.pipeline.runner
 
 CONFIGS = Path("configs")
 LOGS = Path("outputs/logs")
@@ -56,8 +55,8 @@ def last_verdict(config: garimpo_uncertainty.config.RunConfig, since: float) -> 
     # Restored from Drive with its time: the run died before writing, or never ran.
     if modified < since:
         return "NOT RUN since the session started: read the run cell's output"
-    attempt = text.rsplit(garimpo_uncertainty.pipeline.run.ATTEMPT, 1)[-1]
-    verdicts = garimpo_uncertainty.pipeline.check.VERDICTS
+    attempt = text.rsplit(garimpo_uncertainty.pipeline.runner.ATTEMPT, 1)[-1]
+    verdicts = garimpo_uncertainty.pipeline.runner.VERDICTS
     found = [line for line in attempt.splitlines() if any(v in line for v in verdicts)]
     return found[-1] if found else "NO VERDICT: the job or its check died; see the log"
 
