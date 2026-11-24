@@ -43,7 +43,7 @@ def both(values: dict[str, float]) -> dict[tuple[str, str], float]:
 
 def choose(run_dir: Path, minimum: str = "1.0", check: bool = True):
     args = ["--run-dir", str(run_dir), "--min-fraction-ascending", minimum]
-    return support.run("choose_layer.py", *args, data_root=run_dir, check=check)
+    return support.run("choose_layer", *args, data_root=run_dir, check=check)
 
 
 def chosen(run_dir: Path) -> dict:
@@ -91,7 +91,7 @@ def test_a_forced_rerun_that_refuses_leaves_no_old_choice(tmp_path: Path) -> Non
     (run_dir / "monotonicity_layer.csv").write_text(
         (run_dir / "monotonicity_layer.csv").read_text().replace(",1.0\n", ",0.5\n")
     )
-    result = support.run("choose_layer.py", *args, data_root=run_dir, check=False)
+    result = support.run("choose_layer", *args, data_root=run_dir, check=False)
     assert result.returncode != 0
     assert not (run_dir / "chosen_layer.json").exists()
 

@@ -17,7 +17,7 @@ import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
 import garimpo_uncertainty.files
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 
 class Intervals(NamedTuple):
@@ -173,7 +173,7 @@ def compute(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
-    garimpo_uncertainty.stages.add_layer_dir(parser)
+    garimpo_uncertainty.pipeline.runner.add_layer_dir(parser)
     parser.add_argument(
         "--boundary-tolerance-px",
         type=float,
@@ -187,23 +187,19 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     args.layer_dir = args.layer_dir or args.run_dir
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
     tables = [run.metric_table(name) for name in garimpo_uncertainty.artifacts.METRIC_TABLES]
     inputs = [run.predictions, run.probabilities("test"), run.intervals, run.quantiles, run.scores]
-    garimpo_uncertainty.stages.run_stage(
+    garimpo_uncertainty.pipeline.runner.run_stage(
         run.layer_status,
         "compute_metrics",
         [run.cell_metrics, *tables],
-        garimpo_uncertainty.stages.fingerprint(
+        garimpo_uncertainty.pipeline.runner.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run.root)
         ),
         lambda: compute(args, root, run),
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import runpy
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
@@ -22,6 +21,7 @@ import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models.common
+import garimpo_uncertainty.stages.generate_intervals
 from tests.e2e import support
 
 ALPHA = 0.1
@@ -850,7 +850,7 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
 ) -> None:
     """The stage's own function, in this process, so its reads and encoder passes can be counted."""
     model, test = compass_inputs.model, compass_inputs.test
-    stage = runpy.run_path(str(support.ROOT / "scripts" / "generate_intervals.py"))
+    stage = garimpo_uncertainty.stages.generate_intervals
     first_layer = model.encoder.conv1
     encoder_passes: list[int] = []
     handle = first_layer.register_forward_hook(lambda *_: encoder_passes.append(1))
@@ -871,8 +871,8 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     upper = np.full_like(evaluation.all_upper, np.nan)
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(garimpo_uncertainty.cell_dataset.CellDataset, "__getitem__", counted_read)
-        calibrated = stage["Calibrated"].read(evaluation.run_dir / "calibration" / "quantiles.npz")
-        stage["compass_endpoints"](
+        calibrated = stage.Calibrated.read(evaluation.run_dir / "calibration" / "quantiles.npz")
+        stage.compass_endpoints(
             model,
             calibrated,
             test,
@@ -889,7 +889,7 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     assert sorted(reads) == list(range(len(test)))
     assert len(encoder_passes) == int(np.ceil(len(test) / 8))
     rows = compass_inputs.rows
-    stage["widen_saturated"](calibrated, test.cell_ha.to_numpy(), lower, upper)
+    stage.widen_saturated(calibrated, test.cell_ha.to_numpy(), lower, upper)
     clipped_lower, clipped_upper = garimpo_uncertainty.intervals.clip_to_cell(
         lower[:, rows], upper[:, rows], test.cell_ha.to_numpy()
     )

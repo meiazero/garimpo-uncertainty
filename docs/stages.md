@@ -8,33 +8,33 @@ Paths without a prefix are inside the run directory.
 
 | Stage | Node | Input | Output |
 |---|---|---|---|
-| `download_data.py metadata` | any | Zenodo 14195737 | `$DATA/zenodo/mining_area_data.gpkg` |
-| `download_data.py lists` | any, only to regenerate | `outputs/split.csv`, subset seed | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
-| `download_data.py scenes` | any | `outputs/tiles/tiles_<P>pct.json`, `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/{images,masks,scl,stats}.npy`, `$DATA/tiles/*.json` |
-| `download_data.py weights` | any | Hugging Face | `$DATA/weights/resnet18_sentinel2_all_moco-59bfdff9.pth`, `$DATA/weights/resnet18_imagenet-b1d1d36f.safetensors` |
-| `validate_data.py` | CPU | store, sidecars, split, fraction | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
-| `train.py` | GPU | the run's slots and sidecars, split, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
-| `infer.py` | GPU | checkpoint, store | `predictions/cells.npz`, `predictions/{validation,calibration,test}.npy` |
-| `fit_directions.py` | GPU | checkpoint, training slots | `directions/<layer>.npz`, `directions/diagnostics.csv` |
-| `verify_monotonicity.py --use layer` | GPU | checkpoint, directions, validation slots | `monotonicity_layer.csv` |
-| `choose_layer.py` | CPU | `directions/diagnostics.csv`, validation rows of `monotonicity_layer.csv` | `chosen_layer.json` (the layer, the threshold, each candidate's explained variance and fractions) |
-| `verify_monotonicity.py --use endpoint` | GPU | checkpoint, direction of the layer, calibration and test slots | `monotonicity_endpoint.csv` |
-| `compass_scores.py` | GPU | checkpoint, direction of the layer, validation, calibration and test slots | `scores/scores.npz` |
-| `calibrate.py` | CPU | `predictions/cells.npz`, `scores/scores.npz` | `calibration/quantiles.npz` (`quantile`, the `beta_hat` of each row and cell) |
-| `generate_intervals.py` | GPU | checkpoint, `calibration/quantiles.npz`, directions, `scores/scores.npz`, test slots; one pass, one encoder pass per batch | `intervals/intervals.npz` |
-| `compute_metrics.py` | CPU | `intervals/intervals.npz`, `predictions/`, `masks.npy`, `calibration/quantiles.npz`, `scores/scores.npz` | `metrics/cell_metrics.npz`, `metrics/results.csv`, `metrics/width_comparisons.csv`, `metrics/coverage_comparisons.csv`, `metrics/q1_spearman.csv`, `metrics/coverage_by_stratum.csv`, `metrics/score_relation.csv` |
-| `merge_results.py` | any | small tables of each run, every stage `ok`, the other layers' included | `outputs/results.csv`, `outputs/width_comparisons.csv`, `outputs/coverage_comparisons.csv`, `outputs/q1_spearman.csv`, `outputs/coverage_by_stratum.csv`, `outputs/score_relation.csv`, `outputs/layer_diagnostics.csv`, `outputs/monotonicity_layer.csv`, `outputs/monotonicity_endpoint.csv`, `outputs/chosen_layers.csv`, `outputs/layer_results.csv` |
-| `pipeline_check.py` | any | status files and tables | prints the debugging report |
+| `garimpo download_data metadata` | any | Zenodo 14195737 | `$DATA/zenodo/mining_area_data.gpkg` |
+| `garimpo download_data lists` | any, only to regenerate | `outputs/split.csv`, subset seed | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
+| `garimpo download_data scenes` | any | `outputs/tiles/tiles_<P>pct.json`, `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/{images,masks,scl,stats}.npy`, `$DATA/tiles/*.json` |
+| `garimpo download_data weights` | any | Hugging Face | `$DATA/weights/resnet18_sentinel2_all_moco-59bfdff9.pth`, `$DATA/weights/resnet18_imagenet-b1d1d36f.safetensors` |
+| `garimpo validate_data` | CPU | store, sidecars, split, fraction | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
+| `garimpo train` | GPU | the run's slots and sidecars, split, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
+| `garimpo infer` | GPU | checkpoint, store | `predictions/cells.npz`, `predictions/{validation,calibration,test}.npy` |
+| `garimpo fit_directions` | GPU | checkpoint, training slots | `directions/<layer>.npz`, `directions/diagnostics.csv` |
+| `garimpo verify_monotonicity --use layer` | GPU | checkpoint, directions, validation slots | `monotonicity_layer.csv` |
+| `garimpo choose_layer` | CPU | `directions/diagnostics.csv`, validation rows of `monotonicity_layer.csv` | `chosen_layer.json` (the layer, the threshold, each candidate's explained variance and fractions) |
+| `garimpo verify_monotonicity --use endpoint` | GPU | checkpoint, direction of the layer, calibration and test slots | `monotonicity_endpoint.csv` |
+| `garimpo compass_scores` | GPU | checkpoint, direction of the layer, validation, calibration and test slots | `scores/scores.npz` |
+| `garimpo calibrate` | CPU | `predictions/cells.npz`, `scores/scores.npz` | `calibration/quantiles.npz` (`quantile`, the `beta_hat` of each row and cell) |
+| `garimpo generate_intervals` | GPU | checkpoint, `calibration/quantiles.npz`, directions, `scores/scores.npz`, test slots; one pass, one encoder pass per batch | `intervals/intervals.npz` |
+| `garimpo compute_metrics` | CPU | `intervals/intervals.npz`, `predictions/`, `masks.npy`, `calibration/quantiles.npz`, `scores/scores.npz` | `metrics/cell_metrics.npz`, `metrics/results.csv`, `metrics/width_comparisons.csv`, `metrics/coverage_comparisons.csv`, `metrics/q1_spearman.csv`, `metrics/coverage_by_stratum.csv`, `metrics/score_relation.csv` |
+| `garimpo merge` | any | small tables of each run, every stage `ok`, the other layers' included | `outputs/results.csv`, `outputs/width_comparisons.csv`, `outputs/coverage_comparisons.csv`, `outputs/q1_spearman.csv`, `outputs/coverage_by_stratum.csv`, `outputs/score_relation.csv`, `outputs/layer_diagnostics.csv`, `outputs/monotonicity_layer.csv`, `outputs/monotonicity_endpoint.csv`, `outputs/chosen_layers.csv`, `outputs/layer_results.csv` |
+| `garimpo check` | any | status files and tables | prints the debugging report |
 
-`scripts/run.py` runs the stages from `train` to `compute_metrics` in `STAGE_ORDER`
-(`garimpo_uncertainty/stages.py`): `train`,
+`garimpo run` runs the stages from `train` to `compute_metrics` in `STAGE_ORDER`
+(`garimpo_uncertainty/pipeline/runner.py`): `train`,
 `infer`, `fit_directions`, `layer_monotonicity`, `choose_layer`, `endpoint_monotonicity`,
 `compass_scores`, `calibrate`, `generate_intervals`, `compute_metrics`. These are also the names of
 their status files.
 
 ## The other layers
 
-After `compute_metrics`, `scripts/run.py` runs `compass_scores`, `calibrate`, `generate_intervals`
+After `compute_metrics`, `garimpo run` runs `compass_scores`, `calibrate`, `generate_intervals`
 and `compute_metrics` (`LAYER_STAGES`) once more on every other layer of `LAYERS`, so the interval
 width can be compared across layers, as Cheung et al. (2026) do in Table 4. Each such stage takes
 `--layer-dir runs/<run>/layers/<layer>`: it reads the checkpoint, `predictions/`, `directions/` and
@@ -57,13 +57,13 @@ layer.
 
 ## Skip, refuse, force
 
-Every stage from `validate_data.py` on, and `download_data.py scenes`, records its status in a
+Every stage from `garimpo validate_data` on, and `garimpo download_data scenes`, records its status in a
 status file:
 
 | Stage | Status file |
 |---|---|
-| `download_data.py scenes` | `$DATA/status/download_scenes.json` |
-| `validate_data.py` | `$DATA/status/fraction-<F>-seed-<S>/validate_data.json` |
+| `garimpo download_data scenes` | `$DATA/status/download_scenes.json` |
+| `garimpo validate_data` | `$DATA/status/fraction-<F>-seed-<S>/validate_data.json` |
 | every stage in `STAGE_ORDER` | `status/<stage>.json` in the run directory |
 
 A stage skips its work when its outputs exist from the same fingerprint, stops with status
@@ -74,8 +74,8 @@ holds the status itself) and each input file's
 path, size and modification time. A refusal keeps the last completed fingerprint, so it never turns
 into a rerun on the next attempt.
 
-Two stages differ. `download_data.py scenes` lists no outputs, so every run checks the sidecars and
-fetches what is still pending. `validate_data.py` recomputes the slot hashes on every call and
+Two stages differ. `garimpo download_data scenes` lists no outputs, so every run checks the sidecars and
+fetches what is still pending. `garimpo validate_data` recomputes the slot hashes on every call and
 validates again, whatever its status, when they disagree.
 
 A missing input fails the stage before any work, keeping the last completed fingerprint, so once
@@ -94,7 +94,7 @@ the input is back a finished stage skips again.
 | `not_run` | no status file exists; printed by the check, never written | fails |
 | `unreadable` | given `--layers`, every stage of `STAGE_ORDER` is `ok` but `chosen_layer.json` cannot be read, lacks a key `choose_layer` writes, holds candidates that are not a table by layer, or names a layer outside `LAYERS`, so the other layers are unknown; printed by the check under the name `chosen_layer.json`, with the error, never written | fails |
 
-`pipeline_check.py` fails on any status other than `ok` in `validate_data`, a stage of
+`garimpo check` fails on any status other than `ok` in `validate_data`, a stage of
 `STAGE_ORDER` or, given `--layers`, a stage of another layer or an unreadable `chosen_layer.json`,
 and prints the first of them that is `failed`, `refused`, `running`, `interrupted`, `stale` or
 `unreadable`. It also checks each other layer's
@@ -103,7 +103,7 @@ and prints the first of them that is `failed`, `refused`, `running`, `interrupte
 `validate_data` decides whether this run's tiles are there.
 
 An `interrupted` status keeps no completed fingerprint, so a rerun runs the stage's work again
-instead of skipping it. `train.py` continues from `last.pt`, written after every epoch. The
+instead of skipping it. `garimpo train` continues from `last.pt`, written after every epoch. The
 download starts no queued tile after Ctrl+C, names the tiles in progress and logs each as it
 writes its sidecar, and on rerun fetches only the tiles without an `ok` sidecar. Presses within
 a second of the first count as one, since `uv run` forwards the terminal's Ctrl+C to its child.
@@ -112,20 +112,20 @@ Other stages start their work over.
 
 ## Run identity
 
-Only `train.py` ever updates weights. `best_model.pt` stores the model configuration, variant,
+Only `garimpo train` ever updates weights. `best_model.pt` stores the model configuration, variant,
 starting weights, seed, normalization, fraction, subset seed, the run's tile ids, split hash and the
 commits of root and submodule. Later stages take the normalization from it and need no weights file.
-They refuse a checkpoint from another split, and `train.py` refuses to resume `last.pt` under other
+They refuse a checkpoint from another split, and `garimpo train` refuses to resume `last.pt` under other
 arguments, weights and the hash of the run's tile sidecars included.
 
 Code is not part of any fingerprint. A run calibrated before rows were added to
 `intervals.COMBINATIONS` still skips `calibrate`, and the pipeline check fails on the absent rows:
 rerun with `--force-from calibrate`.
 
-Only a fresh start of `train.py` reads starting weights. Without the file it fails, naming the
-`scripts/download_data.py weights` command of [full-run.md](full-run.md#download-the-store). A finished or
+Only a fresh start of `garimpo train` reads starting weights. Without the file it fails, naming the
+`garimpo download_data weights` command of [full-run.md](full-run.md#download-the-store). A finished or
 resumed run needs no weights file and takes the hash it started from out of `run_meta.json`; with
-both absent, `train.py` fails naming both.
+both absent, `garimpo train` fails naming both.
 
 The store is known by the hash of the run's index set and sidecars, so restoring it with new
 modification times refuses nothing, but the data root must stay at the same path. Restoring
@@ -136,7 +136,7 @@ training never reaches a network or a library cache.
 
 ## Data validation
 
-`validate_data.py` separates what can fail from what cannot, on the tiles of the run's selection
+`garimpo validate_data` separates what can fail from what cannot, on the tiles of the run's selection
 only. `problems` fail the stage:
 
 - a missing artisanal tile, a selected tile never downloaded (`not_downloaded`) and group leakage

@@ -86,7 +86,7 @@ def grown_root() -> GrownRoot:
     support.fill_tiles(ROOT, split, small.tile_id.tolist(), rng)
 
     support.validate(ROOT, SPLIT_PATH, SMALL_REPORT, fraction="0.01", summary=SUMMARY)
-    support.run("train.py", *small_args(), data_root=ROOT)
+    support.run("train", *small_args(), data_root=ROOT)
     finish_run(SMALL_DIR)
 
     small_ids = small.tile_id.tolist()
@@ -126,7 +126,7 @@ def test_larger_fraction_leaves_earlier_slots_byte_identical(grown_root: GrownRo
 
 
 def test_finished_run_cannot_care_that_more_tiles_arrived(grown_root: GrownRoot) -> None:
-    assert "skipping" in support.run("train.py", *small_args(), data_root=ROOT).stdout
+    assert "skipping" in support.run("train", *small_args(), data_root=ROOT).stdout
     assert json.loads(SMALL_STATUS.read_text())["status"] == "ok"
     # A refusal would raise here, and a redone stage would change a file.
     finish_run(SMALL_DIR)
@@ -136,10 +136,7 @@ def test_finished_run_cannot_care_that_more_tiles_arrived(grown_root: GrownRoot)
     # The slot hashes cover this run's tiles only, so the others arriving must keep it passing.
     report_args = ["--run-dir", str(SMALL_DIR), "--split", str(SPLIT_PATH)]
     report_args += ["--train-fraction", "0.01", "--subset-seed", "0"]
-    assert (
-        "PIPELINE CHECK: PASS"
-        in support.run("pipeline_check.py", *report_args, data_root=ROOT).stdout
-    )
+    assert "PIPELINE CHECK: PASS" in support.run("check", *report_args, data_root=ROOT).stdout
 
 
 @pytest.mark.parametrize(
@@ -148,16 +145,16 @@ def test_finished_run_cannot_care_that_more_tiles_arrived(grown_root: GrownRoot)
 def test_another_selection_refuses_under_the_same_run_dir(
     scratch_small_run: GrownRoot, changed: dict[str, str]
 ) -> None:
-    refused = support.run("train.py", *small_args(**changed), data_root=ROOT, check=False)
+    refused = support.run("train", *small_args(**changed), data_root=ROOT, check=False)
     assert refused.returncode != 0
     assert json.loads(SMALL_STATUS.read_text())["status"] == "refused"
-    assert "skipping" in support.run("train.py", *small_args(), data_root=ROOT).stdout
+    assert "skipping" in support.run("train", *small_args(), data_root=ROOT).stdout
 
 
 def test_interrupted_run_refuses_another_fraction(scratch_small_run: GrownRoot) -> None:
     """An interrupted run has no finished status, so last.pt itself must refuse."""
     SMALL_STATUS.unlink()
-    resumed = support.run("train.py", *small_args(fraction="1.0"), data_root=ROOT, check=False)
+    resumed = support.run("train", *small_args(fraction="1.0"), data_root=ROOT, check=False)
     assert resumed.returncode != 0
     assert "'train_fraction'" in json.loads(SMALL_STATUS.read_text())["error"]
 
@@ -170,7 +167,7 @@ def test_interrupted_run_refuses_a_recut_tile(scratch_small_run: GrownRoot) -> N
     original = sidecar.read_text()
     SMALL_STATUS.unlink()
     sidecar.write_text(json.dumps(json.loads(original) | {"resampling_20m": "nearest"}))
-    resumed = support.run("train.py", *small_args(), data_root=ROOT, check=False)
+    resumed = support.run("train", *small_args(), data_root=ROOT, check=False)
     sidecar.write_text(original)
     assert resumed.returncode != 0
     assert "['tiles_sha256']" in json.loads(SMALL_STATUS.read_text())["error"]
@@ -183,10 +180,10 @@ def test_recut_of_a_tile_of_the_run_refuses(scratch_small_run: GrownRoot) -> Non
     sidecar = ROOT / "tiles" / f"{tile}.json"
     original = sidecar.read_text()
     sidecar.write_text(json.dumps(json.loads(original) | {"resampling_20m": "nearest"}))
-    assert support.run("train.py", *small_args(), data_root=ROOT, check=False).returncode != 0
+    assert support.run("train", *small_args(), data_root=ROOT, check=False).returncode != 0
     assert json.loads(SMALL_STATUS.read_text())["status"] == "refused"
     sidecar.write_text(original)
-    assert "skipping" in support.run("train.py", *small_args(), data_root=ROOT).stdout
+    assert "skipping" in support.run("train", *small_args(), data_root=ROOT).stdout
 
 
 def without_tile(tile_id: int, name: str) -> Path:
@@ -242,7 +239,7 @@ def full_run(grown_root: GrownRoot) -> Path:
     report = FRACTION_ARTIFACTS / "validation_full.json"
     support.validate(ROOT, SPLIT_PATH, report, summary=SUMMARY)
     full_args = support.train_args("convnet", FULL_DIR, split_path=SPLIT_PATH, fraction="1.0")
-    support.run("train.py", *full_args, data_root=ROOT)
+    support.run("train", *full_args, data_root=ROOT)
     finish_run(FULL_DIR)
     return FULL_DIR
 
@@ -287,7 +284,7 @@ def test_normalization_comes_from_the_run_s_own_training_tiles(full_run: Path) -
 def merged_fractions(full_run: Path) -> Path:
     merged = FRACTION_ARTIFACTS / "merged"
     support.run(
-        "merge_results.py",
+        "merge",
         "--runs",
         str(SMALL_DIR),
         str(full_run),
@@ -334,7 +331,7 @@ def test_merge_refuses_two_runs_of_one_model_at_one_fraction(grown_root: GrownRo
     twin.mkdir()
     shutil.copy(SMALL_DIR / "run_meta.json", twin / "run_meta.json")
     duplicate = support.run(
-        "merge_results.py",
+        "merge",
         "--runs",
         str(SMALL_DIR),
         str(twin),

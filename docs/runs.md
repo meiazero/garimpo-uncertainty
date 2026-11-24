@@ -42,7 +42,7 @@ The store takes 69.2 GB on disk at the 100% fraction and 10.9 GB for the pilot
   sidecars. A larger fraction's download therefore leaves finished smaller runs skipping and their
   slots untouched.
 - The written sizes hold where the filesystem keeps holes ([data-layout.md](data-layout.md)).
-- `validate_data.py` runs per fraction and seed, with its status in
+- `garimpo validate_data` runs per fraction and seed, with its status in
   `$DATA/status/fraction-<F>-seed-<S>/`. Another `--train-fraction` or `--subset-seed` under the
   same `RUN_DIR` refuses.
 
@@ -68,7 +68,7 @@ reduced training tiles plus all validation, calibration and test tiles, sorted b
 
 `scenes` refuses a list whose `split_sha256` differs from the current split, or that names a tile
 the split does not keep. It downloads exactly what the list names; training still selects by
-`--train-fraction` and `--subset-seed`. `validate_data.py` fails with `not_downloaded` if those two
+`--train-fraction` and `--subset-seed`. `garimpo validate_data` fails with `not_downloaded` if those two
 ask for a tile the download did not fetch, and the E2E suite asserts that each versioned list equals
 `select_tiles` for its fraction and seed.
 
@@ -92,7 +92,7 @@ calibration rows (`intervals.COMBINATIONS`) at each of the three levels alpha = 
 | Repeated subsampling rows, `*_subsampled` ([design.md](design.md#quantile-rule-and-its-sensitivity-analysis)) | 20 |
 | Total | 55 |
 
-Over 4 runs and 3 levels that is 660 rows. `merge_results.py` identifies a run by
+Over 4 runs and 3 levels that is 660 rows. `garimpo merge` identifies a run by
 `(model, train_fraction)` and refuses a repeated pair, or a run with any stage not `ok`; each
 run's paired comparisons stay inside that run. What the comparison between variants can show is in
 [design.md](design.md#what-the-model-comparison-varies).
@@ -111,14 +111,14 @@ Both files land under `$GARIMPO_DATA_DIR/weights/`
 ## Encoder and layer names
 
 Every model uses a ResNet-18 encoder, fixed in `models.ENCODER`, so `LAYERS` carries over between
-the U-Nets and no run can mix encoders. `choose_layer.py` chooses the layer per run.
+the U-Nets and no run can mix encoders. `garimpo choose_layer` chooses the layer per run.
 
 | Model | Layer names | Source |
 |---|---|---|
 | U-Net | `decoder.blocks.N` | smp's decoder (`decoders/unet/decoder.py` of the pinned 0.6.0), which keeps one block per `decoder_channels` entry and takes its input widths from the encoder |
 | ConvNet | `decoder.aspp`, `decoder.relu` | `decoders/deeplabv3/decoder.py` |
 
-`fit_directions.py` checks each name against the built model and stops on an unknown one. Every
+`garimpo fit_directions` checks each name against the built model and stops on an unknown one. Every
 config diagnoses all of them: `decoder.blocks.0` to `decoder.blocks.4` for the U-Nets,
 `decoder.aspp` and `decoder.relu` for the ConvNet. The E2E suite checks that every versioned config
 names only layers of its model.

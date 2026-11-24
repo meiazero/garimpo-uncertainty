@@ -8,7 +8,7 @@ import pandas as pd
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 import garimpo_uncertainty.validation
 
 
@@ -44,7 +44,7 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     split = pd.read_csv(args.split)
@@ -82,11 +82,11 @@ def main() -> None:
             raise ValueError("; ".join(report["problems"]))
         return {"cells": len(cells)}
 
-    garimpo_uncertainty.stages.run_stage(
+    garimpo_uncertainty.pipeline.runner.run_stage(
         root / "status" / selection,
         "validate_data",
         [args.report],
-        garimpo_uncertainty.stages.fingerprint(
+        garimpo_uncertainty.pipeline.runner.fingerprint(
             args,
             [],
             hashed=garimpo_uncertainty.data.tiles_identity(root, split, tile_ids),
@@ -94,7 +94,3 @@ def main() -> None:
         work,
         force=args.force or bool(unusable or slot_problems),
     )
-
-
-if __name__ == "__main__":
-    main()

@@ -24,7 +24,7 @@ import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 
 class BatchScores(NamedTuple):
@@ -170,7 +170,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--layer", required=True)
-    garimpo_uncertainty.stages.add_layer_dir(parser)
+    garimpo_uncertainty.pipeline.runner.add_layer_dir(parser)
     # Upstream's active runner values for the range, and the COMPASSJ default for the threshold.
     parser.add_argument("--beta-range-logits", type=float, default=100.0)
     parser.add_argument("--beta-range-features", type=float, default=1000.0)
@@ -187,12 +187,12 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
     parser.add_argument(
-        "--num-workers", type=int, default=garimpo_uncertainty.stages.available_cpus()
+        "--num-workers", type=int, default=garimpo_uncertainty.pipeline.runner.available_cpus()
     )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     args.layer_dir = args.layer_dir or args.run_dir
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
@@ -218,17 +218,13 @@ def main() -> None:
             ),
         }
 
-    garimpo_uncertainty.stages.run_stage(
+    garimpo_uncertainty.pipeline.runner.run_stage(
         run.layer_status,
         "compass_scores",
         [run.scores],
-        garimpo_uncertainty.stages.fingerprint(
+        garimpo_uncertainty.pipeline.runner.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),
         work,
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

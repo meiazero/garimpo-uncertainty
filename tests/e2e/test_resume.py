@@ -8,7 +8,6 @@ import os
 import shutil
 import signal
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -38,7 +37,7 @@ def training_args(run_dir: Path) -> list[str]:
 
 def start_training(run_dir: Path, data_root: Path) -> subprocess.Popen:
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
-    command = [sys.executable, "scripts/train.py", *training_args(run_dir)]
+    command = support.garimpo("train", *training_args(run_dir))
     return subprocess.Popen(  # noqa: S603 - arguments come from the tests
         command, cwd=support.ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
@@ -85,7 +84,7 @@ def uninterrupted(data_root: Path) -> Path:
     """Train the same command, never interrupted, on the core the interrupted runs use."""
     run_dir = support.RUNS / "convnet_uninterrupted"
     with support.one_core():
-        support.run("train.py", *training_args(run_dir), data_root=data_root)
+        support.run("train", *training_args(run_dir), data_root=data_root)
     return run_dir
 
 
@@ -106,7 +105,7 @@ def test_training_resumes_after_the_last_finished_epoch(
         assert torch.load(run_dir / "last.pt", weights_only=True)["epoch"] == 0
         assert len(pd.read_csv(run_dir / "history.csv")) == 1
         args = training_args(run_dir)
-        resumed = support.run("train.py", *args, data_root=data_root)
+        resumed = support.run("train", *args, data_root=data_root)
     assert "resuming after epoch 0" in resumed.stdout
     assert json.loads(status.read_text())["status"] == "ok"
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]
@@ -125,7 +124,7 @@ def test_a_resume_keeps_the_best_dice_so_far(data_root: Path, tmp_path: Path) ->
     finished_epoch_zero(run_dir, data_root)
     last = torch.load(run_dir / "last.pt", weights_only=True)
     torch.save(last | {"best_dice": 1.0}, run_dir / "last.pt")
-    support.run("train.py", *training_args(run_dir), data_root=data_root)
+    support.run("train", *training_args(run_dir), data_root=data_root)
     assert torch.load(run_dir / "best_model.pt", weights_only=True)["epoch"] == 0
 
 
@@ -135,13 +134,13 @@ def test_force_refuses_to_discard_an_unfinished_training(data_root: Path, tmp_pa
     finished_epoch_zero(run_dir, data_root)
     before = (run_dir / "last.pt").stat().st_mtime_ns
     args = training_args(run_dir)
-    forced = support.run("train.py", *args, "--force", data_root=data_root, check=False)
+    forced = support.run("train", *args, "--force", data_root=data_root, check=False)
     assert forced.returncode != 0
     status = json.loads((run_dir / "status" / "train.json").read_text())
     assert status["status"] == "failed"
     assert "holds an unfinished training (status running)" in status["error"], status
     assert (run_dir / "last.pt").stat().st_mtime_ns == before
-    assert "resuming after epoch 0" in support.run("train.py", *args, data_root=data_root).stdout
+    assert "resuming after epoch 0" in support.run("train", *args, data_root=data_root).stdout
 
 
 def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
@@ -154,11 +153,11 @@ def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
     """
     run_dir, drive = tmp_path / "convnet", tmp_path / "drive"
     # Trained here, not copied: a last.pt naming another run_dir would be refused for that instead.
-    support.run("train.py", *training_args(run_dir), data_root=data_root)
+    support.run("train", *training_args(run_dir), data_root=data_root)
     shutil.copytree(run_dir, drive)
     status = run_dir / "status" / "train.json"
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
-    command = [sys.executable, "scripts/train.py", *training_args(run_dir), "--force"]
+    command = support.garimpo("train", *training_args(run_dir), "--force")
     process = subprocess.Popen(command, cwd=support.ROOT, env=env)  # noqa: S603 - test arguments
     deadline = time.monotonic() + LAST_PT_TIMEOUT_SECONDS
     while json.loads(status.read_text())["status"] != "running":
@@ -170,6 +169,6 @@ def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
     shutil.copytree(run_dir, drive, dirs_exist_ok=True)
     shutil.rmtree(run_dir)
     shutil.copytree(drive, run_dir)
-    rerun = support.run("train.py", *training_args(run_dir), data_root=data_root)
+    rerun = support.run("train", *training_args(run_dir), data_root=data_root)
     assert "resuming" not in rerun.stdout
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]

@@ -108,7 +108,7 @@ def test_validation_names_a_store_of_another_layout(
         named = "1 cases, for example ['stats']"
     report = tmp_path / "validation.json"
     result = support.run(
-        "validate_data.py",
+        "validate_data",
         "--split",
         str(support.SPLIT_PATH),
         "--train-fraction",

@@ -7,7 +7,7 @@ one, the row says what the choice is for. None is tuned on the pilot, which only
 A run is one model at one scale, and its values come from three files, each key in one of them:
 `configs/base.json` holds what every run shares, `configs/models/<model>.json` the `ARCH`,
 `ENCODER_WEIGHTS` and `LAYERS` of a model, and `configs/scales/<scale>.json` the size and length of
-the full run and of the pilot at 1%. `scripts/run.py` stops a run before any stage when a value is
+the full run and of the pilot at 1%. `garimpo run` stops a run before any stage when a value is
 missing, null or empty, or a key is unknown or in another file (`garimpo_uncertainty/config.py`).
 The run's directory is `<RUNS_DIR>/<model>-f<TRAIN_FRACTION>`, such as `runs/unet_scratch-f1.0`, as
 listed in [runs.md](runs.md#model-variants).

@@ -77,7 +77,7 @@ def test_zeroed_masks_fail_the_report_and_the_validation(damaged: DamagedRun) ->
 def test_deleted_store_with_its_sidecars_fails_the_report(damaged: DamagedRun) -> None:
     move_store_away(damaged.root)
     train_args = support.train_args("convnet", damaged.run_dir)
-    assert "skipping" in support.run("train.py", *train_args, data_root=damaged.root).stdout
+    assert "skipping" in support.run("train", *train_args, data_root=damaged.root).stdout
     assert_report_fails(damaged, "store_missing")
     assert "store_missing" in problems_after_validating(damaged.root)
 

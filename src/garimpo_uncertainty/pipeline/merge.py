@@ -9,7 +9,7 @@ import pandas as pd
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 
 def tables(run: garimpo_uncertainty.artifacts.RunPaths) -> dict[str, Path]:
@@ -50,7 +50,8 @@ def read_status(status_dir: Path, stage: str) -> str:
 def stage_statuses(run_dir: Path) -> dict[str, str]:
     run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
     statuses = {
-        stage: read_status(run.status, stage) for stage in garimpo_uncertainty.stages.STAGE_ORDER
+        stage: read_status(run.status, stage)
+        for stage in garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     }
     # Without a choice there is no list of the other layers to check.
     if statuses["choose_layer"] != "ok":
@@ -62,7 +63,7 @@ def stage_statuses(run_dir: Path) -> dict[str, str]:
     return statuses | {
         f"{stage} [{name}]": read_status(paths.layer_status, stage)
         for name, paths in others
-        for stage in garimpo_uncertainty.stages.LAYER_STAGES
+        for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES
     }
 
 
@@ -115,7 +116,3 @@ def main() -> None:
     for name, table in merged.items():
         table.to_csv(args.out / name, index=False)
         print(f"{args.out / name}: {len(table)} rows")
-
-
-if __name__ == "__main__":
-    main()

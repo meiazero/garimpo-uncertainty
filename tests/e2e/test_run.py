@@ -1,4 +1,4 @@
-"""scripts/run.py, the runner of one model through every stage, run as Colab runs it.
+"""`garimpo run`, the job of one model through every stage, run as Colab runs it.
 
 Failures guarded here: a failing stage that lets later stages run on missing or stale inputs; a
 value left empty or misspelled in the JSON config reaching a stage as an empty argument after
@@ -10,9 +10,8 @@ missing from the log, or a new attempt overwriting the earlier ones; Ctrl+C leav
 running, losing the lines it prints as it stops, or skipping the check; a job lost between two
 stages leaving the later ones ok.
 
-The runner reads its scripts, configs and outputs from the working directory, so it runs from
-RUN_ROOT, which links the real scripts/ and holds configs of its own, a synthetic outputs/split.csv,
-a copy of the data root and the runs.
+The runner reads its configs and outputs from the working directory, so it runs from RUN_ROOT,
+which holds configs of its own, a synthetic outputs/split.csv, a copy of the data root and the runs.
 """
 
 import json
@@ -21,7 +20,6 @@ import shlex
 import shutil
 import signal
 import subprocess
-import sys
 from pathlib import Path
 from typing import NamedTuple
 
@@ -30,7 +28,7 @@ import pytest
 
 import garimpo_uncertainty.config
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 from tests.e2e import support
 
 RUN_ROOT = support.ROOT / "tests" / "artifacts" / "run"
@@ -144,7 +142,7 @@ def log_of(model: str) -> Path:
 
 
 def runner_command(*arguments: str) -> list[str]:
-    return [sys.executable, "scripts/run.py", *arguments]
+    return support.garimpo("run", *arguments)
 
 
 def runner_env() -> dict[str, str]:
@@ -184,8 +182,8 @@ def started_commands(output: str) -> dict[str, list[list[str]]]:
         if not marker:
             continue
         words = shlex.split(command.split(": ", 1)[1])
-        script = next(w for w in words if w.startswith("scripts/") and w.endswith(".py"))
-        commands.setdefault(Path(script).stem, []).append(words)
+        command_name = words[words.index("garimpo_uncertainty") + 1]
+        commands.setdefault(command_name, []).append(words)
     return commands
 
 
@@ -199,7 +197,6 @@ def values_of(words: list[str], flag: str) -> list[str]:
 @pytest.fixture(scope="module")
 def run_root(data_root: Path) -> Path:
     RUN_ROOT.mkdir(parents=True)
-    (RUN_ROOT / "scripts").symlink_to(support.ROOT / "scripts")
     (RUN_ROOT / "outputs").mkdir()
     shutil.copy(support.SPLIT_PATH, RUN_ROOT / "outputs" / "split.csv")
     counts = pd.read_csv(support.SPLIT_PATH).groupby(["scale", "role"]).size()
@@ -230,9 +227,9 @@ def test_full_job_runs_every_stage_and_passes_the_check(passed_job: PassedJob) -
     assert "PIPELINE CHECK: PASS" in passed_job.result.stdout
     statuses = {
         stage: json.loads((passed_job.run_dir / "status" / f"{stage}.json").read_text())["status"]
-        for stage in garimpo_uncertainty.stages.STAGE_ORDER
+        for stage in garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     }
-    assert statuses == dict.fromkeys(garimpo_uncertainty.stages.STAGE_ORDER, "ok")
+    assert statuses == dict.fromkeys(garimpo_uncertainty.pipeline.runner.STAGE_ORDER, "ok")
 
 
 def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
@@ -240,7 +237,11 @@ def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
     log = log_of(passed_job.model).read_text(encoding="utf-8")
     for line in passed_job.result.stdout.splitlines():
         assert line in log, line
-    for stage in ("validate_data", *garimpo_uncertainty.stages.STAGE_ORDER, "pipeline_check"):
+    for stage in (
+        "validate_data",
+        *garimpo_uncertainty.pipeline.runner.STAGE_ORDER,
+        "pipeline_check",
+    ):
         assert f"=== end {stage}: exit 0 in " in log, stage
     # The stages' own lines, not only the runner's: the training's line per epoch among them.
     assert "train: ok in" in log
@@ -300,7 +301,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     # Then the same four stages once more, on the layer not chosen, into a directory of its own.
     (other,) = set(LAYERS) - {layer}
     other_dir = f"{config.run_dir}/layers/{other}"
-    for script in garimpo_uncertainty.stages.LAYER_STAGES:
+    for script in garimpo_uncertainty.pipeline.runner.LAYER_STAGES:
         main, again = commands[script]
         assert "--layer-dir" not in main, script
         assert values_of(again, "--layer-dir") == [other_dir], script
@@ -319,7 +320,7 @@ def test_full_job_scores_every_other_layer_apart(passed_job: PassedJob) -> None:
     layer = support.chosen_layer(run_dir)
     (other,) = set(LAYERS) - {layer}
     other_dir = run_dir / "layers" / other
-    for stage in garimpo_uncertainty.stages.LAYER_STAGES:
+    for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES:
         assert json.loads((other_dir / "status" / f"{stage}.json").read_text())["status"] == "ok"
     chosen = pd.read_csv(run_dir / "metrics" / "results.csv")
     again = pd.read_csv(other_dir / "metrics" / "results.csv")
@@ -341,7 +342,7 @@ def test_full_job_scores_every_other_layer_apart(passed_job: PassedJob) -> None:
 
 
 def pipeline_check(run_dir: Path, *extra: str) -> subprocess.CompletedProcess:
-    command = [sys.executable, "scripts/pipeline_check.py", "--run-dir", str(run_dir)]
+    command = support.garimpo("check", "--run-dir", str(run_dir))
     command += ["--train-fraction", str(FILLED["TRAIN_FRACTION"])]
     command += ["--subset-seed", str(FILLED["SUBSET_SEED"]), *extra]
     return subprocess.run(  # noqa: S603 - arguments come from the test
@@ -432,7 +433,7 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
     """
     run_dir = passed_job.run_dir
     choose = started_commands(passed_job.result.stdout)["choose_layer"][0]
-    order = garimpo_uncertainty.stages.STAGE_ORDER
+    order = garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     later = order[order.index("choose_layer") + 1 :]
     with support.restored_after(run_dir):
         subprocess.run(  # noqa: S603 - the runner's own command
@@ -442,10 +443,10 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
         assert {s: r["status"] for s, r in statuses.items()} == dict.fromkeys(later, "stale")
         # The other layers' stages read the same run, so they cannot vouch for their tables either.
         (other_status,) = (run_dir / "layers").glob("*/status")
-        for stage in garimpo_uncertainty.stages.LAYER_STAGES:
+        for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES:
             record = json.loads((other_status / f"{stage}.json").read_text())
             assert record["status"] == "stale", stage
-        merge = [sys.executable, "scripts/merge_results.py", "--runs", str(run_dir)]
+        merge = support.garimpo("merge", "--runs", str(run_dir))
         refused = subprocess.run(  # noqa: S603 - arguments come from the test
             [*merge, "--out", str(tmp_path / "merged")],
             check=False,
@@ -457,7 +458,7 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
         assert refused.returncode != 0
         assert f"{later[0]} is stale" in refused.stderr
         assert not (tmp_path / "merged").exists()
-        check = [sys.executable, "scripts/pipeline_check.py", "--run-dir", str(run_dir)]
+        check = support.garimpo("check", "--run-dir", str(run_dir))
         check += ["--train-fraction", str(FILLED["TRAIN_FRACTION"])]
         report = subprocess.run(  # noqa: S603 - arguments come from the test
             [*check, "--subset-seed", str(FILLED["SUBSET_SEED"])],

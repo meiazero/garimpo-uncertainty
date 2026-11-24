@@ -2,13 +2,13 @@
 
 import hashlib
 import json
-import runpy
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.stages.download_data
 from tests.e2e import support
 
 LIST_ARTIFACTS = support.ROOT / "tests" / "artifacts" / "lists"
@@ -81,7 +81,7 @@ def list_seed() -> int:
 def regenerated_lists(list_seed: int) -> Path:
     regenerated = LIST_ARTIFACTS / "real"
     arguments = ["lists", "--subset-seed", str(list_seed), "--out", str(regenerated)]
-    support.run("download_data.py", *arguments, data_root=regenerated)
+    support.run("download_data", *arguments, data_root=regenerated)
     return regenerated
 
 
@@ -109,10 +109,9 @@ def test_versioned_list_records_its_selection(
     # What training selects, what the list says and what the download takes are one set.
     trained = garimpo_uncertainty.data.select_tiles(real_split, fraction, list_seed)
     assert tiles == sorted(zip(trained.tile_id.tolist(), trained.role.tolist(), strict=True))
-    listed_tiles = runpy.run_path(str(support.ROOT / "scripts" / "download_data.py"))[
-        "listed_tiles"
-    ]
-    downloaded = listed_tiles(LIST_DIRECTORY / name, REAL_SPLIT_PATH, real_split)
+    downloaded = garimpo_uncertainty.stages.download_data.listed_tiles(
+        LIST_DIRECTORY / name, REAL_SPLIT_PATH, real_split
+    )
     assert downloaded.tile_id.tolist() == trained.tile_id.tolist()
 
 

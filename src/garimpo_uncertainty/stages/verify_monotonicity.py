@@ -21,7 +21,7 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 ROLES_BY_USE = {"layer": ("validation",), "endpoint": ("calibration", "test")}
 
@@ -151,11 +151,11 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
     parser.add_argument(
-        "--num-workers", type=int, default=garimpo_uncertainty.stages.available_cpus()
+        "--num-workers", type=int, default=garimpo_uncertainty.pipeline.runner.available_cpus()
     )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
@@ -178,17 +178,13 @@ def main() -> None:
             pd.DataFrame(rows).to_csv(temporary, index=False)
         return {"rows": len(rows), "cells_per_role": args.cells_per_role}
 
-    garimpo_uncertainty.stages.run_stage(
+    garimpo_uncertainty.pipeline.runner.run_stage(
         run.status,
         f"{args.use}_monotonicity",
         [output],
-        garimpo_uncertainty.stages.fingerprint(
+        garimpo_uncertainty.pipeline.runner.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),
         work,
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

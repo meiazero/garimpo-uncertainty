@@ -33,9 +33,9 @@ LAYER_DIR_FLAGS: Flags = (("--layer-dir", "LAYER_DIR"),)
 
 @dataclass(frozen=True)
 class Stage:
-    """A stage's code, the flags it takes from the run, and the words it always receives."""
+    """A stage's `garimpo` command, the flags it takes from the run, and its fixed words."""
 
-    module: str
+    command: str
     flags: Flags
     fixed: tuple[str, ...] = ()
 
@@ -130,7 +130,7 @@ STAGES = {
         ),
     ),
     "pipeline_check": Stage(
-        "pipeline_check",
+        "check",
         (
             ("--run-dir", "RUN_DIR"),
             ("--train-fraction", "TRAIN_FRACTION"),

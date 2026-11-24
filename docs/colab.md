@@ -15,7 +15,7 @@ session keeps the local files, which are never older than Drive's copy, since Dr
 copies of them. A file deleted locally in the session comes back, as no copy uses `--delete`:
 `--delete` toward Drive would wipe the saved runs after a restore that failed. The one file a stage
 deletes, `chosen_layer.json` when no layer qualifies, can therefore come back: the pipeline check
-shows a stage's table only while it and every stage before it are `ok`, and `merge_results.py`
+shows a stage's table only while it and every stage before it are `ok`, and `garimpo merge`
 refuses a run with any stage not `ok`.
 
 `DATA` is always `/content/garimpo-data` because runs record the data root's path, and a run
@@ -54,7 +54,7 @@ cell before the release raises:
 - A failed `!` line only prints its error, and the cell carries on.
 - The Python cells that can fail catch the error and print it, such as `print_verdicts`.
 
-If you interrupt a run cell once, `scripts/run.py` stops the stage, keeps the lines it prints as it
+If you interrupt a run cell once, `garimpo run` stops the stage, keeps the lines it prints as it
 stops, runs the pipeline check and exits 130. Colab turns a second interrupt into SIGTERM and then
 SIGKILL: the runner kills the stage at once, then still runs the check, whose verdict reaches the
 cell and the log. Then run the cells of
@@ -70,7 +70,7 @@ never forces a stage by accident. Both write their command in full, so the cell 
 
 Since every job cell succeeds, read the job's verdict instead of the cell's status. Every pilot and
 full-run job ends with the `PIPELINE CHECK: PASS` or `PIPELINE CHECK: FAIL` line of
-`pipeline_check.py`, failed or not. `scripts/run.py` appends every line to the model's log with the
+`garimpo check`, failed or not. `garimpo run` appends every line to the model's log with the
 UTC time, so the log keeps earlier attempts, including one cut short by a session that ended. It
 writes an `=== attempt started` line before each attempt, with the config, the commit and the
 options, and `print_verdicts` prints the verdict of the last attempt only:

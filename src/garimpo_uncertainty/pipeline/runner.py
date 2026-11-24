@@ -34,9 +34,9 @@ IGNORED_ARGUMENTS = {
     "layer_dir",
 }
 MISSING_INPUT = "missing"
-# The stages that depend on the COMPASS-J layer; scripts/run.py also runs them on each other layer.
+# The stages that depend on the COMPASS-J layer; a job also runs them on each other layer.
 LAYER_STAGES = ("compass_scores", "calibrate", "generate_intervals", "compute_metrics")
-# The order scripts/run.py runs a model's stages in, after validate_data; --force-from names one.
+# The order a job runs a model's stages in, after validate_data; --force-from names one.
 STAGE_ORDER = (
     "train",
     "infer",

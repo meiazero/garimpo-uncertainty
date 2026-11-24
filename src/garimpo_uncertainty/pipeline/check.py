@@ -15,7 +15,7 @@ import pandas as pd
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 import garimpo_uncertainty.validation
 
 # What reading chosen_layer.json raises when the file is absent, a directory, or not the object
@@ -34,7 +34,7 @@ def not_current(statuses: dict[str, str], stage: str) -> str | None:
     Nothing is deleted in Drive, so a restore brings back files of an earlier attempt: only ok
     statuses, all the way up to the stage that wrote them, vouch for a table.
     """
-    for name in garimpo_uncertainty.stages.STAGE_ORDER:
+    for name in garimpo_uncertainty.pipeline.runner.STAGE_ORDER:
         if statuses[name] != "ok":
             return f"{name} is {statuses[name]}"
         if name == stage:
@@ -241,7 +241,7 @@ def other_layer_records(
 ) -> tuple[list[dict], list[str]]:
     """Return the other layers' stage statuses, each named after its layer, and those layers.
 
-    Empty until the chosen layer's stages are all ok, since run.py runs the others after those.
+    Empty until the chosen layer's stages are all ok, since the job runs the others after those.
     """
     statuses = {record["stage"]: record["status"] for record in records}
     if not layers or not_current(statuses, "compute_metrics") is not None:
@@ -259,7 +259,7 @@ def other_layer_records(
     layer_records = [
         read_status(run.other_layer(layer).layer_status, stage) | {"stage": f"{stage} [{layer}]"}
         for layer in others
-        for stage in garimpo_uncertainty.stages.LAYER_STAGES
+        for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES
     ]
     return layer_records, others
 
@@ -331,7 +331,7 @@ def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list
     ]
     records += [
         read_status(garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).status, stage)
-        for stage in garimpo_uncertainty.stages.STAGE_ORDER
+        for stage in garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     ]
     layer_records, others = other_layer_records(args.run_dir, args.layers, records)
     return records + layer_records, others
@@ -355,7 +355,3 @@ def main() -> None:
     store_problems = report_slots(root, tiles, store_problems, args.workers)
     failed += [{"stage": problem} for problem in store_problems]
     exit_with_verdict(failed)
-
-
-if __name__ == "__main__":
-    main()

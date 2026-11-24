@@ -28,11 +28,11 @@ Each model has its own cell, and they run one after another on the one GPU. Each
 `runs/pilot/<model>-f0.01/`, and section 6 merges their tables into `runs/pilot/tables/`. The runs
 and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
 
-Outside Colab, `uv run --no-sync python scripts/run.py pilot <model>` runs one model's pilot.
+Outside Colab, `uv run --no-sync garimpo run pilot <model>` runs one model's pilot.
 
 ## The check report
 
-Every run ends with `scripts/pipeline_check.py`, which prints:
+Every run ends with `garimpo check`, which prints:
 
 - status, seconds, peak memory and shapes per stage;
 - the failing stage with its error;
@@ -61,7 +61,7 @@ fail the check: [stages.md](stages.md#statuses).
 
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
 invalidates nothing; that is why the stage has to be named. The cell passes `FORCE_FROM` to
-`scripts/run.py` as `--force-from`, which takes a name from `STAGE_ORDER` and redoes that stage and
+`garimpo run` as `--force-from`, which takes a name from `STAGE_ORDER` and redoes that stage and
 every stage after it. Earlier stages skip, and `train` runs again only with `--force-from train`,
 which refuses while `last.pt` holds an
 unfinished training: drop it to resume, or delete `last.pt` to start over. The data validation is

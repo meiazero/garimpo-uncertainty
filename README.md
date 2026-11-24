@@ -10,8 +10,9 @@ width.
   [docs/runs.md](docs/runs.md#dataset-size).
 - Four runs, all at 100% and all on a ResNet-18 encoder: a U-Net from scratch, from ImageNet
   weights and from Sentinel-2 MoCo weights, and smp's DeepLabV3 as the ConvNet.
-- `compass/` (submodule) holds the adapted COMPASS method, `src/garimpo_uncertainty/` the satellite
-  code, `scripts/` the stages, and `scripts/run.py` the runner that chains them. `outputs/` holds
+- `compass/` (submodule) holds the adapted COMPASS method, and `src/garimpo_uncertainty/` the
+  satellite code: `stages/` the stages, each one a `garimpo <stage>` command, and `pipeline/` the
+  job, `garimpo run`, that chains them. `outputs/` holds
   the versioned tables, including `split.csv`, the split used, and `tiles/`, the tiles each
   training fraction downloads.
 - No model result exists yet. The code has run only under pytest, on synthetic data; the pipeline

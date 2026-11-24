@@ -7,9 +7,10 @@ import geopandas
 import numpy as np
 import pandas as pd
 
+import garimpo_uncertainty.data
+
 SEED = 0
 GUARD_M = 50_000
-HELD_OUT_REGIONS = {"Amazonia BR", "Americas, other"}
 
 
 def assign_groups(artisanal: pd.DataFrame) -> dict[int, str]:
@@ -18,7 +19,7 @@ def assign_groups(artisanal: pd.DataFrame) -> dict[int, str]:
     roles = {}
     for region, tiles in artisanal.groupby("region"):
         groups = np.sort(tiles.cluster_50km.unique())
-        if region in HELD_OUT_REGIONS:
+        if region in garimpo_uncertainty.data.HELD_OUT_REGIONS:
             roles |= {int(group): "test" for group in groups}
             continue
         rng.shuffle(groups)

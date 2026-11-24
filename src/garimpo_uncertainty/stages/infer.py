@@ -23,7 +23,7 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
 import garimpo_uncertainty.files
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 AREA_COLUMNS = ("v", "vhat", "p_sum", "pixel_var", "cell_ha")
 
@@ -119,11 +119,11 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
     parser.add_argument(
-        "--num-workers", type=int, default=garimpo_uncertainty.stages.available_cpus()
+        "--num-workers", type=int, default=garimpo_uncertainty.pipeline.runner.available_cpus()
     )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
@@ -137,7 +137,7 @@ def main() -> None:
         columns = {name: np.empty(len(cells)) for name in AREA_COLUMNS}
         data_wait, role_seconds, role_peaks = {}, {}, {}
         for role in garimpo_uncertainty.data.ROLES:
-            garimpo_uncertainty.stages.take_gpu_peak_bytes()
+            garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes()
             role_start = time.monotonic()
             wait = infer_role(
                 model,
@@ -151,7 +151,7 @@ def main() -> None:
                 probabilities_path=arrays.get(role),
             )
             role_seconds[role] = time.monotonic() - role_start
-            role_peaks[role] = garimpo_uncertainty.stages.take_gpu_peak_bytes()
+            role_peaks[role] = garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes()
             data_wait[role] = round(wait, 3)
         garimpo_uncertainty.files.write_arrays(
             run.predictions, cell_index=cells.cell_index.to_numpy(), **columns
@@ -164,11 +164,11 @@ def main() -> None:
             "peak_gpu_bytes_per_role": role_peaks,
         }
 
-    garimpo_uncertainty.stages.run_stage(
+    garimpo_uncertainty.pipeline.runner.run_stage(
         run.status,
         "infer",
         [run.predictions, *arrays.values()],
-        garimpo_uncertainty.stages.fingerprint(
+        garimpo_uncertainty.pipeline.runner.fingerprint(
             args,
             [args.checkpoint],
             hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir),
@@ -176,7 +176,3 @@ def main() -> None:
         work,
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

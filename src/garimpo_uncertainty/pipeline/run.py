@@ -1,6 +1,6 @@
 """Run one model through every stage at one scale, every value from configs/ (docs/decisions.md).
 
-    uv run --no-sync python scripts/run.py pilot unet_scratch
+    uv run --no-sync garimpo run pilot unet_scratch
 
 The full scale trains on 100% of the training tiles; the pilot trains the same models on 1%, with a
 short training, to check the code first. Run it from the repository root, one run per GPU.
@@ -26,9 +26,9 @@ import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.commands
 import garimpo_uncertainty.config
 import garimpo_uncertainty.data
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
-STAGE_ORDER = garimpo_uncertainty.stages.STAGE_ORDER
+STAGE_ORDER = garimpo_uncertainty.pipeline.runner.STAGE_ORDER
 # The run notebook's print_verdicts splits the log on this marker to read the last attempt only.
 ATTEMPT = "=== attempt started "
 
@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=garimpo_uncertainty.stages.available_cpus(),
+        default=garimpo_uncertainty.pipeline.runner.available_cpus(),
         help="data loader processes and LightGBM threads; default: the CPUs this process may use",
     )
     return parser.parse_args()
@@ -115,9 +115,9 @@ class Log:
 
 
 def command(stage: str, values: dict, *extra: str) -> list[str]:
-    module = garimpo_uncertainty.commands.STAGES[stage].module
+    command = garimpo_uncertainty.commands.STAGES[stage].command
     arguments = garimpo_uncertainty.commands.arguments(stage, values)
-    return [sys.executable, f"scripts/{module}.py", *arguments, *extra]
+    return [sys.executable, "-m", "garimpo_uncertainty", command, *arguments, *extra]
 
 
 def job_values(config: garimpo_uncertainty.config.RunConfig, num_workers: int) -> dict:
@@ -166,7 +166,7 @@ def run_stages(log: Log, values: dict, force_from: str | None) -> int:
         log.write(f"Could not read the chosen layer from {run.chosen_layer}: {error!r}")
         return 1
     log.write(f"chosen layer: {layer}")
-    calibrated = ("endpoint_monotonicity", *garimpo_uncertainty.stages.LAYER_STAGES)
+    calibrated = ("endpoint_monotonicity", *garimpo_uncertainty.pipeline.runner.LAYER_STAGES)
     return run_in_order(log, calibrated, values | {"LAYER": layer}, force_from) or (
         run_other_layers(log, values, layer, force_from)
     )
@@ -177,7 +177,7 @@ def run_other_layers(log: Log, values: dict, chosen: str, force_from: str | None
     run = garimpo_uncertainty.artifacts.RunPaths.of(Path(values["RUN_DIR"]))
     for layer in (name for name in values["LAYERS"] if name != chosen):
         where = {"LAYER": layer, "LAYER_DIR": run.other_layer(layer).layer_root}
-        stages = garimpo_uncertainty.stages.LAYER_STAGES
+        stages = garimpo_uncertainty.pipeline.runner.LAYER_STAGES
         if code := run_in_order(log, stages, values | where, force_from):
             return code
     return 0
@@ -231,7 +231,3 @@ def main() -> None:
     check = log.run("pipeline_check", command("pipeline_check", values | {"JOB_EXIT_CODE": code}))
     # A stage's exit code wins; a failed check alone still fails the job.
     sys.exit(code or check)
-
-
-if __name__ == "__main__":
-    main()

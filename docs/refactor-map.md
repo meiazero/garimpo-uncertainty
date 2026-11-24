@@ -49,7 +49,7 @@ Constraints every fix keeps:
   - `tests/e2e/support.py:310` (`train_args`), `:354` (`checkpoint_args`) and its other builders are a third copy.
   - `--num-workers` defaults to 4 in 6 stages (`scripts/infer.py:120`, `train.py:546`, …) while `run.py:45` defaults it to the CPU count.
   - `scripts/run.py:133` reads `GARIMPO_TEST_CELL_PX`, a test-only variable, in production code.
-- [ ] 6. Move every stage from `scripts/` into `garimpo_uncertainty.stages`, behind the `garimpo` CLI with lazy imports; `scripts/` keeps only `split/`. (~30 files, after 1, 3)
+- [x] 6. Move every stage from `scripts/` into `garimpo_uncertainty.stages`, behind the `garimpo` CLI with lazy imports; `scripts/` keeps only `split/`. (~30 files, after 1, 3)
   - Stage logic lives in non-importable scripts: `scripts/train.py` (584 lines), `calibrate.py` (448), `pipeline_check.py` (359).
   - Call sites by path: `tests/e2e/support.py:296`, `test_resume.py:41`, `:161`, `test_run.py:119`, `:160` (parses `scripts/` out of the log), `:175` (symlinks `scripts/` into a fake cwd), `:313`, `:417`, `:429`; by `runpy`: `support.py:105` (`TORCH_FREE`), `test_results.py:853`, `test_download.py:611`, `test_tile_lists.py:112`.
   - Messages and docs: `scripts/train.py:53`, `:479`, `README.md:14`, `docs/outputs.md` (18), `docs/full-run.md` (8), the notebook (12), 7 other docs.
