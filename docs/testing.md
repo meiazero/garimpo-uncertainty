@@ -22,10 +22,10 @@ uv run ruff format --check . && uv run ruff check .
   `garimpo fit_directions` at 2 threads; that run now passes `--direction-temperature 1` to every stage that takes it, as a job would.
 - `test_run.py` writes configs of its own, whose `CELL_PX` is 32, the synthetic cells' size, where
   the real store's is 512.
-- oneDNN picks its CPU kernels from the core a process starts on. On a hybrid CPU (performance and
-  efficiency cores) two trainings with one seed therefore differ in the last bits, so a test that
-  compares weights across processes runs them inside `support.one_core()`, which pins them to one
-  CPU.
+- oneDNN picks its CPU kernels by the kind of core a process runs on: on a hybrid CPU the ConvNet's
+  dilated convolution gives other last bits on a performance core than on an efficiency core. So
+  `tests/conftest.py` keeps every test process, workers and stages included, on the efficiency
+  cores, and any comparison across processes is exact.
 - CI runs the same `uv run --no-sync pytest -q` after `uv sync --locked`, with a 45-minute limit.
 
 ## Modules

@@ -315,7 +315,7 @@ def test_full_job_scores_every_other_layer_apart(passed_job: PassedJob) -> None:
 
     The output-space rows are arithmetic on the shared predictions, so they must match the chosen
     layer's to the bit; the COMPASS rows run the model in another process, whose last bits may
-    differ on a hybrid CPU (support.one_core), so only COMPASS-J, which reads the layer, must move.
+    differ on a hybrid CPU (docs/testing.md), so only COMPASS-J, which reads the layer, must move.
     """
     run_dir = passed_job.run_dir
     layer = support.chosen_layer(run_dir)

@@ -81,10 +81,9 @@ def assert_same_training(run_dir: Path, reference_dir: Path) -> None:
 
 @pytest.fixture(scope="module")
 def uninterrupted(data_root: Path) -> Path:
-    """Train the same command, never interrupted, on the core the interrupted runs use."""
+    """Train the same command, never interrupted."""
     run_dir = support.RUNS / "convnet_uninterrupted"
-    with support.one_core():
-        support.run("train", *training_args(run_dir), data_root=data_root)
+    support.run("train", *training_args(run_dir), data_root=data_root)
     return run_dir
 
 
@@ -98,14 +97,13 @@ def test_training_resumes_after_the_last_finished_epoch(
 ) -> None:
     run_dir = tmp_path / "convnet"
     status = run_dir / "status" / "train.json"
-    with support.one_core():
-        stop_after_first_epoch(start_training(run_dir, data_root), run_dir, signal_number)
-        # Neither is a completed stage, so the rerun must reach the work instead of skipping.
-        assert json.loads(status.read_text())["status"] == left_status
-        assert torch.load(run_dir / "last.pt", weights_only=True)["epoch"] == 0
-        assert len(pd.read_csv(run_dir / "history.csv")) == 1
-        args = training_args(run_dir)
-        resumed = support.run("train", *args, data_root=data_root)
+    stop_after_first_epoch(start_training(run_dir, data_root), run_dir, signal_number)
+    # Neither is a completed stage, so the rerun must reach the work instead of skipping.
+    assert json.loads(status.read_text())["status"] == left_status
+    assert torch.load(run_dir / "last.pt", weights_only=True)["epoch"] == 0
+    assert len(pd.read_csv(run_dir / "history.csv")) == 1
+    args = training_args(run_dir)
+    resumed = support.run("train", *args, data_root=data_root)
     assert "resuming after epoch 0" in resumed.stdout
     assert json.loads(status.read_text())["status"] == "ok"
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]
