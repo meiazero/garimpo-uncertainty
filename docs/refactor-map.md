@@ -105,10 +105,10 @@ Not worth it:
   - `pipeline/check.py:124` tells a missing store by `startswith("store_missing")`, the text `validation.py:145` writes; `data.missing_arrays` answers it directly.
   - `"download_scenes"` at `check.py:96`, `:328`, written by `stages/download_data.py:92`.
   - `pipeline/status.py:15-16` imports `pipeline.check` (and with it sklearn) and `pipeline.run` only for `VERDICTS` and `ATTEMPT`.
-- [ ] 16. Derive two counts from what they count. (2 files)
+- [x] 16. Derive two counts from what they count. (2 files)
   - `evaluation.py:273` labels the area strata `np.arange(6)`, which is `len(AREA_QUANTILES) + 2`.
   - `stages/compass_scores.py:126-128` writes `beta_range` as `[logits, features, features]` by position, beside the limits `batch_spaces` already pairs with each method.
-- [ ] 17. Drop the parameter no caller passes: `steps_per_epoch` of `tests/e2e/support.py:321` (`train_args`). (1 file)
+- [x] 17. Drop the parameter no caller passes: `steps_per_epoch` of `tests/e2e/support.py:321` (`train_args`). (1 file)
 
 Not worth it (third sweep):
 

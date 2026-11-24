@@ -270,7 +270,11 @@ def strata(cells: EvaluatedCells) -> dict[str, tuple[np.ndarray, np.ndarray, np.
     """
     regions, region_codes = np.unique(cells.region, return_inverse=True)
     return {
-        "reference_area": (area_bins(cells.v), cells.v, np.arange(6).astype(str)),
+        "reference_area": (
+            area_bins(cells.v),
+            cells.v,
+            np.arange(len(AREA_QUANTILES) + 2).astype(str),
+        ),
         "predicted_mining": ((cells.vhat > 0).astype(int), cells.vhat, np.array(["0", "1"])),
         "region": (region_codes, cells.v, regions),
     }
