@@ -1,0 +1,7 @@
+{
+  "ARCH": "convnet",
+  "LAYERS": [
+    "decoder.aspp",
+    "decoder.relu"
+  ]
+}

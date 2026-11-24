@@ -1,0 +1,11 @@
+{
+  "ARCH": "unet",
+  "ENCODER_WEIGHTS": "none",
+  "LAYERS": [
+    "decoder.blocks.0",
+    "decoder.blocks.1",
+    "decoder.blocks.2",
+    "decoder.blocks.3",
+    "decoder.blocks.4"
+  ]
+}

@@ -1,9 +1,9 @@
-"""Run one model through every stage, every value from its JSON config (docs/decisions.md).
+"""Run one model through every stage at one scale, every value from configs/ (docs/decisions.md).
 
-    uv run --no-sync python scripts/run.py configs/pilot/unet_scratch.json
+    uv run --no-sync python scripts/run.py pilot unet_scratch
 
-configs/full/ trains on 100% of the training tiles; configs/pilot/ holds the same models on 1%,
-with a short training, to check the code first. Run it from the repository root, one run per GPU.
+The full scale trains on 100% of the training tiles; the pilot trains the same models on 1%, with a
+short training, to check the code first. Run it from the repository root, one run per GPU.
 
 Each stage runs in its own process. Every line it prints, and each stage's command, exit code and
 duration, goes to the terminal and to outputs/logs/<scale>-<model>.log, with the UTC time. Each
@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import NoReturn
 
 import garimpo_uncertainty.artifacts
-import garimpo_uncertainty.run_config
+import garimpo_uncertainty.config
 import garimpo_uncertainty.stages
 
 STAGE_ORDER = garimpo_uncertainty.stages.STAGE_ORDER
@@ -33,7 +33,8 @@ ATTEMPT = "=== attempt started "
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("config", type=Path, help="a file of configs/pilot/ or configs/full/")
+    parser.add_argument("scale", help="a file of configs/scales/, such as pilot or full")
+    parser.add_argument("model", help="a file of configs/models/, such as unet_scratch")
     parser.add_argument(
         "--force-from",
         choices=STAGE_ORDER,
@@ -115,7 +116,7 @@ def script(name: str, *arguments: str) -> list[str]:
     return [sys.executable, f"scripts/{name}.py", *arguments]
 
 
-def validate_command(config: dict, *, force: bool) -> list[str]:
+def validate_command(config: garimpo_uncertainty.config.RunConfig, *, force: bool) -> list[str]:
     fraction, seed = config["TRAIN_FRACTION"], config["SUBSET_SEED"]
     command = script(
         "validate_data",
@@ -139,14 +140,14 @@ def validate_command(config: dict, *, force: bool) -> list[str]:
 class Stages:
     """The commands of a run's stages, in STAGE_ORDER, from its config."""
 
-    def __init__(self, config: dict, num_workers: int) -> None:
+    def __init__(self, config: garimpo_uncertainty.config.RunConfig, num_workers: int) -> None:
         self.config = config
-        self.run = garimpo_uncertainty.artifacts.RunPaths.of(Path(config["RUN_DIR"]))
+        self.run = garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir))
         self.common = [
             "--checkpoint",
             str(self.run.best_model),
             "--run-dir",
-            config["RUN_DIR"],
+            config.run_dir,
             "--batch-size",
             self.value("EVAL_BATCH_SIZE"),
             "--num-workers",
@@ -172,15 +173,16 @@ class Stages:
 
     def diagnostics(self) -> list[tuple[str, list[str]]]:
         """Return the stages up to the layer, which choose_layer.py picks on the validation role."""
-        weights = garimpo_uncertainty.run_config.ENCODER_WEIGHTS
-        unset = garimpo_uncertainty.run_config.is_empty(self.config.get(weights))
+        weights = garimpo_uncertainty.config.ENCODER_WEIGHTS
+        unset = garimpo_uncertainty.config.is_empty(self.config.values.get(weights))
         # Passed whenever set, so train.py alone decides what fits the architecture.
         encoder = [] if unset else self.flags("--encoder-weights", weights)
         layers = ["--layers", *self.config["LAYERS"]]
         train = [
             *self.flags("--arch", "ARCH"),
             *encoder,
-            *self.flags("--run-dir", "RUN_DIR"),
+            "--run-dir",
+            self.config.run_dir,
             *self.flags("--train-fraction", "TRAIN_FRACTION"),
             *self.flags("--subset-seed", "SUBSET_SEED"),
             *self.flags("--epochs", "EPOCHS"),
@@ -203,7 +205,8 @@ class Stages:
             *self.flags("--direction-temperature", "DIRECTION_TEMPERATURE"),
         ]
         choose = [
-            *self.flags("--run-dir", "RUN_DIR"),
+            "--run-dir",
+            self.config.run_dir,
             *self.flags("--min-fraction-ascending", "MIN_FRACTION_ASCENDING"),
         ]
         return [
@@ -252,7 +255,8 @@ class Stages:
             *self.flags("--direction-temperature", "DIRECTION_TEMPERATURE"),
         ]
         calibrate = [
-            *self.flags("--run-dir", "RUN_DIR"),
+            "--run-dir",
+            self.config.run_dir,
             *self.flags("--cells", "CELLS"),
             *self.flags("--score-floor-ha", "SCORE_FLOOR_HA"),
             *self.flags("--seed", "SEED"),
@@ -260,7 +264,8 @@ class Stages:
             self.num_workers,
         ]
         metrics = [
-            *self.flags("--run-dir", "RUN_DIR"),
+            "--run-dir",
+            self.config.run_dir,
             *self.flags("--boundary-tolerance-px", "BOUNDARY_TOLERANCE_PX"),
             *self.flags("--seed", "SEED"),
         ]
@@ -324,21 +329,18 @@ def main() -> None:
     # Colab's second interrupt is SIGTERM, and SIGKILL 0.5 s later: kill the stage before that.
     signal.signal(signal.SIGTERM, interrupt)
     args = parse_args()
-    log = Log(Path("outputs/logs") / f"{args.config.parent.name}-{args.config.stem}.log")
+    log = Log(Path("outputs/logs") / f"{args.scale}-{args.model}.log")
     log.write(f"{ATTEMPT}{time.strftime('%Y-%m-%d %H:%M', time.gmtime())} UTC ===")
-    log.write(f"config {args.config}; commit {commit()}")
+    log.write(f"config {args.scale} {args.model}; commit {commit()}")
     log.write(
         f"force from {args.force_from or 'nothing'}; force validate {args.force_validate}; "
         f"{args.num_workers} workers"
     )
     try:
-        config = json.loads(args.config.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        log.write(f"{args.config}: could not read the config: {error!r}")
-        sys.exit(1)
-    if found := garimpo_uncertainty.run_config.problems(config):
-        for line in found:
-            log.write(f"{args.config}: {line}")
+        config = garimpo_uncertainty.config.RunConfig.load(Path("configs"), args.scale, args.model)
+    except garimpo_uncertainty.config.ConfigError as error:
+        for line in error.problems:
+            log.write(line)
         sys.exit(1)
 
     try:
@@ -354,7 +356,7 @@ def main() -> None:
         script(
             "pipeline_check",
             "--run-dir",
-            config["RUN_DIR"],
+            config.run_dir,
             "--train-fraction",
             str(config["TRAIN_FRACTION"]),
             "--subset-seed",

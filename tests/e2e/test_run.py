@@ -3,15 +3,16 @@
 Failures guarded here: a failing stage that lets later stages run on missing or stale inputs; a
 value left empty or misspelled in the JSON config reaching a stage as an empty argument after
 training, or a versioned config the runner would refuse; a config value passed to the wrong flag;
-the chosen layer not reaching the calibrated stages; --force-from redoing too much, too little, or
+the chosen layer not reaching the calibrated stages; a versioned run dir or log name drifting from
+what recorded runs and their fingerprints say; --force-from redoing too much, too little, or
 nothing at all on a typo; a stage's exit code lost before the pipeline check; a stage's lines
 missing from the log, or a new attempt overwriting the earlier ones; Ctrl+C leaving the stage
 running, losing the lines it prints as it stops, or skipping the check; a job lost between two
 stages leaving the later ones ok.
 
-The runner reads its scripts and outputs from the working directory, so it runs from RUN_ROOT,
-which links the real scripts/ and holds a synthetic outputs/split.csv, a copy of the data root and
-the runs.
+The runner reads its scripts, configs and outputs from the working directory, so it runs from
+RUN_ROOT, which links the real scripts/ and holds configs of its own, a synthetic outputs/split.csv,
+a copy of the data root and the runs.
 """
 
 import json
@@ -27,16 +28,20 @@ from typing import NamedTuple
 import pandas as pd
 import pytest
 
+import garimpo_uncertainty.config
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.run_config
 import garimpo_uncertainty.stages
 from tests.e2e import support
 
 RUN_ROOT = support.ROOT / "tests" / "artifacts" / "run"
 DATA = RUN_ROOT / "data"
-# The versioned config, so its own values are under test wherever FILLED leaves them.
-BASE = support.ROOT / "configs" / "full" / "unet_scratch.json"
-CONFIGS = sorted((support.ROOT / "configs").glob("*/*.json"))
+CONFIGS = support.ROOT / "configs"
+# The versioned base, so its own values are under test wherever FILLED leaves them.
+BASE = CONFIGS / "base.json"
+MODELS = sorted(path.stem for path in (CONFIGS / "models").glob("*.json"))
+SCALES = sorted(path.stem for path in (CONFIGS / "scales").glob("*.json"))
+# The scale every job here runs at, in RUN_ROOT's own configs.
+SCALE = "test"
 # Ordered so the chosen layer is not the first: passing LAYERS[0] for it must show in the commands.
 LAYERS = ["decoder.blocks.3", "decoder.blocks.4"]
 # Not one config value: paths, the layer lists and the check's input, checked apart or not at all.
@@ -62,7 +67,7 @@ NAMED_OTHERWISE = {
 FILLED = {
     "ARCH": "unet",
     "ENCODER_WEIGHTS": "none",
-    "RUN_DIR": "runs/unet_scratch-f1.0",
+    "RUNS_DIR": "runs",
     "TRAIN_FRACTION": 1.0,
     # Not SEED's 0, so swapping the two shows; at fraction 1.0 every seed selects every tile.
     "SUBSET_SEED": 7,
@@ -89,30 +94,52 @@ FILLED = {
     # Not 0.01, which SEARCH_THRESHOLD_LOGITS holds in the base config.
     "SCORE_FLOOR_HA": 0.02,
 }
-# What the pilot may change: its size and length, and the layer threshold, so that a model trained
-# for a few updates still reaches the last stage.
-PILOT_ONLY = {"RUN_DIR", "TRAIN_FRACTION", "EPOCHS", "STEPS_PER_EPOCH", "MIN_FRACTION_ASCENDING"}
 # An execution setting, not part of the config: Colab leaves it at the runner's default.
 NUM_WORKERS = "2"
 ATTEMPT = "=== attempt started "
 
 
-def base_names() -> list[str]:
-    return list(json.loads(BASE.read_text(encoding="utf-8")))
+def write_configs(configs: Path, model: str, **changes: object) -> None:
+    """Write base, `model` and the test scale with FILLED over the versioned base; None is null.
 
-
-def write_config(name: str, **changes: object) -> Path:
-    """Write the base config with the test values over it; a change to None writes null."""
+    Each change goes to the file its key belongs in, or to the model file when it belongs nowhere.
+    """
     values = json.loads(BASE.read_text(encoding="utf-8")) | FILLED | changes
-    path = RUN_ROOT / "configs" / f"{name}.json"
-    path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps(values, indent=2))
-    return path
+    homes = {
+        "models": (
+            *garimpo_uncertainty.config.MODEL_KEYS,
+            garimpo_uncertainty.config.ENCODER_WEIGHTS,
+        ),
+        "scales": garimpo_uncertainty.config.SCALE_KEYS,
+        "base": garimpo_uncertainty.config.BASE_KEYS,
+    }
+    placed = {key for keys in homes.values() for key in keys}
+    files = {
+        configs / "base.json": homes["base"],
+        configs / "scales" / f"{SCALE}.json": homes["scales"],
+        configs / "models" / f"{model}.json": (*homes["models"], *(set(values) - placed)),
+    }
+    for path, keys in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({key: values[key] for key in keys if key in values}, indent=2))
 
 
-def log_of(config: Path) -> Path:
-    """Return the log the runner names after the config's folder and file: pilot-unet_scratch."""
-    return RUN_ROOT / "outputs" / "logs" / f"{config.parent.name}-{config.stem}.log"
+def write_config(model: str, **changes: object) -> str:
+    """Write a model of RUN_ROOT's configs with `changes` to its keys; return its name."""
+    write_configs(RUN_ROOT / "configs", model, **changes)
+    return model
+
+
+def run_dir_of(model: str) -> Path:
+    return (
+        RUN_ROOT
+        / garimpo_uncertainty.config.RunConfig.load(RUN_ROOT / "configs", SCALE, model).run_dir
+    )
+
+
+def log_of(model: str) -> Path:
+    """Return the log the runner names after the scale and the model: pilot-unet_scratch."""
+    return RUN_ROOT / "outputs" / "logs" / f"{SCALE}-{model}.log"
 
 
 def runner_command(*arguments: str) -> list[str]:
@@ -131,7 +158,7 @@ def runner_env() -> dict[str, str]:
 def run_job(*arguments: str, timeout: float = 600) -> subprocess.CompletedProcess:
     """Run the runner from RUN_ROOT on CPU, with the data root and the test's worker count."""
     return subprocess.run(  # noqa: S603 - arguments come from the tests
-        runner_command(*arguments, "--num-workers", NUM_WORKERS),
+        runner_command(SCALE, *arguments, "--num-workers", NUM_WORKERS),
         check=False,
         cwd=RUN_ROOT,
         env=runner_env(),
@@ -186,17 +213,17 @@ def run_root(data_root: Path) -> Path:
 
 
 class PassedJob(NamedTuple):
-    config: Path
+    model: str
     run_dir: Path
     result: subprocess.CompletedProcess
 
 
 @pytest.fixture(scope="module")
 def passed_job(run_root: Path) -> PassedJob:
-    config = write_config("passed")
-    result = run_job(str(config))
+    model = write_config("unet_scratch")
+    result = run_job(model)
     assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
-    return PassedJob(config, run_root / FILLED["RUN_DIR"], result)
+    return PassedJob(model, run_dir_of(model), result)
 
 
 def test_full_job_runs_every_stage_and_passes_the_check(passed_job: PassedJob) -> None:
@@ -210,7 +237,7 @@ def test_full_job_runs_every_stage_and_passes_the_check(passed_job: PassedJob) -
 
 def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
     """The log file is what Colab keeps in Drive, so every line the job printed must be in it."""
-    log = log_of(passed_job.config).read_text(encoding="utf-8")
+    log = log_of(passed_job.model).read_text(encoding="utf-8")
     for line in passed_job.result.stdout.splitlines():
         assert line in log, line
     for stage in ("validate_data", *garimpo_uncertainty.stages.STAGE_ORDER, "pipeline_check"):
@@ -234,9 +261,14 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     The key comes from the flag's name or NAMED_OTHERWISE, written here, so passing one value for
     another shows; the values are distinct, so the commands tell them apart.
     """
-    config = json.loads(passed_job.config.read_text(encoding="utf-8"))
-    values = {key: str(value) for key, value in config.items() if not isinstance(value, list)}
-    values |= {"NUM_WORKERS": NUM_WORKERS, "GARIMPO_TEST_CELL_PX": str(support.CELL_PX)}
+    config = garimpo_uncertainty.config.RunConfig.load(
+        RUN_ROOT / "configs", SCALE, passed_job.model
+    )
+    # RUNS_DIR reaches the stages only through RUN_DIR, which the runner derives from it.
+    listed = {key: value for key, value in config.values.items() if key != "RUNS_DIR"}
+    values = {key: str(value) for key, value in listed.items() if not isinstance(value, list)}
+    values |= {"RUN_DIR": config.run_dir, "NUM_WORKERS": NUM_WORKERS}
+    values |= {"GARIMPO_TEST_CELL_PX": str(support.CELL_PX)}
     # A wrong key holding the same value would pass, so no two may share one.
     by_value: dict[str, set[str]] = {}
     for name, value in values.items():
@@ -268,7 +300,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     assert values_of(commands["generate_intervals"][0], "--layer") == [layer]
     # Then the same four stages once more, on the layer not chosen, into a directory of its own.
     (other,) = set(LAYERS) - {layer}
-    other_dir = f"{FILLED['RUN_DIR']}/layers/{other}"
+    other_dir = f"{config.run_dir}/layers/{other}"
     for script in garimpo_uncertainty.stages.LAYER_STAGES:
         main, again = commands[script]
         assert "--layer-dir" not in main, script
@@ -375,7 +407,7 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         before = status_mtimes(run_dir)
         validated = validation.stat().st_mtime_ns
         checkpoint = (run_dir / "best_model.pt").stat().st_mtime_ns
-        result = run_job(str(passed_job.config), "--force-from", "calibrate", "--force-validate")
+        result = run_job(passed_job.model, "--force-from", "calibrate", "--force-validate")
         after = status_mtimes(run_dir)
         assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
         assert "PIPELINE CHECK: PASS" in result.stdout
@@ -385,7 +417,7 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         assert redone == {*forced, *(f"{stage} [{other}]" for stage in forced)}
         assert validation.stat().st_mtime_ns != validated
         assert (run_dir / "best_model.pt").stat().st_mtime_ns == checkpoint
-    log = log_of(passed_job.config).read_text(encoding="utf-8")
+    log = log_of(passed_job.model).read_text(encoding="utf-8")
     first, second = log.split(ATTEMPT)[1:3]
     assert "PIPELINE CHECK: PASS" in first
     assert "PIPELINE CHECK: PASS" in second
@@ -441,7 +473,7 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
             report.stdout
         )
 
-        result = run_job(str(passed_job.config))
+        result = run_job(passed_job.model)
         assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
         assert "PIPELINE CHECK: PASS" in result.stdout
         for stage in (*later, "choose_layer"):
@@ -451,7 +483,7 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
 def test_unknown_force_from_stops_the_job_before_any_stage(passed_job: PassedJob) -> None:
     """A typo must not run the stages unforced, which would skip and read as a successful redo."""
     before = status_mtimes(passed_job.run_dir)
-    result = run_job(str(passed_job.config), "--force-from", "calibration", timeout=30)
+    result = run_job(passed_job.model, "--force-from", "calibration", timeout=30)
     assert result.returncode == 2
     assert "invalid choice: 'calibration'" in result.stderr
     assert "=== start" not in result.stdout
@@ -460,14 +492,13 @@ def test_unknown_force_from_stops_the_job_before_any_stage(passed_job: PassedJob
 
 def test_failed_stage_stops_the_job(run_root: Path) -> None:
     """ImageNet weights never downloaded: training fails, and nothing may run after it."""
-    run_dir = "runs/unet_imagenet-f1.0"
-    config = write_config("failing", ENCODER_WEIGHTS="imagenet", RUN_DIR=run_dir)
-    result = run_job(str(config))
+    model = write_config("failing", ENCODER_WEIGHTS="imagenet")
+    result = run_job(model)
     assert result.returncode != 0
     assert "failing stage: train (failed)" in result.stdout
     assert f"job exit code {result.returncode}" in result.stdout
-    assert {path.stem for path in (run_root / run_dir / "status").glob("*.json")} == {"train"}
-    log = log_of(config).read_text(encoding="utf-8")
+    assert {path.stem for path in (run_dir_of(model) / "status").glob("*.json")} == {"train"}
+    log = log_of(model).read_text(encoding="utf-8")
     assert "=== end train: exit 1 in " in log
     assert "=== start infer" not in log
     assert "PIPELINE CHECK: FAIL" in log
@@ -479,10 +510,9 @@ def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None
     The signal comes once training prints, inside its stage; the stage's own traceback, printed
     after the signal, must still reach the log.
     """
-    run_dir = "runs/interrupted"
-    config = write_config("interrupted", RUN_DIR=run_dir)
+    model = write_config("interrupted")
     with subprocess.Popen(  # noqa: S603 - arguments come from the tests
-        runner_command(str(config), "--num-workers", NUM_WORKERS),
+        runner_command(SCALE, model, "--num-workers", NUM_WORKERS),
         cwd=RUN_ROOT,
         env=runner_env(),
         stdout=subprocess.PIPE,
@@ -496,8 +526,8 @@ def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None
                 break
         process.communicate(timeout=300)
     assert process.returncode == 130
-    log = log_of(config).read_text(encoding="utf-8")
-    train = json.loads((run_root / run_dir / "status" / "train.json").read_text())
+    log = log_of(model).read_text(encoding="utf-8")
+    train = json.loads((run_dir_of(model) / "status" / "train.json").read_text())
     assert train["status"] == "interrupted", log[-8000:]
     assert "KeyboardInterrupt" in log
     assert "=== end train: exit " in log
@@ -506,70 +536,82 @@ def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None
     assert "PIPELINE CHECK: FAIL" in log
 
 
-@pytest.mark.parametrize("name", base_names())
-def test_full_job_refuses_an_empty_value_before_any_stage(run_root: Path, name: str) -> None:
-    """Every value of the base config, left null, stops the job before training, not after."""
-    run_dir = f"runs/empty_{name.lower()}"
-    changes = {name: [] if name == "LAYERS" else None}
-    config = write_config(f"empty_{name}", **({"RUN_DIR": run_dir} | changes))
-    result = run_job(str(config), timeout=30)
-    assert result.returncode != 0
-    assert f"{name}: missing or empty" in result.stdout
-    assert not (run_root / run_dir).exists()
-    assert "=== start" not in result.stdout
+def refusal(tmp_path: Path, **changes: object) -> str:
+    """Return why the configs with `changes` cannot run, as the runner would print it."""
+    write_configs(tmp_path, "model", **changes)
+    with pytest.raises(garimpo_uncertainty.config.ConfigError) as refused:
+        garimpo_uncertainty.config.RunConfig.load(tmp_path, SCALE, "model")
+    return str(refused.value)
 
 
-def test_full_job_refuses_a_misspelled_key_before_any_stage(run_root: Path) -> None:
-    """A misspelled key would otherwise leave its value at nothing, read as no setting at all.
-
-    The reason reaches the log too, since Colab shows the log's last attempt.
-    """
-    run_dir = "runs/misspelled"
-    config = write_config("misspelled", RUN_DIR=run_dir, SWEEP_STEP=9)
-    result = run_job(str(config), timeout=30)
-    assert result.returncode != 0
-    assert "SWEEP_STEP: unknown key" in result.stdout
-    assert "SWEEP_STEP: unknown key" in log_of(config).read_text(encoding="utf-8")
-    assert not (run_root / run_dir).exists()
-
-
-@pytest.mark.parametrize("path", CONFIGS, ids=lambda path: f"{path.parent.name}/{path.stem}")
-def test_versioned_configs_are_accepted_and_name_model_layers(path: Path) -> None:
-    """A layer the model lacks would stop fit_directions only after the whole training."""
-    config = json.loads(path.read_text(encoding="utf-8"))
-    assert garimpo_uncertainty.run_config.problems(config) == []
-    model = garimpo_uncertainty.models.common.build(config["ARCH"], in_channels=6)
-    assert set(config["LAYERS"]) <= set(garimpo_uncertainty.models.common.feature_layers(model))
-
-
-@pytest.mark.parametrize(
-    "name", sorted(path.stem for path in support.ROOT.glob("configs/full/*.json"))
-)
-def test_pilot_config_differs_from_the_full_one_only_in_scale(name: str) -> None:
-    """The pilot checks the code the full run will run, so only its size and length may differ."""
-    full, pilot = (
-        json.loads((support.ROOT / "configs" / scale / f"{name}.json").read_text(encoding="utf-8"))
-        for scale in ("full", "pilot")
+@pytest.mark.parametrize("name", garimpo_uncertainty.config.REQUIRED)
+def test_config_refuses_an_empty_value(tmp_path: Path, name: str) -> None:
+    """Every value, left null, refuses the config: the job would otherwise fail after training."""
+    assert f"{name}: missing or empty" in refusal(
+        tmp_path, **{name: [] if name == "LAYERS" else None}
     )
-    differing = {key for key in full.keys() | pilot.keys() if full.get(key) != pilot.get(key)}
-    assert differing == PILOT_ONLY, differing
-    assert pilot["RUN_DIR"] == f"runs/pilot/{name}-f0.01"
-    assert full["RUN_DIR"] == f"runs/{name}-f1.0"
+
+
+def test_config_refuses_a_misspelled_or_misplaced_key(tmp_path: Path) -> None:
+    """A misspelled key leaves its value at nothing; one in another file has two values."""
+    assert "SWEEP_STEP: unknown key" in refusal(tmp_path, SWEEP_STEP=9)
+    model = {"ARCH": "unet", "ENCODER_WEIGHTS": "none", "LAYERS": LAYERS, "SVM_C": 2.0}
+    (tmp_path / "models" / "model.json").write_text(json.dumps(model))
+    with pytest.raises(
+        garimpo_uncertainty.config.ConfigError, match=r"SVM_C: belongs in .*base\.json"
+    ):
+        garimpo_uncertainty.config.RunConfig.load(tmp_path, SCALE, "model")
 
 
 @pytest.mark.parametrize("floor", [0, -0.01, float("nan"), float("inf"), "0.01ha"])
-def test_full_job_refuses_a_bad_score_floor_before_any_stage(run_root: Path, floor: object) -> None:
-    """`calibrate.py` refuses these too, but only after training; the job must not get that far."""
-    run_dir = f"runs/floor_{str(floor).replace('.', '_')}"
-    config = write_config(f"floor_{floor}", RUN_DIR=run_dir, SCORE_FLOOR_HA=floor)
-    result = run_job(str(config), timeout=60)
+def test_config_refuses_a_bad_score_floor(tmp_path: Path, floor: object) -> None:
+    """`calibrate.py` refuses these too, but only after training."""
+    expected = f"SCORE_FLOOR_HA must be a positive finite number, got '{floor}'"
+    assert expected in refusal(tmp_path, SCORE_FLOOR_HA=floor)
+
+
+def test_full_job_refuses_a_config_before_any_stage(run_root: Path) -> None:
+    """A refused config stops the job before training, and its reason reaches the log too.
+
+    Colab shows the log's last attempt, so the reason must be there and not only in the cell.
+    """
+    model = write_config("misspelled", SWEEP_STEP=9, LAYERS=[])
+    result = run_job(model, timeout=30)
     assert result.returncode != 0
-    assert f"SCORE_FLOOR_HA must be a positive finite number, got '{floor}'" in result.stdout
-    assert not (run_root / run_dir).exists()
+    for reason in ("SWEEP_STEP: unknown key", "LAYERS: missing or empty"):
+        assert reason in result.stdout
+        assert reason in log_of(model).read_text(encoding="utf-8")
+    assert not (RUN_ROOT / "runs" / "misspelled-f1.0").exists()
     assert "=== start" not in result.stdout
 
 
-def test_full_job_needs_a_config(run_root: Path) -> None:
-    result = run_job(timeout=30)
+@pytest.mark.parametrize("scale", SCALES)
+@pytest.mark.parametrize("model", MODELS)
+def test_versioned_configs_are_accepted_and_name_model_layers(scale: str, model: str) -> None:
+    """A layer the model lacks would stop fit_directions only after the whole training."""
+    config = garimpo_uncertainty.config.RunConfig.load(CONFIGS, scale, model)
+    built = garimpo_uncertainty.models.common.build(config["ARCH"], in_channels=6)
+    assert set(config["LAYERS"]) <= set(garimpo_uncertainty.models.common.feature_layers(built))
+
+
+@pytest.mark.parametrize("model", MODELS)
+def test_versioned_run_dirs_and_logs_are_those_recorded(model: str) -> None:
+    """Recorded runs and their fingerprints name these directories, and Drive keeps these logs."""
+    for scale, run_dir in (("full", f"runs/{model}-f1.0"), ("pilot", f"runs/pilot/{model}-f0.01")):
+        config = garimpo_uncertainty.config.RunConfig.load(CONFIGS, scale, model)
+        assert config.run_dir == run_dir
+        assert config.log_name == f"{scale}-{model}"
+    assert SCALES == ["full", "pilot"]
+
+
+def test_full_job_needs_a_scale_and_a_model(run_root: Path) -> None:
+    result = subprocess.run(  # noqa: S603 - arguments come from the test
+        runner_command(),
+        check=False,
+        cwd=RUN_ROOT,
+        env=runner_env(),
+        capture_output=True,
+        text=True,
+    )
     assert result.returncode == 2
-    assert "the following arguments are required: config" in result.stderr
+    assert "the following arguments are required: scale, model" in result.stderr

@@ -1,0 +1,7 @@
+{
+  "RUNS_DIR": "runs",
+  "TRAIN_FRACTION": 1.0,
+  "EPOCHS": 100,
+  "STEPS_PER_EPOCH": 250,
+  "MIN_FRACTION_ASCENDING": 0.95
+}

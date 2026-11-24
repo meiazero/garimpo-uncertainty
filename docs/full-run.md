@@ -6,8 +6,8 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 
 1. Download the store once on your own machine and upload it to Drive
    ([below](#download-the-store)). The notebook downloads nothing.
-2. Each run reads every value from its config in `configs/full/` ([below](#the-run-configs)). To
-   change one, edit the file, then commit and push it from your machine: each session starts from a
+2. Each run reads every value from `configs/` ([below](#the-run-configs)). To
+   change one, edit its file, then commit and push it from your machine: each session starts from a
    fresh clone, which cannot push.
 3. On a GPU runtime, choose `SCALE` `full` in section 3 of `notebooks/01_run_experiment.ipynb` and
    run Runtime > Run all. Section 5 runs the four models one after another
@@ -28,18 +28,19 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 
 ## The run configs
 
-| Config | Model |
+| Model config | Model |
 |---|---|
-| `configs/full/unet_scratch.json` | U-Net from scratch |
-| `configs/full/unet_imagenet.json` | U-Net from ImageNet weights |
-| `configs/full/unet_sentinel2.json` | U-Net from Sentinel-2 MoCo weights |
-| `configs/full/convnet.json` | DeepLabV3 from segmentation-models-pytorch |
+| `configs/models/unet_scratch.json` | U-Net from scratch |
+| `configs/models/unet_imagenet.json` | U-Net from ImageNet weights |
+| `configs/models/unet_sentinel2.json` | U-Net from Sentinel-2 MoCo weights |
+| `configs/models/convnet.json` | DeepLabV3 from segmentation-models-pytorch |
 
-Each value has its source in [decisions.md](decisions.md). `scripts/run.py` reads a config and
-stops the run before any stage when a key is missing, null, empty or unknown, or when
-`SCORE_FLOOR_HA` is not a positive finite number. `RUN_DIR` is `runs/<config name>-f1.0`: the
-merge reads the runs from those paths. `configs/pilot/` holds the same four configs at 1%
-([pilot.md](pilot.md)).
+A run is one of these models at the `full` scale, `configs/scales/full.json`, with the values of
+`configs/base.json` that every run shares. Each value has its source in
+[decisions.md](decisions.md). `scripts/run.py` composes the three files and stops the run before
+any stage when a key is missing, null, empty, unknown or in another file, or when `SCORE_FLOOR_HA`
+is not a positive finite number. The run writes to `runs/<model>-f1.0`: the merge reads the runs
+from those paths. The `pilot` scale runs the same four models at 1% ([pilot.md](pilot.md)).
 
 ## Download the store
 
@@ -74,7 +75,7 @@ About the download:
 
 Section 5 of the notebook has one cell per model, run in order:
 
-1. "Run <model>" runs `uv run --no-sync python scripts/run.py configs/<scale>/<model>.json`,
+1. "Run <model>" runs `uv run --no-sync python scripts/run.py <scale> <model>`,
    with `<scale>` `full` for the full runs. `--num-workers` defaults to the runtime's CPUs. The
    runner prints each stage's command, lines, exit code and duration with the UTC time, and
    appends them to `outputs/logs/<scale>-<model>.log`.
@@ -98,7 +99,7 @@ runs with `uv run --no-sync`, so a run never changes the environment under itsel
 Outside Colab, one run is one job:
 
 ```bash
-uv run --no-sync python scripts/run.py configs/full/unet_scratch.json
+uv run --no-sync python scripts/run.py full unet_scratch
 ```
 
 ## Regenerate the tile lists

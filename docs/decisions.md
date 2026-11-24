@@ -1,14 +1,16 @@
 # Values of the full run
 
-Read before changing a value in `configs/full/`.
+Read before changing a value in `configs/`.
 
 Every value of the four runs is decided here, before any run, with its source; where no paper sets
 one, the row says what the choice is for. None is tuned on the pilot, which only checks the code.
-`configs/full/` holds the four runs' configs and `configs/pilot/` the same four at 1%.
-`scripts/run.py` stops a run before any stage on a config with a value missing, null, empty or
-unknown (`garimpo_uncertainty/run_config.py`).
-`ARCH`, `ENCODER_WEIGHTS`, `RUN_DIR` and `TRAIN_FRACTION` name the run, one config each, as listed
-in [runs.md](runs.md#model-variants).
+A run is one model at one scale, and its values come from three files, each key in one of them:
+`configs/base.json` holds what every run shares, `configs/models/<model>.json` the `ARCH`,
+`ENCODER_WEIGHTS` and `LAYERS` of a model, and `configs/scales/<scale>.json` the size and length of
+the full run and of the pilot at 1%. `scripts/run.py` stops a run before any stage when a value is
+missing, null or empty, or a key is unknown or in another file (`garimpo_uncertainty/config.py`).
+The run's directory is `<RUNS_DIR>/<model>-f<TRAIN_FRACTION>`, such as `runs/unet_scratch-f1.0`, as
+listed in [runs.md](runs.md#model-variants).
 
 ## Decided
 

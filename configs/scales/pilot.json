@@ -1,0 +1,7 @@
+{
+  "RUNS_DIR": "runs/pilot",
+  "TRAIN_FRACTION": 0.01,
+  "EPOCHS": 2,
+  "STEPS_PER_EPOCH": 20,
+  "MIN_FRACTION_ASCENDING": 0
+}

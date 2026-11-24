@@ -8,7 +8,7 @@ Status: approved · Base: `ee8ac88` · Scope: whole codebase except `compass/` (
 configs/
   base.json                    the 20 keys identical in every run
   models/<model>.json          ARCH, ENCODER_WEIGHTS, LAYERS
-  scales/{pilot,full}.json     EPOCHS, STEPS_PER_EPOCH, TRAIN_FRACTION, MIN_FRACTION_ASCENDING
+  scales/{pilot,full}.json     RUNS_DIR, EPOCHS, STEPS_PER_EPOCH, TRAIN_FRACTION, MIN_FRACTION_ASCENDING
 scripts/split/                 one-shot build of the frozen outputs/split.csv; not part of the CLI
 src/garimpo_uncertainty/
   __main__.py, cli.py          `garimpo <stage|run|check|merge|status>`, each subcommand imported lazily
@@ -39,7 +39,7 @@ Constraints every fix keeps:
   - `chosen_layer.json` is spelled 8 times (`scripts/choose_layer.py:58`, `pipeline_check.py:189`, `:247`, `merge_results.py:37`, `run.py:293`, …); `scores.npz` 7, `quantiles.npz` 6, `results.csv` 6, `cells.npz` 5, across 9 scripts and `src/garimpo_uncertainty/data.py`.
   - A layer stage reads shared predictions from the run root and its own scores from the layer root (`scripts/calibrate.py:432`); one root cannot express that.
   - The evaluated roles (validation, calibration, test) are restated in `scripts/infer.py:26`, `calibrate.py:194`, `compass_scores.py:201`. `verify_monotonicity.py:24` selects roles by purpose and stays explicit.
-- [ ] 4. Replace the 8 flat configs and `run_config.py` with a typed `RunConfig` composed from base + model + scale, deriving today's `RUN_DIR` and log name. (~12 files)
+- [x] 4. Replace the 8 flat configs and `run_config.py` with a typed `RunConfig` composed from base + model + scale, deriving today's `RUN_DIR` and log name. (~12 files)
   - 20 of the 28 keys are identical in all 8 files; changing `SVM_C` touches 8 files.
   - Pilot and full differ only in `EPOCHS`, `STEPS_PER_EPOCH`, `TRAIN_FRACTION`, `MIN_FRACTION_ASCENDING`, `RUN_DIR`.
   - `src/garimpo_uncertainty/run_config.py:9` keeps the key list by hand; `:54` re-checks `SCORE_FLOOR_HA` because `scripts/calibrate.py` checks it only after training; `ENCODER_WEIGHTS` is a special case outside `REQUIRED` (`:39`).
