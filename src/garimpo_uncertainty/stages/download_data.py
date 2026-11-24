@@ -27,6 +27,13 @@ STORE_BYTES = 18864 * 3670016 + 2 * 1000**3
 GB = 1000**3
 
 
+TILE_LISTS = Path("outputs/tiles")
+
+
+def tile_list_path(directory: Path, fraction: float) -> Path:
+    return directory / f"tiles_{round(fraction * 100)}pct.json"
+
+
 def write_tile_lists(split_path: Path, subset_seed: int, directory: Path) -> None:
     """Write one list per training fraction, each complete: training subset plus the other roles."""
     split = pd.read_csv(split_path)
@@ -39,7 +46,7 @@ def write_tile_lists(split_path: Path, subset_seed: int, directory: Path) -> Non
             "split_sha256": garimpo_uncertainty.files.file_sha256(split_path),
             "tiles": selected[["tile_id", "role"]].sort_values("tile_id").to_dict("records"),
         }
-        path = directory / f"tiles_{round(fraction * 100)}pct.json"
+        path = tile_list_path(directory, fraction)
         garimpo_uncertainty.files.write_json(path, tile_list)
         print(f"{path}: {len(selected)} tiles, {len(selected) * cells_per_tile} cells")
 
@@ -119,7 +126,7 @@ def download_all(root: Path) -> None:
     scenes = argparse.Namespace(
         command="scenes",
         split=garimpo_uncertainty.data.SPLIT_PATH,
-        tiles=Path("outputs/tiles/tiles_100pct.json"),
+        tiles=tile_list_path(TILE_LISTS, 1.0),
         workers=workers,
         resampling_20m="bilinear",
         force=False,
@@ -161,7 +168,7 @@ def download() -> None:
     )
     lists.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     lists.add_argument("--subset-seed", type=int, required=True, help="picks the training tiles")
-    lists.add_argument("--out", type=Path, default="outputs/tiles")
+    lists.add_argument("--out", type=Path, default=TILE_LISTS)
     scenes = commands.add_parser("scenes", help="cells from Planetary Computer", allow_abbrev=False)
     scenes.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     scenes.add_argument(

@@ -97,7 +97,7 @@ Not worth it:
 
 ## Third sweep (base `3b44c6c`, approved)
 
-- [ ] 14. Let `data.py` name the tile sidecars and their download statuses, and `download_data` its tile lists. (4 files)
+- [x] 14. Let `data.py` name the tile sidecars and their download statuses, and `download_data` its tile lists. (4 files)
   - `tiles/<tile_id>.json` is built by hand at `data.py:181`, `:241`, `download.py:149`, `:243`, `:356`, `:413`.
   - `"missing_item"` and `"no_mask_polygon"` are written at `download.py:389`, `:597` and matched at `validation.py:20`.
   - `stages/download_data.py:42` builds `tiles_<pct>pct.json` and `:122` spells `tiles_100pct.json`.

@@ -40,6 +40,9 @@ CELL_STATS_DTYPE = np.dtype(
     ]
 )
 NOT_ATTEMPTED = "not_attempted"
+# A tile with no scene to download or no mask polygon to burn: absent upstream, never an outage.
+MISSING_ITEM, NO_MASK_POLYGON = "missing_item", "no_mask_polygon"
+SIDECARS_DIR = "tiles"
 SIDECAR_COLUMNS = (
     "status",
     "item",
@@ -97,6 +100,11 @@ def starting_weights_path(root: Path, encoder_weights: str | None) -> Path | Non
     """Return the file holding the chosen starting weights, or None when none are chosen."""
     weights = STARTING_WEIGHTS.get(encoder_weights)
     return None if weights is None else root / "weights" / weights.file
+
+
+def sidecar_path(root: Path, tile_id: int) -> Path:
+    """Return the JSON binding one tile to its store slots, which the download writes last."""
+    return root / SIDECARS_DIR / f"{tile_id}.json"
 
 
 def tile_slots(tile_index: int, cells_per_tile: int) -> slice:
@@ -178,7 +186,7 @@ def tile_records(root: Path, split: pd.DataFrame, tile_ids: list[int]) -> pd.Dat
     tiles = tiles[tiles.tile_id.isin(tile_ids)].reset_index(drop=True)
     sidecars = []
     for tile_id in tiles.tile_id:
-        path = root / "tiles" / f"{tile_id}.json"
+        path = sidecar_path(root, tile_id)
         sidecars.append(
             json.loads(path.read_text()) if path.exists() else {"status": NOT_ATTEMPTED}
         )
@@ -238,14 +246,14 @@ def tiles_identity(root: Path, split: pd.DataFrame, tile_ids: list[int]) -> dict
     Hashes the index set, roles, groups and the sidecars that vouch for those slots, so more tiles
     arriving elsewhere in the store never invalidate a finished run.
     """
-    directory = root / "tiles"
+    directory = root / SIDECARS_DIR
     tiles = tile_table(split)
     tiles = tiles[tiles.tile_id.isin(tile_ids)]
     table = tiles[["tile_index", "tile_id", "role", "group"]].to_csv(index=False)
     digest = hashlib.sha256(table.encode())
     any_ok = False
     for tile_id in tiles.tile_id:
-        path = directory / f"{tile_id}.json"
+        path = sidecar_path(root, tile_id)
         text = path.read_text() if path.exists() else "{}"
         if json.loads(text).get("status") == "ok":
             digest.update(text.encode())
