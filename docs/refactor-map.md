@@ -71,7 +71,7 @@ Constraints every fix keeps:
 - [x] 10. Read `chosen_layer.json` through one function, so the job, the check and the merge refuse the same broken files. (4 files)
   - `pipeline/run.py:164` catches `(OSError, ValueError, KeyError)`; `pipeline/check.py:26` (`UNREADABLE`) also catches `TypeError`, so a JSON list there is a FAIL in the check but a traceback in the job, before the check runs.
   - `pipeline/merge.py:41` is a third reader.
-- [ ] 11. Make the config the only source of each value the job passes: those flags have no default in their stage, and the test builders take their flags from `pipeline/commands.py`. (~10 files)
+- [x] 11. Make the config the only source of each value the job passes: those flags have no default in their stage, and the test builders take their flags from `pipeline/commands.py`. (~10 files)
   - `stages/compass_scores.py:178` defaults `--search-threshold-features` to `1e-8`; `configs/base.json:18` holds `1e-15`. A stage run by hand searches with another threshold and says nothing.
   - 13 other defaults copy a config value: `--seed` (4 stages), `--direction-temperature` (3), the beta ranges and the logits threshold (`compass_scores.py:175-177`), `--cell-px`.
   - `tests/e2e/support.py:365`, `:412`, `:428`, `:460`, `:490` write 35 flags by hand beside the table in `pipeline/commands.py`; `direction_args` (`support.py:423`) has no caller.

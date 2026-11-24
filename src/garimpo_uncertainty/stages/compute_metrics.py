@@ -183,7 +183,7 @@ def main() -> None:
     parser.add_argument(
         "--n-bootstrap", type=int, default=1000, help="resamples of the group bootstrap"
     )
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     garimpo_uncertainty.pipeline.runner.log_to_stdout()

@@ -153,11 +153,11 @@ def main() -> None:
     parser.add_argument(
         "--direction-temperature",
         type=float,
-        default=compass2d.metrics.UPSTREAM_TEMPERATURE,
+        required=True,
         help="sigmoid temperature of the area whose Jacobian sets the direction; at 1e4 the "
         "gradient vanishes beyond |logit| ~ 5e-3, so cells predicted empty get the mean direction",
     )
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
     parser.add_argument(

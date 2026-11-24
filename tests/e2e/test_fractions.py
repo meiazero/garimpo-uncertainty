@@ -42,12 +42,12 @@ def small_args(fraction: str = "0.01", subset_seed: str = "0") -> list[str]:
 
 # With few updates no logit need near zero, and at the upstream temperature every Jacobian is then
 # exactly zero, which fit_directions rightly refuses; whether one nears zero depends on the CPU.
-SMOOTH_DIRECTIONS = ("--direction-temperature", "1")
+SMOOTH_DIRECTIONS = {"DIRECTION_TEMPERATURE": "1"}
 
 
 def finish_run(run_dir: Path) -> None:
     layers = list(support.RUN_ORDER["convnet"][1:])
-    support.run_stages_after_training(run_dir, layers, ROOT, SMOOTH_DIRECTIONS)
+    support.run_stages_after_training(run_dir, layers, ROOT, **SMOOTH_DIRECTIONS)
     support.compute_metrics(run_dir, support.BOUNDARY_TOLERANCE, ROOT)
     support.run_other_layers(run_dir, layers, ROOT)
 

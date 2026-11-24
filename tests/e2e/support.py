@@ -342,15 +342,48 @@ def train_args(
     return [*arguments, "--split", str(split_path), *DEVICE_ARGS]
 
 
+# The values the stages take from a run's config, as these tests give them to every run.
+STAGE_VALUES = {
+    "TRAIN_FRACTION": "1.0",
+    "SUBSET_SEED": "0",
+    "CELL_PX": CELL_PX,
+    "EVAL_BATCH_SIZE": "8",
+    "NUM_WORKERS": NUM_WORKERS,
+    "SEED": "0",
+    "DIRECTION_TEMPERATURE": "10000",
+    "SVM_C": "1.0",
+    "SVM_CLASS_WEIGHT": "balanced",
+    "SVM_PIXELS_PER_CELL": "50",
+    # The sweep's beta_max is the search range of the scores, as in a run's config.
+    "BETA_RANGE_LOGITS": "100",
+    "BETA_RANGE_FEATURES": "100",
+    "SWEEP_STEPS": "9",
+    "SWEEP_CELLS": "6",
+    # Every layer qualifies, as in the pilot: a few epochs on synthetic tiles need not be monotonic.
+    "MIN_FRACTION_ASCENDING": "0",
+    "SEARCH_THRESHOLD_LOGITS": "0.01",
+    "SEARCH_THRESHOLD_FEATURES": "1e-3",
+    "CELLS": "all",
+    "SCORE_FLOOR_HA": "0.01",
+    "BOUNDARY_TOLERANCE_PX": BOUNDARY_TOLERANCE,
+    "LAYER_DIR": None,
+}
+
+
+def stage_args(stage: str, run_dir: Path, **changes: object) -> list[str]:
+    """Return the flags `stage` of `pipeline.commands` takes, as `garimpo run` passes them."""
+    values = STAGE_VALUES | {
+        "RUN_DIR": run_dir,
+        "CHECKPOINT": garimpo_uncertainty.artifacts.RunPaths.of(run_dir).best_model,
+    }
+    spec = garimpo_uncertainty.pipeline.commands.STAGES[stage]
+    device = DEVICE_ARGS if ("--checkpoint", "CHECKPOINT") in spec.flags else []
+    return [*garimpo_uncertainty.pipeline.commands.arguments(stage, values | changes), *device]
+
+
 def checkpoint_args(run_dir: Path, batch_size: str = "8") -> list[str]:
     """Return the flags every stage reading the trained model takes, as the runner passes them."""
-    values = {
-        "CHECKPOINT": garimpo_uncertainty.artifacts.RunPaths.of(run_dir).best_model,
-        "RUN_DIR": run_dir,
-        "EVAL_BATCH_SIZE": batch_size,
-        "NUM_WORKERS": NUM_WORKERS,
-    }
-    return [*garimpo_uncertainty.pipeline.commands.arguments("infer", values), *DEVICE_ARGS]
+    return stage_args("infer", run_dir, EVAL_BATCH_SIZE=batch_size)
 
 
 def validate(
@@ -362,21 +395,14 @@ def validate(
     *,
     summary: Path | None = None,
 ) -> subprocess.CompletedProcess:
+    values = STAGE_VALUES | {
+        "TRAIN_FRACTION": fraction,
+        "VALIDATION_REPORT": report,
+        "SPLIT_SUMMARY": summary,
+    }
+    arguments = garimpo_uncertainty.pipeline.commands.arguments("validate_data", values)
     return run(
-        "validate_data",
-        "--split",
-        str(split_path),
-        "--train-fraction",
-        fraction,
-        "--subset-seed",
-        "0",
-        "--cell-px",
-        str(CELL_PX),
-        "--report",
-        str(report),
-        *(["--split-summary", str(summary)] if summary else []),
-        data_root=data_root,
-        check=check,
+        "validate_data", *arguments, "--split", str(split_path), data_root=data_root, check=check
     )
 
 
@@ -409,9 +435,9 @@ def compute_metrics(
     layer_dir: Path | None = None,
 ) -> subprocess.CompletedProcess:
     """Run the metrics stage while asserting that it never imported torch."""
-    args = ["--run-dir", str(run_dir), "--boundary-tolerance-px", str(tolerance)]
-    if layer_dir is not None:
-        args += ["--layer-dir", str(layer_dir)]
+    args = stage_args(
+        "compute_metrics", run_dir, BOUNDARY_TOLERANCE_PX=tolerance, LAYER_DIR=layer_dir
+    )
     if force:
         args.append("--force")
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
@@ -420,59 +446,31 @@ def compute_metrics(
 
 
 def run_stages_after_training(
-    run_dir: Path, layers: list[str], data_root: Path, direction_args: tuple[str, ...] = ()
+    run_dir: Path, layers: list[str], data_root: Path, **changes: object
 ) -> str:
     """Run inference through the intervals as `garimpo run` does; return the chosen layer."""
-    common = checkpoint_args(run_dir)
-    run("infer", *common, data_root=data_root)
+    run("infer", *checkpoint_args(run_dir), data_root=data_root)
     run(
         "fit_directions",
-        *common,
-        "--layers",
-        *layers,
-        "--svm-c",
-        "1.0",
-        "--svm-class-weight",
-        "balanced",
-        "--svm-pixels-per-cell",
-        "50",
-        *direction_args,
+        *stage_args("fit_directions", run_dir, LAYERS=layers, **changes),
         data_root=data_root,
     )
-    sweep(run_dir, "layer", layers, data_root)
-    # Every layer qualifies, as in the pilot: a few epochs on synthetic tiles need not be monotonic.
-    run(
-        "choose_layer",
-        "--run-dir",
-        str(run_dir),
-        "--min-fraction-ascending",
-        "0",
-        data_root=data_root,
-    )
+    sweep(run_dir, "layer", layers, data_root, **changes)
+    run("choose_layer", *stage_args("choose_layer", run_dir), data_root=data_root)
     layer = chosen_layer(run_dir)
-    sweep(run_dir, "endpoint", [layer], data_root)
-    run_scores_and_intervals(run_dir, layer, data_root, beta_range="100", threshold="1e-3")
+    sweep(run_dir, "endpoint", [layer], data_root, **changes)
+    run_scores_and_intervals(
+        run_dir, layer, data_root, beta_range="100", threshold="1e-3", **changes
+    )
     return layer
 
 
-def sweep(run_dir: Path, use: str, layers: list[str], data_root: Path) -> None:
+def sweep(run_dir: Path, use: str, layers: list[str], data_root: Path, **changes: object) -> None:
     """Algorithm 2, with beta_max equal to the search range below, as `garimpo run` passes it."""
+    stage = f"{use}_monotonicity"
+    arguments = stage_args(stage, run_dir, LAYERS=layers, LAYER=layers, **changes)
     run(
-        "verify_monotonicity",
-        *checkpoint_args(run_dir),
-        "--use",
-        use,
-        "--layers",
-        *layers,
-        "--beta-max-logits",
-        "100",
-        "--beta-max-features",
-        "100",
-        "--steps",
-        "9",
-        "--cells-per-role",
-        "6",
-        data_root=data_root,
+        garimpo_uncertainty.pipeline.commands.STAGES[stage].command, *arguments, data_root=data_root
     )
 
 
@@ -484,33 +482,16 @@ def run_scores_and_intervals(
     threshold: str,
     *,
     layer_dir: Path | None = None,
+    **changes: object,
 ) -> None:
-    common = checkpoint_args(run_dir)
-    where = [] if layer_dir is None else ["--layer-dir", str(layer_dir)]
-    run(
-        "compass_scores",
-        *common,
-        "--layer",
-        layer,
-        "--beta-range-features",
-        beta_range,
-        "--search-threshold-features",
-        threshold,
-        *where,
-        data_root=data_root,
-    )
-    run(
-        "calibrate",
-        "--run-dir",
-        str(run_dir),
-        "--cells",
-        "all",
-        "--score-floor-ha",
-        "0.01",
-        *where,
-        data_root=data_root,
-    )
-    run("generate_intervals", *common, "--layer", layer, *where, data_root=data_root)
+    values = {
+        "LAYER": layer,
+        "LAYER_DIR": layer_dir,
+        "BETA_RANGE_FEATURES": beta_range,
+        "SEARCH_THRESHOLD_FEATURES": threshold,
+    }
+    for stage in ("compass_scores", "calibrate", "generate_intervals"):
+        run(stage, *stage_args(stage, run_dir, **values, **changes), data_root=data_root)
 
 
 def file_hashes(directory: Path) -> dict[str, str]:

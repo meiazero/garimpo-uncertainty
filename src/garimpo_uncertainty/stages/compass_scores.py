@@ -171,16 +171,15 @@ def main() -> None:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--layer", required=True)
     garimpo_uncertainty.pipeline.runner.add_layer_dir(parser)
-    # Upstream's active runner values for the range, and the COMPASSJ default for the threshold.
-    parser.add_argument("--beta-range-logits", type=float, default=100.0)
-    parser.add_argument("--beta-range-features", type=float, default=1000.0)
-    parser.add_argument("--search-threshold-logits", type=float, default=1e-2)
-    parser.add_argument("--search-threshold-features", type=float, default=1e-8)
+    parser.add_argument("--beta-range-logits", type=float, required=True)
+    parser.add_argument("--beta-range-features", type=float, required=True)
+    parser.add_argument("--search-threshold-logits", type=float, required=True)
+    parser.add_argument("--search-threshold-features", type=float, required=True)
     parser.add_argument("--temperature", type=float, default=compass2d.metrics.UPSTREAM_TEMPERATURE)
     parser.add_argument(
         "--direction-temperature",
         type=float,
-        default=compass2d.metrics.UPSTREAM_TEMPERATURE,
+        required=True,
         help="sigmoid temperature of the area whose Jacobian sets the direction; at 1e4 the "
         "gradient vanishes beyond |logit| ~ 5e-3, so cells predicted empty get the mean direction",
     )
