@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import NamedTuple
 
 import compass2d.directions
-import compass2d.metrics
 import numpy as np
 import pandas as pd
 import torch
@@ -17,6 +16,7 @@ import torch
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
+import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
@@ -40,19 +40,15 @@ def collect_samples(
     device: str,
 ) -> LayerSamples:
     """Read the training cells through the layer: one Jacobian per cell, some pixels per cell."""
-
-    def metric(logits: torch.Tensor) -> torch.Tensor:
-        pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.direction_temperature)
-
     jacobians, features, labels = [], [], []
     feature_shape = None
     for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         encoded = garimpo_uncertainty.models.common.encode(model, images.to(device))
         z, decode = garimpo_uncertainty.models.common.split_at(model, layer, encoded)
         feature_shape = list(z.shape[1:])
-        jacobian = compass2d.directions.jacobian_sum(decode, z, metric)
-        jacobians.append(jacobian.cpu().numpy())
+        jacobians.append(
+            garimpo_uncertainty.compass_j.jacobian(decode, z, args.direction_temperature)
+        )
         pixels, targets = compass2d.directions.sample_pixels(
             z, masks.to(device), args.svm_pixels_per_cell, generator
         )

@@ -11,13 +11,13 @@ from pathlib import Path
 import compass2d.compass
 import compass2d.directions
 import compass2d.metrics
-import numpy as np
 import pandas as pd
 import torch
 
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
+import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
@@ -57,30 +57,17 @@ def sweep_layer(
     args: argparse.Namespace,
 ) -> dict[str, compass2d.compass.Monotonicity]:
     """Sweep one batch through one layer, one result per direction."""
-
-    def soft(logits: torch.Tensor) -> torch.Tensor:
-        pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
-
     z, decode = garimpo_uncertainty.models.common.split_at(model, layer, features)
-    jacobian = compass2d.directions.jacobian_sum(
-        decode,
-        z,
-        lambda logits: compass2d.metrics.soft_area(
-            logits, garimpo_uncertainty.data.PIXEL_HA, args.direction_temperature
-        ),
-    )
-    jacobian = jacobian.cpu().numpy()
-    swept = {}
-    for direction in ("pca", "svm"):
-        delta = compass2d.directions.cell_deltas(
-            direction, np.asarray(jacobian, dtype=np.float64), fitted
+    jacobian = garimpo_uncertainty.compass_j.jacobian(decode, z, args.direction_temperature)
+    soft = garimpo_uncertainty.compass_j.soft_area(args.temperature)
+    return {
+        direction: compass2d.compass.verify_monotonicity(
+            decode, soft, z, delta, args.beta_max_features, args.steps
         )
-        channel_delta = compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z))
-        swept[direction] = compass2d.compass.verify_monotonicity(
-            decode, soft, z, channel_delta, args.beta_max_features, args.steps
-        )
-    return swept
+        for direction, delta in garimpo_uncertainty.compass_j.channel_deltas(
+            jacobian, fitted, z
+        ).items()
+    }
 
 
 def sweep_role(

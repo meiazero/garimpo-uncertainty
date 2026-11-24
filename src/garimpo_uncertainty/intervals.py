@@ -63,6 +63,8 @@ COMBINATIONS += tuple(
 SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
 DENSITY_RATIO_FOLDS = 5  # group folds of the cross-fitted domain classifier
 ALPHAS = (0.05, 0.1, 0.15)  # Cheung et al. (2026), Table 1
+# The two directions of COMPASS-J, fitted per layer on the training role.
+DIRECTIONS = ("pca", "svm")
 COMPASS_METHODS = ("compass_l", "compass_j_pca", "compass_j_svm")  # the rows of scores/scores.npz
 LAYER_METHODS = ("compass_j_pca", "compass_j_svm", "a_compass_j_pca", "a_compass_j_svm")
 

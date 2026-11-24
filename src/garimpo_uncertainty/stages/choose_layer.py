@@ -13,22 +13,23 @@ import pandas as pd
 
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.files
+import garimpo_uncertainty.intervals
 import garimpo_uncertainty.pipeline.runner
-
-DIRECTIONS = ("pca", "svm")
 
 
 def candidates(diagnostics: pd.DataFrame, monotonicity: pd.DataFrame) -> pd.DataFrame:
     """One row per layer: explained variance and the validation fraction ascending per direction."""
     validation = monotonicity[
-        (monotonicity.role == "validation") & monotonicity.direction.isin(DIRECTIONS)
+        (monotonicity.role == "validation")
+        & monotonicity.direction.isin(garimpo_uncertainty.intervals.DIRECTIONS)
     ]
     ascending = validation.pivot(index="layer", columns="direction", values="fraction_ascending")
     swept = set(ascending.dropna().index)
     if unmatched := swept ^ set(diagnostics.layer):
         raise ValueError(
             f"layers {sorted(unmatched)} are not in both directions/diagnostics.csv and the "
-            f"validation rows of monotonicity_layer.csv for {DIRECTIONS}; rerun with one LAYERS"
+            "validation rows of monotonicity_layer.csv for "
+            f"{garimpo_uncertainty.intervals.DIRECTIONS}; rerun with one LAYERS"
         )
     table = diagnostics[["layer", "pca_explained_variance"]].set_index("layer")
     return table.join(ascending.add_prefix("fraction_ascending_"))

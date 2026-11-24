@@ -75,7 +75,7 @@ Constraints every fix keeps:
   - `stages/compass_scores.py:178` defaults `--search-threshold-features` to `1e-8`; `configs/base.json:18` holds `1e-15`. A stage run by hand searches with another threshold and says nothing.
   - 13 other defaults copy a config value: `--seed` (4 stages), `--direction-temperature` (3), the beta ranges and the logits threshold (`compass_scores.py:175-177`), `--cell-px`.
   - `tests/e2e/support.py:365`, `:412`, `:428`, `:460`, `:490` write 35 flags by hand beside the table in `pipeline/commands.py`; `direction_args` (`support.py:423`) has no caller.
-- [ ] 12. Put the COMPASS-J recipe in one library module: the Jacobian of the soft area, the per-direction channel deltas, the search spaces and `DIRECTIONS`. (6 files, after 9, 11)
+- [x] 12. Put the COMPASS-J recipe in one library module: the Jacobian of the soft area, the per-direction channel deltas, the search spaces and `DIRECTIONS`. (6 files, after 9, 11)
   - The Jacobian metric is written at `stages/fit_directions.py:44`, `verify_monotonicity.py:66`, `compass_scores.py:80`.
   - `for direction in ("pca", "svm")` at `verify_monotonicity.py:75`, `compass_scores.py:88`, `generate_intervals.py:74`; `choose_layer.py:18` names it `DIRECTIONS`.
   - `compass_scores.py:69-99` (`batch_spaces`) and `generate_intervals.py:57-82` (`search_spaces`) build the same three spaces.

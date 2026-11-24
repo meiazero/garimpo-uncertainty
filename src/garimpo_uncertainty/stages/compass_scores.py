@@ -6,7 +6,6 @@ per COMPASS method, plus per-cell Jacobians (PCA directions, interval stage) and
 """
 
 import argparse
-from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
@@ -20,6 +19,7 @@ import torch
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
+import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
@@ -40,70 +40,36 @@ class BatchScores(NamedTuple):
     feature_sums: np.ndarray
 
 
-class Space(NamedTuple):
-    """What one COMPASS method perturbs, and how far and how finely its search goes."""
-
-    decode: Callable[[torch.Tensor], torch.Tensor]
-    metric: Callable[[torch.Tensor], torch.Tensor]
-    z: torch.Tensor
-    delta: torch.Tensor
-    beta_range: float
-    threshold: float
-
-
 def batch_spaces(
     model: torch.nn.Module,
     features: list[torch.Tensor],
     fitted: compass2d.directions.Directions,
     args: argparse.Namespace,
-) -> tuple[list[Space], np.ndarray, np.ndarray]:
-    """Return the spaces in COMPASS_METHODS order, the Jacobians and the summed features."""
-    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-
-    def soft(logits: torch.Tensor) -> torch.Tensor:
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
-
-    logits, _ = garimpo_uncertainty.models.common.split_at(
-        model, garimpo_uncertainty.models.common.LOGITS, features
+) -> tuple[list[tuple[garimpo_uncertainty.compass_j.Space, float, float]], np.ndarray, np.ndarray]:
+    """Return each space in COMPASS_METHODS order with its limits, the Jacobians, the features."""
+    split = garimpo_uncertainty.compass_j.split(model, features, args.layer)
+    jacobian = garimpo_uncertainty.compass_j.jacobian(
+        split.decode, split.z, args.direction_temperature
     )
-    spaces = [
-        Space(
-            lambda z: z,
-            lambda output: compass2d.metrics.hard_area(output, pixel_ha),
-            logits,
-            torch.ones_like(logits),
-            args.beta_range_logits,
-            args.search_threshold_logits,
-        )
+    spaces = garimpo_uncertainty.compass_j.spaces(split, jacobian, fitted, args.temperature)
+    logits_limits = (args.beta_range_logits, args.search_threshold_logits)
+    features_limits = (args.beta_range_features, args.search_threshold_features)
+    searched = [
+        (spaces[method], *(logits_limits if method == "compass_l" else features_limits))
+        for method in garimpo_uncertainty.intervals.COMPASS_METHODS
     ]
-    z, decode = garimpo_uncertainty.models.common.split_at(model, args.layer, features)
-    jacobian = compass2d.directions.jacobian_sum(
-        decode,
-        z,
-        lambda logits: compass2d.metrics.soft_area(
-            logits, garimpo_uncertainty.data.PIXEL_HA, args.direction_temperature
-        ),
-    )
-    jacobian = jacobian.cpu().numpy()
-    for direction in ("pca", "svm"):
-        delta = compass2d.directions.cell_deltas(direction, jacobian.astype(np.float64), fitted)
-        spaces.append(
-            Space(
-                decode,
-                soft,
-                z,
-                compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z)),
-                args.beta_range_features,
-                args.search_threshold_features,
-            )
-        )
-    return spaces, jacobian, z.flatten(2).sum(2).cpu().numpy()
+    return searched, jacobian, split.z.flatten(2).sum(2).cpu().numpy()
 
 
-def search_space(space: Space, target: torch.Tensor) -> list[torch.Tensor]:
+def search_space(
+    space: garimpo_uncertainty.compass_j.Space,
+    beta_range: float,
+    threshold: float,
+    target: torch.Tensor,
+) -> list[torch.Tensor]:
     """Symmetric score and flag, then lower score and flag, then upper score and flag."""
     searched = (space.decode, space.metric, space.z, space.delta, target)
-    limits = (space.beta_range, space.threshold)
+    limits = (beta_range, threshold)
     lower, upper = compass2d.compass.asymmetric_binary_search_scores(*searched, *limits)
     return [*compass2d.compass.binary_search_scores(*searched, *limits), *lower, *upper]
 
@@ -119,7 +85,7 @@ def score_batch(
     target = masks.to(torch.float64).flatten(1).sum(1) * garimpo_uncertainty.data.PIXEL_HA
     features = garimpo_uncertainty.models.common.encode(model, x)
     spaces, jacobian, feature_sums = batch_spaces(model, features, fitted, args)
-    found = [search_space(space, target) for space in spaces]
+    found = [search_space(*space, target) for space in spaces]
     columns = [np.stack([row[c].cpu().numpy() for row in found]) for c in range(6)]
     return BatchScores(*columns, jacobian, feature_sums)
 
