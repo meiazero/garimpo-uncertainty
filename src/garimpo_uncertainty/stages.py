@@ -51,6 +51,11 @@ STAGE_ORDER = (
 )
 
 
+def available_cpus() -> int:
+    """Return the CPUs this process may use: the default of every stage's workers."""
+    return len(os.sched_getaffinity(0))
+
+
 def add_layer_dir(parser: ArgumentParser) -> None:
     """Add --layer-dir to a stage of LAYER_STAGES; the caller sets it to --run-dir when absent."""
     parser.add_argument(

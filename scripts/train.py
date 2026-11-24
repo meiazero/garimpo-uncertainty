@@ -550,7 +550,9 @@ def main() -> None:
     parser.add_argument("--loss", choices=["dice", "bce", "dice_bce"], required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--device")
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--num-workers", type=int, default=garimpo_uncertainty.stages.available_cpus()
+    )
     parser.add_argument("--force", action="store_true", help="restart, ignoring last.pt")
     args = parser.parse_args()
     garimpo_uncertainty.stages.log_to_stdout()

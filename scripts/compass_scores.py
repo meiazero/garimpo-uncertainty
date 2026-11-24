@@ -186,7 +186,9 @@ def main() -> None:
     )
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--num-workers", type=int, default=garimpo_uncertainty.stages.available_cpus()
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     args.layer_dir = args.layer_dir or args.run_dir

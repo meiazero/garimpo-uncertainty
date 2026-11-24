@@ -59,7 +59,6 @@ NOT_FROM_CONFIG = {
 NAMED_OTHERWISE = {
     "--beta-max-features": "BETA_RANGE_FEATURES",
     "--beta-max-logits": "BETA_RANGE_LOGITS",
-    "--cell-px": "GARIMPO_TEST_CELL_PX",
     "--cells-per-role": "SWEEP_CELLS",
     "--lightgbm-jobs": "NUM_WORKERS",
     "--steps": "SWEEP_STEPS",
@@ -93,6 +92,8 @@ FILLED = {
     "SEARCH_THRESHOLD_FEATURES": 2e-3,
     # Not 0.01, which SEARCH_THRESHOLD_LOGITS holds in the base config.
     "SCORE_FLOOR_HA": 0.02,
+    # The synthetic store's cells, not the real store's 512 pixels.
+    "CELL_PX": support.CELL_PX,
 }
 # An execution setting, not part of the config: Colab leaves it at the runner's default.
 NUM_WORKERS = "2"
@@ -150,7 +151,6 @@ def runner_env() -> dict[str, str]:
     return {
         **os.environ,
         "GARIMPO_DATA_DIR": str(DATA),
-        "GARIMPO_TEST_CELL_PX": str(support.CELL_PX),
         "CUDA_VISIBLE_DEVICES": "",
     }
 
@@ -268,7 +268,6 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     listed = {key: value for key, value in config.values.items() if key != "RUNS_DIR"}
     values = {key: str(value) for key, value in listed.items() if not isinstance(value, list)}
     values |= {"RUN_DIR": config.run_dir, "NUM_WORKERS": NUM_WORKERS}
-    values |= {"GARIMPO_TEST_CELL_PX": str(support.CELL_PX)}
     # A wrong key holding the same value would pass, so no two may share one.
     by_value: dict[str, set[str]] = {}
     for name, value in values.items():

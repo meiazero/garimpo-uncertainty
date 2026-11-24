@@ -37,6 +37,7 @@ BASE_KEYS = (
     "CELLS",
     "SCORE_FLOOR_HA",
     "BOUNDARY_TOLERANCE_PX",
+    "CELL_PX",
 )
 REQUIRED = (*MODEL_KEYS, *SCALE_KEYS, *BASE_KEYS)
 
@@ -116,4 +117,9 @@ class RunConfig:
 
     @property
     def log_name(self) -> str:
-        return f"{self.scale}-{self.model}"
+        return log_name(self.scale, self.model)
+
+
+def log_name(scale: str, model: str) -> str:
+    """Return the name of a run's log, outputs/logs/<scale>-<model>.log, kept across attempts."""
+    return f"{scale}-{model}"

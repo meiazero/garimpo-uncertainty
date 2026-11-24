@@ -20,6 +20,7 @@ import shapely
 import torch
 
 import garimpo_uncertainty.artifacts
+import garimpo_uncertainty.commands
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
 import garimpo_uncertainty.models.common
@@ -84,13 +85,10 @@ EXPECTED_ROWS |= {
     for method, calibration in EXPECTED_ROWS
     if calibration in {"external", "own_region"}
 }
+# Each architecture's starting weights, then its layers in the order the runs list them.
 RUN_ORDER = {
-    "convnet": ([], "decoder.relu", "decoder.aspp"),
-    "unet": (
-        ["--encoder-weights", "none"],
-        "decoder.blocks.4",
-        "decoder.blocks.3",
-    ),
+    "convnet": (None, "decoder.relu", "decoder.aspp"),
+    "unet": ("none", "decoder.blocks.4", "decoder.blocks.3"),
 }
 MODEL_NAMES = {"convnet": "convnet", "unet": "unet_scratch"}
 # GARIMPO_TEST_DEVICE=cuda runs the suite as production runs on a GPU: no --device, so the stages
@@ -319,51 +317,34 @@ def train_args(
     fraction: str = "1.0",
     subset_seed: str = "0",
 ) -> list[str]:
-    return [
-        "--arch",
-        arch,
-        *RUN_ORDER[arch][0],
-        "--run-dir",
-        str(run_dir),
-        "--split",
-        str(split_path),
-        "--train-fraction",
-        fraction,
-        "--subset-seed",
-        subset_seed,
-        "--epochs",
-        epochs,
-        "--steps-per-epoch",
-        steps_per_epoch,
-        "--batch-size",
-        batch_size,
-        "--lr",
-        lr,
-        "--weight-decay",
-        "0",
-        "--loss",
-        "dice_bce",
-        "--seed",
-        "0",
-        *DEVICE_ARGS,
-        "--num-workers",
-        NUM_WORKERS,
-    ]
+    values = {
+        "ARCH": arch,
+        "ENCODER_WEIGHTS": RUN_ORDER[arch][0],
+        "RUN_DIR": run_dir,
+        "TRAIN_FRACTION": fraction,
+        "SUBSET_SEED": subset_seed,
+        "EPOCHS": epochs,
+        "STEPS_PER_EPOCH": steps_per_epoch,
+        "BATCH_SIZE": batch_size,
+        "LR": lr,
+        "WEIGHT_DECAY": "0",
+        "LOSS": "dice_bce",
+        "SEED": "0",
+        "NUM_WORKERS": NUM_WORKERS,
+    }
+    arguments = garimpo_uncertainty.commands.arguments("train", values)
+    return [*arguments, "--split", str(split_path), *DEVICE_ARGS]
 
 
 def checkpoint_args(run_dir: Path, batch_size: str = "8") -> list[str]:
-    checkpoint = str(run_dir / "best_model.pt")
-    return [
-        "--checkpoint",
-        checkpoint,
-        "--run-dir",
-        str(run_dir),
-        "--batch-size",
-        batch_size,
-        *DEVICE_ARGS,
-        "--num-workers",
-        NUM_WORKERS,
-    ]
+    """Return the flags every stage reading the trained model takes, as the runner passes them."""
+    values = {
+        "CHECKPOINT": garimpo_uncertainty.artifacts.RunPaths.of(run_dir).best_model,
+        "RUN_DIR": run_dir,
+        "EVAL_BATCH_SIZE": batch_size,
+        "NUM_WORKERS": NUM_WORKERS,
+    }
+    return [*garimpo_uncertainty.commands.arguments("infer", values), *DEVICE_ARGS]
 
 
 def validate(

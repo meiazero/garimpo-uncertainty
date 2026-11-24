@@ -44,7 +44,7 @@ Constraints every fix keeps:
   - Pilot and full differ only in `EPOCHS`, `STEPS_PER_EPOCH`, `TRAIN_FRACTION`, `MIN_FRACTION_ASCENDING`, `RUN_DIR`.
   - `src/garimpo_uncertainty/run_config.py:9` keeps the key list by hand; `:54` re-checks `SCORE_FLOOR_HA` because `scripts/calibrate.py` checks it only after training; `ENCODER_WEIGHTS` is a special case outside `REQUIRED` (`:39`).
   - The log name comes from the JSON's folder (`scripts/run.py:326`); `tests/e2e/test_run.py:536` globs `configs/*/*.json`.
-- [ ] 5. Generate each stage's flags from `RunConfig` through one declared table, keeping every stage's CLI as it is. (~6 files, after 4)
+- [x] 5. Generate each stage's flags from `RunConfig` through one declared table, keeping every stage's CLI as it is. (~6 files, after 4)
   - `scripts/run.py:138-272` (`Stages`) maps config keys to flags by hand; `tests/e2e/test_run.py:231-259` checks that mapping key by key.
   - `tests/e2e/support.py:310` (`train_args`), `:354` (`checkpoint_args`) and its other builders are a third copy.
   - `--num-workers` defaults to 4 in 6 stages (`scripts/infer.py:120`, `train.py:546`, …) while `run.py:45` defaults it to the CPU count.

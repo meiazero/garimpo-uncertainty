@@ -23,7 +23,9 @@ from pathlib import Path
 from typing import NoReturn
 
 import garimpo_uncertainty.artifacts
+import garimpo_uncertainty.commands
 import garimpo_uncertainty.config
+import garimpo_uncertainty.data
 import garimpo_uncertainty.stages
 
 STAGE_ORDER = garimpo_uncertainty.stages.STAGE_ORDER
@@ -44,7 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=len(os.sched_getaffinity(0)),
+        default=garimpo_uncertainty.stages.available_cpus(),
         help="data loader processes and LightGBM threads; default: the CPUs this process may use",
     )
     return parser.parse_args()
@@ -112,200 +114,73 @@ class Log:
         return process.returncode if process.returncode >= 0 else 128 - process.returncode
 
 
-def script(name: str, *arguments: str) -> list[str]:
-    return [sys.executable, f"scripts/{name}.py", *arguments]
+def command(stage: str, values: dict, *extra: str) -> list[str]:
+    module = garimpo_uncertainty.commands.STAGES[stage].module
+    arguments = garimpo_uncertainty.commands.arguments(stage, values)
+    return [sys.executable, f"scripts/{module}.py", *arguments, *extra]
 
 
-def validate_command(config: garimpo_uncertainty.config.RunConfig, *, force: bool) -> list[str]:
-    fraction, seed = config["TRAIN_FRACTION"], config["SUBSET_SEED"]
-    command = script(
-        "validate_data",
-        "--train-fraction",
-        str(fraction),
-        "--subset-seed",
-        str(seed),
-        "--report",
-        f"outputs/data_validation-fraction-{fraction}-seed-{seed}.json",
-        "--split-summary",
-        "outputs/split_summary.json",
+def job_values(config: garimpo_uncertainty.config.RunConfig, num_workers: int) -> dict:
+    """Return the config's values and the job's own: where the run is, and how many workers."""
+    selection = garimpo_uncertainty.data.selection_name(
+        config["TRAIN_FRACTION"], config["SUBSET_SEED"]
     )
-    if force:
-        command.append("--force")
-    # For the tests' synthetic store only; a real store has validate_data.py's default.
-    if cell_px := os.environ.get("GARIMPO_TEST_CELL_PX"):
-        command += ["--cell-px", cell_px]
-    return command
+    return config.values | {
+        garimpo_uncertainty.config.ENCODER_WEIGHTS: config.values.get(
+            garimpo_uncertainty.config.ENCODER_WEIGHTS
+        ),
+        "RUN_DIR": config.run_dir,
+        "CHECKPOINT": garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir)).best_model,
+        "NUM_WORKERS": num_workers,
+        "VALIDATION_REPORT": f"outputs/data_validation-{selection}.json",
+        "SPLIT_SUMMARY": "outputs/split_summary.json",
+        "LAYER_DIR": None,
+    }
 
 
-class Stages:
-    """The commands of a run's stages, in STAGE_ORDER, from its config."""
-
-    def __init__(self, config: garimpo_uncertainty.config.RunConfig, num_workers: int) -> None:
-        self.config = config
-        self.run = garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir))
-        self.common = [
-            "--checkpoint",
-            str(self.run.best_model),
-            "--run-dir",
-            config.run_dir,
-            "--batch-size",
-            self.value("EVAL_BATCH_SIZE"),
-            "--num-workers",
-            str(num_workers),
-        ]
-        # The sweep's beta_max is the search range, so it covers the domain the search walks.
-        self.sweep = [
-            *self.common,
-            *self.flags("--beta-max-logits", "BETA_RANGE_LOGITS"),
-            *self.flags("--beta-max-features", "BETA_RANGE_FEATURES"),
-            *self.flags("--steps", "SWEEP_STEPS"),
-            *self.flags("--cells-per-role", "SWEEP_CELLS"),
-            *self.flags("--seed", "SEED"),
-            *self.flags("--direction-temperature", "DIRECTION_TEMPERATURE"),
-        ]
-        self.num_workers = str(num_workers)
-
-    def value(self, key: str) -> str:
-        return str(self.config[key])
-
-    def flags(self, flag: str, key: str) -> list[str]:
-        return [flag, self.value(key)]
-
-    def diagnostics(self) -> list[tuple[str, list[str]]]:
-        """Return the stages up to the layer, which choose_layer.py picks on the validation role."""
-        weights = garimpo_uncertainty.config.ENCODER_WEIGHTS
-        unset = garimpo_uncertainty.config.is_empty(self.config.values.get(weights))
-        # Passed whenever set, so train.py alone decides what fits the architecture.
-        encoder = [] if unset else self.flags("--encoder-weights", weights)
-        layers = ["--layers", *self.config["LAYERS"]]
-        train = [
-            *self.flags("--arch", "ARCH"),
-            *encoder,
-            "--run-dir",
-            self.config.run_dir,
-            *self.flags("--train-fraction", "TRAIN_FRACTION"),
-            *self.flags("--subset-seed", "SUBSET_SEED"),
-            *self.flags("--epochs", "EPOCHS"),
-            *self.flags("--steps-per-epoch", "STEPS_PER_EPOCH"),
-            *self.flags("--batch-size", "BATCH_SIZE"),
-            *self.flags("--lr", "LR"),
-            *self.flags("--weight-decay", "WEIGHT_DECAY"),
-            *self.flags("--loss", "LOSS"),
-            *self.flags("--seed", "SEED"),
-            "--num-workers",
-            self.num_workers,
-        ]
-        directions = [
-            *self.common,
-            *layers,
-            *self.flags("--svm-c", "SVM_C"),
-            *self.flags("--svm-class-weight", "SVM_CLASS_WEIGHT"),
-            *self.flags("--svm-pixels-per-cell", "SVM_PIXELS_PER_CELL"),
-            *self.flags("--seed", "SEED"),
-            *self.flags("--direction-temperature", "DIRECTION_TEMPERATURE"),
-        ]
-        choose = [
-            "--run-dir",
-            self.config.run_dir,
-            *self.flags("--min-fraction-ascending", "MIN_FRACTION_ASCENDING"),
-        ]
-        return [
-            ("train", script("train", *train)),
-            ("infer", script("infer", *self.common)),
-            ("fit_directions", script("fit_directions", *directions)),
-            (
-                "layer_monotonicity",
-                script("verify_monotonicity", *self.sweep, "--use", "layer", *layers),
-            ),
-            ("choose_layer", script("choose_layer", *choose)),
-        ]
-
-    def calibrated(self, layer: str) -> list[tuple[str, list[str]]]:
-        """Return the stages after the layer choice, each on the chosen layer."""
-        endpoint = script(
-            "verify_monotonicity", *self.sweep, "--use", "endpoint", "--layers", layer
-        )
-        return [("endpoint_monotonicity", endpoint), *self.on_layer(layer)]
-
-    def other_layers(self, chosen: str) -> list[tuple[str, list[str]]]:
-        """Return the layer's stages on every other layer of LAYERS, each into layers/<layer>/.
-
-        Cheung et al. (2026), Table 4, compare the interval width across layers. The chosen layer's
-        files stay where they were, so nothing reading a run's results changes.
-        """
-        return [
-            stage
-            for layer in self.config["LAYERS"]
-            if layer != chosen
-            for stage in self.on_layer(
-                layer, "--layer-dir", str(self.run.other_layer(layer).layer_root)
-            )
-        ]
-
-    def on_layer(self, layer: str, *where: str) -> list[tuple[str, list[str]]]:
-        """Return the stages of LAYER_STAGES on one layer; `where` sends their files elsewhere."""
-        scores = [
-            *self.common,
-            "--layer",
-            layer,
-            *self.flags("--beta-range-logits", "BETA_RANGE_LOGITS"),
-            *self.flags("--beta-range-features", "BETA_RANGE_FEATURES"),
-            *self.flags("--search-threshold-logits", "SEARCH_THRESHOLD_LOGITS"),
-            *self.flags("--search-threshold-features", "SEARCH_THRESHOLD_FEATURES"),
-            *self.flags("--direction-temperature", "DIRECTION_TEMPERATURE"),
-        ]
-        calibrate = [
-            "--run-dir",
-            self.config.run_dir,
-            *self.flags("--cells", "CELLS"),
-            *self.flags("--score-floor-ha", "SCORE_FLOOR_HA"),
-            *self.flags("--seed", "SEED"),
-            "--lightgbm-jobs",
-            self.num_workers,
-        ]
-        metrics = [
-            "--run-dir",
-            self.config.run_dir,
-            *self.flags("--boundary-tolerance-px", "BOUNDARY_TOLERANCE_PX"),
-            *self.flags("--seed", "SEED"),
-        ]
-        intervals = [*self.common, "--layer", layer]
-        return [
-            ("compass_scores", script("compass_scores", *scores, *where)),
-            ("calibrate", script("calibrate", *calibrate, *where)),
-            ("generate_intervals", script("generate_intervals", *intervals, *where)),
-            ("compute_metrics", script("compute_metrics", *metrics, *where)),
-        ]
-
-
-def run_in_order(log: Log, commands: list[tuple[str, list[str]]], force_from: str | None) -> int:
+def run_in_order(log: Log, stages: tuple[str, ...], values: dict, force_from: str | None) -> int:
     """Run each stage until one fails; return its exit code, or 0."""
-    for name, command in commands:
+    for name in stages:
         forced = force_from is not None and (
             STAGE_ORDER.index(name) >= STAGE_ORDER.index(force_from)
         )
-        if code := log.run(name, [*command, "--force"] if forced else command):
+        if code := log.run(name, command(name, values, *(["--force"] if forced else []))):
             return code
     return 0
 
 
-def run_stages(log: Log, stages: Stages, force_from: str | None) -> int:
+def run_stages(log: Log, values: dict, force_from: str | None) -> int:
     """Run the stages up to the layer choice, the others on the chosen layer, then other layers.
 
     The chosen layer's results come first, so a session lost during the other layers keeps them.
+    Cheung et al. (2026), Table 4, compare the interval width across layers; the chosen layer's
+    files stay at the run's root, so nothing reading a run's results changes.
     """
-    if code := run_in_order(log, stages.diagnostics(), force_from):
+    diagnostics = STAGE_ORDER[: STAGE_ORDER.index("choose_layer") + 1]
+    if code := run_in_order(log, diagnostics, values, force_from):
         return code
-    chosen = stages.run.chosen_layer
+    run = garimpo_uncertainty.artifacts.RunPaths.of(Path(values["RUN_DIR"]))
     try:
-        layer = json.loads(chosen.read_text(encoding="utf-8"))["layer"]
+        layer = json.loads(run.chosen_layer.read_text(encoding="utf-8"))["layer"]
     except (OSError, ValueError, KeyError) as error:
-        log.write(f"Could not read the chosen layer from {chosen}: {error!r}")
+        log.write(f"Could not read the chosen layer from {run.chosen_layer}: {error!r}")
         return 1
     log.write(f"chosen layer: {layer}")
-    return run_in_order(log, stages.calibrated(layer), force_from) or run_in_order(
-        log, stages.other_layers(layer), force_from
+    calibrated = ("endpoint_monotonicity", *garimpo_uncertainty.stages.LAYER_STAGES)
+    return run_in_order(log, calibrated, values | {"LAYER": layer}, force_from) or (
+        run_other_layers(log, values, layer, force_from)
     )
+
+
+def run_other_layers(log: Log, values: dict, chosen: str, force_from: str | None) -> int:
+    """Run the layer's stages on every other layer of LAYERS, each into layers/<layer>/."""
+    run = garimpo_uncertainty.artifacts.RunPaths.of(Path(values["RUN_DIR"]))
+    for layer in (name for name in values["LAYERS"] if name != chosen):
+        where = {"LAYER": layer, "LAYER_DIR": run.other_layer(layer).layer_root}
+        stages = garimpo_uncertainty.stages.LAYER_STAGES
+        if code := run_in_order(log, stages, values | where, force_from):
+            return code
+    return 0
 
 
 def commit() -> str:
@@ -329,7 +204,9 @@ def main() -> None:
     # Colab's second interrupt is SIGTERM, and SIGKILL 0.5 s later: kill the stage before that.
     signal.signal(signal.SIGTERM, interrupt)
     args = parse_args()
-    log = Log(Path("outputs/logs") / f"{args.scale}-{args.model}.log")
+    log = Log(
+        Path("outputs/logs") / f"{garimpo_uncertainty.config.log_name(args.scale, args.model)}.log"
+    )
     log.write(f"{ATTEMPT}{time.strftime('%Y-%m-%d %H:%M', time.gmtime())} UTC ===")
     log.write(f"config {args.scale} {args.model}; commit {commit()}")
     log.write(
@@ -343,30 +220,15 @@ def main() -> None:
             log.write(line)
         sys.exit(1)
 
+    values = job_values(config, args.num_workers)
     try:
-        code = log.run(
-            "validate_data", validate_command(config, force=args.force_validate)
-        ) or run_stages(log, Stages(config, args.num_workers), args.force_from)
+        validate = command("validate_data", values, *(["--force"] if args.force_validate else []))
+        code = log.run("validate_data", validate) or run_stages(log, values, args.force_from)
     except KeyboardInterrupt:
         log.write("interrupted by Ctrl+C; run again to resume")
         code = 130
     # The exit code goes to the check because an error before run_stage leaves every status ok.
-    check = log.run(
-        "pipeline_check",
-        script(
-            "pipeline_check",
-            "--run-dir",
-            config.run_dir,
-            "--train-fraction",
-            str(config["TRAIN_FRACTION"]),
-            "--subset-seed",
-            str(config["SUBSET_SEED"]),
-            "--job-exit-code",
-            str(code),
-            "--layers",
-            *config["LAYERS"],
-        ),
-    )
+    check = log.run("pipeline_check", command("pipeline_check", values | {"JOB_EXIT_CODE": code}))
     # A stage's exit code wins; a failed check alone still fails the job.
     sys.exit(code or check)
 
