@@ -18,6 +18,9 @@ import garimpo_uncertainty.intervals
 import garimpo_uncertainty.pipeline.runner
 import garimpo_uncertainty.validation
 
+PASS, FAIL = "PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL"
+# Each run's log ends with one of these; `garimpo status` reads them back.
+VERDICTS = (PASS, FAIL)
 # What reading chosen_layer.json raises when the file is absent, a directory, or not the object
 # choose_layer writes; the report names it instead of stopping before its verdict.
 UNREADABLE = (OSError, ValueError, KeyError, TypeError)
@@ -317,10 +320,10 @@ def report_slots(
 def exit_with_verdict(failed: list[dict]) -> None:
     print("\n" + "=" * 78)
     if failed:
-        print(f"PIPELINE CHECK: FAIL at {[r['stage'] for r in failed]}")
+        print(f"{FAIL} at {[r['stage'] for r in failed]}")
         print("=" * 78)
         raise SystemExit(1)
-    print("PIPELINE CHECK: PASS (every stage ran; this says nothing about method quality)")
+    print(f"{PASS} (every stage ran; this says nothing about method quality)")
     print("=" * 78)
 
 

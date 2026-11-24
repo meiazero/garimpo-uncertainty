@@ -20,7 +20,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
    machine, copy `runs/` from Drive first.
 
    ```bash
-   uv run --no-sync garimpo merge --out outputs --runs runs/unet_scratch-f1.0 runs/unet_imagenet-f1.0 runs/unet_sentinel2-f1.0 runs/convnet-f1.0
+   uv run --no-sync garimpo merge --out outputs --scale full
    ```
 
 6. On Colab, section 6 copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit it
@@ -84,7 +84,8 @@ Section 5 of the notebook has one cell per model, run in order:
    `--force-validate`. An option stays set in the
    open tab, so clear `RUN` once the rerun passes. Reopening the notebook from its link restores
    the values on `main`.
-3. "Print the verdicts" prints one line per model.
+3. "Print the verdicts" runs `garimpo status <scale> --since <session start>`, which prints one
+   line per model: the verdict of its last attempt.
 
 The copy of `runs/` and the logs to Drive every 30 minutes starts at the top of section 5 and stops
 in section 7, which saves the runs and logs once more and releases the GPU.

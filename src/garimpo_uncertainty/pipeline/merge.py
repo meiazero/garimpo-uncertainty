@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 import garimpo_uncertainty.artifacts
+import garimpo_uncertainty.config
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.pipeline.runner
@@ -80,11 +81,27 @@ def merged_table(runs: list[Path], identities: list[dict], name: str) -> pd.Data
     return pd.concat(frames, ignore_index=True)
 
 
+def scale_runs(scale: str) -> list[Path]:
+    """Return every model's run directory at `scale`; stop on a config that cannot run."""
+    configs = Path("configs")
+    try:
+        return [
+            Path(garimpo_uncertainty.config.RunConfig.load(configs, scale, model).run_dir)
+            for model in garimpo_uncertainty.config.models(configs)
+        ]
+    except garimpo_uncertainty.config.ConfigError as error:
+        raise SystemExit(str(error)) from error
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--runs", type=Path, nargs="+", required=True)
+    runs = parser.add_mutually_exclusive_group(required=True)
+    runs.add_argument("--runs", type=Path, nargs="+")
+    runs.add_argument("--scale", help="every model of configs/models/ at this scale")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+    if args.scale:
+        args.runs = scale_runs(args.scale)
 
     metadata = [garimpo_uncertainty.data.read_run_metadata(run_dir) for run_dir in args.runs]
     identities = [{"model": m["variant"], "train_fraction": m["train_fraction"]} for m in metadata]

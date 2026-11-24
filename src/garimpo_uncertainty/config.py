@@ -50,6 +50,11 @@ class ConfigError(ValueError):
         self.problems = problems
 
 
+def models(configs: Path) -> list[str]:
+    """Return the name of every model in configs/models/."""
+    return sorted(path.stem for path in (configs / "models").glob("*.json"))
+
+
 def is_empty(value: object) -> bool:
     return value is None or value in ("", [])
 

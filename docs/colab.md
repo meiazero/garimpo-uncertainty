@@ -52,7 +52,7 @@ When a Python cell raises, Colab cancels the cells queued after it, the release 
 cell before the release raises:
 
 - A failed `!` line only prints its error, and the cell carries on.
-- The Python cells that can fail catch the error and print it, such as `print_verdicts`.
+- The Python cells that can fail catch the error and print it, such as the choice of the scale.
 
 If you interrupt a run cell once, `garimpo run` stops the stage, keeps the lines it prints as it
 stops, runs the pipeline check and exits 130. Colab turns a second interrupt into SIGTERM and then
@@ -73,7 +73,8 @@ full-run job ends with the `PIPELINE CHECK: PASS` or `PIPELINE CHECK: FAIL` line
 `garimpo check`, failed or not. `garimpo run` appends every line to the model's log with the
 UTC time, so the log keeps earlier attempts, including one cut short by a session that ended. It
 writes an `=== attempt started` line before each attempt, with the config, the commit and the
-options, and `print_verdicts` prints the verdict of the last attempt only:
+options, and `garimpo status <scale> --since <session start>`, which the "Print the verdicts" cell
+runs, prints the verdict of the last attempt only:
 
 - `NO VERDICT`: the job or its check died before the verdict; the log says where.
 - `NO LOG`: the log does not exist yet or could not be read.

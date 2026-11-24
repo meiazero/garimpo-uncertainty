@@ -59,7 +59,7 @@ Constraints every fix keeps:
 - [x] 7. Group the status runner, orchestrator, check and merge in `pipeline/`, with one status reader and no Slurm leftovers. (6 files, after 6)
   - `read_status` is defined twice: `scripts/merge_results.py:43` returns a string, `scripts/pipeline_check.py:25` a dict.
   - `src/garimpo_uncertainty/stages.py:188` records `SLURM_JOB_ID`, printed at `scripts/pipeline_check.py:90` and documented at `docs/data-layout.md:110`; `slurm/` no longer exists.
-- [ ] 8. Move the notebook's run logic into `garimpo status`; the notebook keeps only the Colab adapters. (3 files, after 4, 6, 7)
+- [x] 8. Move the notebook's run logic into `garimpo status`; the notebook keeps only the Colab adapters. (3 files, after 4, 6, 7)
   - The attempt marker is duplicated in the notebook (`ATTEMPT`, `print_verdicts`) and `scripts/run.py:30`.
   - `MODELS` and `checkpointed()` in the notebook re-derive the configs and checkpoints `RunConfig` knows.
   - Drive restore, the copy every 30 minutes and `release_runtime` stay in the notebook: they exist only on Colab.

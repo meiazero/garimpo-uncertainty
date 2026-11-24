@@ -25,6 +25,7 @@ Paths without a prefix are inside the run directory.
 | `garimpo compute_metrics` | CPU | `intervals/intervals.npz`, `predictions/`, `masks.npy`, `calibration/quantiles.npz`, `scores/scores.npz` | `metrics/cell_metrics.npz`, `metrics/results.csv`, `metrics/width_comparisons.csv`, `metrics/coverage_comparisons.csv`, `metrics/q1_spearman.csv`, `metrics/coverage_by_stratum.csv`, `metrics/score_relation.csv` |
 | `garimpo merge` | any | small tables of each run, every stage `ok`, the other layers' included | `outputs/results.csv`, `outputs/width_comparisons.csv`, `outputs/coverage_comparisons.csv`, `outputs/q1_spearman.csv`, `outputs/coverage_by_stratum.csv`, `outputs/score_relation.csv`, `outputs/layer_diagnostics.csv`, `outputs/monotonicity_layer.csv`, `outputs/monotonicity_endpoint.csv`, `outputs/chosen_layers.csv`, `outputs/layer_results.csv` |
 | `garimpo check` | any | status files and tables | prints the debugging report |
+| `garimpo status` | any | `configs/`, each run's `last.pt`, `outputs/logs/` | prints the scale `auto` picks, each run's values and the verdict of its last attempt |
 
 `garimpo run` runs the stages from `train` to `compute_metrics` in `STAGE_ORDER`
 (`garimpo_uncertainty/pipeline/runner.py`): `train`,

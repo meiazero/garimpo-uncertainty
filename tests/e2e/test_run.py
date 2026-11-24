@@ -20,6 +20,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import time
 from pathlib import Path
 from typing import NamedTuple
 
@@ -615,3 +616,36 @@ def test_full_job_needs_a_scale_and_a_model(run_root: Path) -> None:
     )
     assert result.returncode == 2
     assert "the following arguments are required: scale, model" in result.stderr
+
+
+def test_status_chooses_the_scale_and_reads_each_last_verdict(tmp_path: Path) -> None:
+    """`auto` turns full once a full run saved last.pt; only the last attempt's verdict counts.
+
+    A log not written since the session started was restored from Drive: its run never started.
+    """
+    shutil.copytree(CONFIGS, tmp_path / "configs")
+    failed = "PIPELINE CHECK: FAIL at ['train']"
+
+    def status(*arguments: str) -> str:
+        command = support.garimpo("status", *arguments)
+        found = subprocess.run(  # noqa: S603 - arguments come from the test
+            command, check=True, cwd=tmp_path, capture_output=True, text=True
+        )
+        return found.stdout
+
+    assert status("auto", "--choose").splitlines() == ["pilot"]
+    last = tmp_path / "runs" / "convnet-f1.0" / "last.pt"
+    last.parent.mkdir(parents=True)
+    last.touch()
+    assert status("auto", "--choose").splitlines() == ["full"]
+    logs = tmp_path / "outputs" / "logs"
+    logs.mkdir(parents=True)
+    passed = f"{ATTEMPT}1 ===\n00:00:01 PIPELINE CHECK: PASS (every stage ran)\n"
+    (logs / "full-convnet.log").write_text(f"{passed}{ATTEMPT}2 ===\n00:00:02 {failed}\n")
+    # The second attempt died before its check: the first one's PASS must not stand for it.
+    (logs / "full-unet_imagenet.log").write_text(f"{passed}{ATTEMPT}2 ===\n00:00:02 epoch 1/2\n")
+    report = status("full")
+    assert f"full-convnet: 00:00:02 {failed}" in report
+    assert "full-unet_imagenet: NO VERDICT" in report
+    assert "full-unet_scratch: NO LOG" in report
+    assert "full-convnet: NOT RUN" in status("full", "--since", str(time.time() + 60))
