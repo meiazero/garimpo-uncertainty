@@ -242,4 +242,4 @@ def test_imagenet_absent_file_names_the_command(data_root: Path, tmp_path: Path)
     assert result.returncode != 0
     record = json.loads((run_dir / "status" / "train.json").read_text())
     assert record["status"] == "failed"
-    assert "download_data.py weights" in record["error"]
+    assert "garimpo download_data weights" in record["error"]

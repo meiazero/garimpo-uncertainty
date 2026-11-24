@@ -67,7 +67,7 @@ flowchart TD
     end
     CAL -.-> METHODS
 
-    CM -- "once, by hand, over the four runs" --> MR["merge_results<br/>tables across runs"]
+    CM -- "once, by hand, over the four runs" --> MR["garimpo merge<br/>tables across runs"]
     MR --> DISS["Result tables and figures"]
 ```
 

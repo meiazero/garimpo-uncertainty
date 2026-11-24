@@ -29,7 +29,7 @@ import garimpo_uncertainty.pipeline.commands
 import garimpo_uncertainty.pipeline.runner
 
 STAGE_ORDER = garimpo_uncertainty.pipeline.runner.STAGE_ORDER
-# The run notebook's print_verdicts splits the log on this marker to read the last attempt only.
+# `garimpo status` splits the log on this marker to read the last attempt only.
 ATTEMPT = "=== attempt started "
 
 

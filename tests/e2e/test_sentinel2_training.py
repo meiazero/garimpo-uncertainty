@@ -106,7 +106,7 @@ def test_unknown_identity_names_what_restores_it(sentinel2: Sentinel2Run) -> Non
     assert unknown.returncode != 0
     record = json.loads(sentinel2.status.read_text())
     assert record["status"] == "failed"
-    for name in ("run_meta.json", "download_data.py weights"):
+    for name in ("run_meta.json", "garimpo download_data weights"):
         assert name in record["error"], name
     # Restoring it must skip again rather than retrain.
     run_meta.with_suffix(".away").rename(run_meta)
@@ -125,7 +125,7 @@ def test_training_that_must_run_names_the_command_for_the_file(sentinel2: Sentin
     assert sentinel2.train(*fresh, check=False).returncode != 0
     record = json.loads((fresh_dir / "status" / "train.json").read_text())
     assert record["status"] == "failed"
-    assert "download_data.py weights" in record["error"]
+    assert "garimpo download_data weights" in record["error"]
 
 
 def test_interrupted_run_refuses_other_weights(sentinel2: Sentinel2Run) -> None:

@@ -468,7 +468,7 @@ def test_second_ctrl_c_quits_without_waiting_and_names_the_abandoned_tile(
 
 SLOW_POOL = """
 import time
-import garimpo_uncertainty.download, garimpo_uncertainty.stages
+import garimpo_uncertainty.download, garimpo_uncertainty.pipeline.runner
 garimpo_uncertainty.pipeline.runner.log_to_stdout()
 def one(tile_id):
     time.sleep(3)
