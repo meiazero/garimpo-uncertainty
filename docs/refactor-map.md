@@ -95,6 +95,30 @@ Not worth it:
 - `CELL_PX` as both `data.CELL_PX` and a config key: a mismatch fails validation with `store_layout`, never silently.
 - Deriving `cli.STAGES` and `runner.STAGE_ORDER` from `commands.STAGES`: command names and stage ids differ (`verify_monotonicity` runs as two stages), and a new stage is rare.
 
+## Third sweep (base `3b44c6c`, approved)
+
+- [ ] 14. Let `data.py` name the tile sidecars and their download statuses, and `download_data` its tile lists. (4 files)
+  - `tiles/<tile_id>.json` is built by hand at `data.py:181`, `:241`, `download.py:149`, `:243`, `:356`, `:413`.
+  - `"missing_item"` and `"no_mask_polygon"` are written at `download.py:389`, `:597` and matched at `validation.py:20`.
+  - `stages/download_data.py:42` builds `tiles_<pct>pct.json` and `:122` spells `tiles_100pct.json`.
+- [ ] 15. Keep the stage names and log strings the pipeline shares in `pipeline/runner.py`, so the check and the status stop reading other modules' text. (5 files)
+  - `pipeline/check.py:124` tells a missing store by `startswith("store_missing")`, the text `validation.py:145` writes; `data.missing_arrays` answers it directly.
+  - `"download_scenes"` at `check.py:96`, `:328`, written by `stages/download_data.py:92`.
+  - `pipeline/status.py:15-16` imports `pipeline.check` (and with it sklearn) and `pipeline.run` only for `VERDICTS` and `ATTEMPT`.
+- [ ] 16. Derive two counts from what they count. (2 files)
+  - `evaluation.py:273` labels the area strata `np.arange(6)`, which is `len(AREA_QUANTILES) + 2`.
+  - `stages/compass_scores.py:126-128` writes `beta_range` as `[logits, features, features]` by position, beside the limits `batch_spaces` already pairs with each method.
+- [ ] 17. Drop the parameter no caller passes: `steps_per_epoch` of `tests/e2e/support.py:321` (`train_args`). (1 file)
+
+Not worth it (third sweep):
+
+- Parsing the calibration labels by suffix in `stages/calibrate.py`: the labels are columns of every recorded `results.csv`, and one module reads them.
+- Literal `.npz` keys between writer and reader: a renamed key fails loudly with `KeyError`.
+- `FORCE_FROM` in the notebook's cells 39-42: a Colab form needs its options written in the cell.
+- Passing `--temperature`, a `hard_area` helper, one `censored` rule, `ENCODER_WEIGHTS: None` in `job_values`, the literals of `support.py`: one place each to change, or a value that never varies.
+- `scripts/split/` (`* 16`, the GeoPackage path from the working directory): the split is frozen and versioned.
+- `files.py:49` returning `"unknown"` without git: every supported install is a git checkout.
+
 ## Cut after review
 
 - Fix 2, paths from the project root: fingerprints and `last.pt` record cwd-relative paths (`outputs/split.csv`, `runs/...`), and `tests/e2e/test_run.py` runs the runner from a workspace of its own. The working directory stays the workspace, as on Colab (`%cd {CODE}`).
