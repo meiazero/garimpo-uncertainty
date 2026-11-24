@@ -64,6 +64,37 @@ Constraints every fix keeps:
   - `MODELS` and `checkpointed()` in the notebook re-derive the configs and checkpoints `RunConfig` knows.
   - Drive restore, the copy every 30 minutes and `release_runtime` stay in the notebook: they exist only on Colab.
 
+## Second sweep (base `a6ab152`, approved)
+
+- [ ] 9. Delete the stages' fallback to the run root, which `RunPaths.of` already does. (4 files)
+  - `args.layer_dir = args.layer_dir or args.run_dir` at `stages/calibrate.py:428`, `compass_scores.py:194`, `generate_intervals.py:234`, `compute_metrics.py:189`; `artifacts.py:32` falls back the same way, and `layer_dir` is outside the fingerprint (`pipeline/runner.py:34`).
+- [ ] 10. Read `chosen_layer.json` through one function, so the job, the check and the merge refuse the same broken files. (4 files)
+  - `pipeline/run.py:164` catches `(OSError, ValueError, KeyError)`; `pipeline/check.py:26` (`UNREADABLE`) also catches `TypeError`, so a JSON list there is a FAIL in the check but a traceback in the job, before the check runs.
+  - `pipeline/merge.py:41` is a third reader.
+- [ ] 11. Make the config the only source of each value the job passes: those flags have no default in their stage, and the test builders take their flags from `pipeline/commands.py`. (~10 files)
+  - `stages/compass_scores.py:178` defaults `--search-threshold-features` to `1e-8`; `configs/base.json:18` holds `1e-15`. A stage run by hand searches with another threshold and says nothing.
+  - 13 other defaults copy a config value: `--seed` (4 stages), `--direction-temperature` (3), the beta ranges and the logits threshold (`compass_scores.py:175-177`), `--cell-px`.
+  - `tests/e2e/support.py:365`, `:412`, `:428`, `:460`, `:490` write 35 flags by hand beside the table in `pipeline/commands.py`; `direction_args` (`support.py:423`) has no caller.
+- [ ] 12. Put the COMPASS-J recipe in one library module: the Jacobian of the soft area, the per-direction channel deltas, the search spaces and `DIRECTIONS`. (6 files, after 9, 11)
+  - The Jacobian metric is written at `stages/fit_directions.py:44`, `verify_monotonicity.py:66`, `compass_scores.py:80`.
+  - `for direction in ("pca", "svm")` at `verify_monotonicity.py:75`, `compass_scores.py:88`, `generate_intervals.py:74`; `choose_layer.py:18` names it `DIRECTIONS`.
+  - `compass_scores.py:69-99` (`batch_spaces`) and `generate_intervals.py:57-82` (`search_spaces`) build the same three spaces.
+- [ ] 13. Let `data.py` name the store's layout once: the split path, a tile's cell slots and the starting-weights files. (6 files)
+  - `"outputs/split.csv"` is the default at `stages/validate_data.py:31`, `train.py:525`, `download_data.py:162`, `:166`, `pipeline/check.py:59`, and is copied into a Namespace at `download_data.py:121`.
+  - `tile_index * cells_per_tile` at `validation.py:163`, `:185`, `download.py:236`, `data.py:188`; `validation.py:183` infers the count from `len(cells) // len(ok_tiles)` instead of the sidecar's `cells_per_tile`.
+  - `resnet18_sentinel2_all_moco-59bfdff9.pth` and its hash are in `data.py:74` and `download.py:46`; the ImageNet file the same way (`data.py:73`, `download.py:49`).
+
+Later, low value:
+
+- `configs` and `outputs/logs` are spelled in `pipeline/run.py:208`, `:217`, `status.py:18-19`, `merge.py:86`.
+- `intervals.py:75` finds the weighted rows with `str.contains("weighted")` on the labels of `COMBINATIONS`; a renamed label changes `layer_results.csv` silently.
+
+Not worth it:
+
+- Removing `--temperature`, `--svm-max-iter` or `--n-components`, which no command passes: a flag removed from a stage changes every recorded fingerprint, which then refuses.
+- `CELL_PX` as both `data.CELL_PX` and a config key: a mismatch fails validation with `store_layout`, never silently.
+- Deriving `cli.STAGES` and `runner.STAGE_ORDER` from `commands.STAGES`: command names and stage ids differ (`verify_monotonicity` runs as two stages), and a new stage is rare.
+
 ## Cut after review
 
 - Fix 2, paths from the project root: fingerprints and `last.pt` record cwd-relative paths (`outputs/split.csv`, `runs/...`), and `tests/e2e/test_run.py` runs the runner from a workspace of its own. The working directory stays the workspace, as on Colab (`%cd {CODE}`).
