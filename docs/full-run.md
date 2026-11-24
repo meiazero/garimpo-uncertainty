@@ -94,8 +94,8 @@ With the copy every 30 minutes, a session that ends mid-run keeps the finished s
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
 its first epoch and requires the rerun to end where an uninterrupted run ends, on CPU; on a GPU the
 kernels are not deterministic, so only the resume itself is the same. Rerun without
-`--force-from train` to resume: with it, `garimpo train` refuses to discard an unfinished training and says so. Every script
-runs with `uv run --no-sync`, so a run never changes the environment under itself.
+`--force-from train` to resume: with it, `garimpo train` refuses to discard an unfinished training and says so. Every `garimpo`
+command runs with `uv run --no-sync`, so a run never changes the environment under itself.
 
 Outside Colab, one run is one job:
 

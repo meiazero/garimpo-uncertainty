@@ -28,7 +28,7 @@ last column names a guard that a test in `tests/e2e/` exercises.
 | 19 | Relative or local score divides by zero on empty cells | required `--score-floor-ha`, refused unless positive and finite (0, negative, NaN, inf) by `garimpo calibrate` and, before training, by `garimpo run`, E2E; quantiles brute-forced with the floor, the relative one on the shared runs, the local one with zero pixel variance on cells predicted empty |
 | 20 | Bootstrap resamples cells instead of groups, or method pairs use different resamples | shared group index matrix in `evaluation.summarize`, E2E on the run's test groups: coverage constant within groups and a constant paired width difference must give zero-width intervals |
 | 21 | A method x calibration row is missing from the results | exact row set checked in E2E; `garimpo check` fails on an absent table, an absent row, or NaN in PICP or MPIW, E2E |
-| 22 | A stage changes the environment under a run in progress | `uv run --no-sync` in every script |
+| 22 | A stage changes the environment under a run in progress | `uv run --no-sync` on every `garimpo` command |
 | 23 | The Colab session ends and its disk takes the data or the runs with it | store kept in Drive as `data.tar.zst` and `runs/` in Drive, `runs/` copied every 30 minutes during a run ([colab.md](colab.md#the-copy-every-30-minutes)); not checked automatically |
 | 24 | A metric change forces a retrain | stages read persisted files; E2E hashes everything around a metrics rerun |
 | 25 | A changed argument silently reuses an old output | stage fingerprint refuses and fails the pipeline check, E2E; a code change is redone by name with `--force-from` |

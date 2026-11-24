@@ -11,7 +11,7 @@ Paths without a prefix are inside the run directory.
 | `garimpo download_data metadata` | any | Zenodo 14195737 | `$DATA/zenodo/mining_area_data.gpkg` |
 | `garimpo download_data lists` | any, only to regenerate | `outputs/split.csv`, subset seed | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
 | `garimpo download_data scenes` | any | `outputs/tiles/tiles_<P>pct.json`, `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/{images,masks,scl,stats}.npy`, `$DATA/tiles/*.json` |
-| `garimpo download_data weights` | any | Hugging Face | `$DATA/weights/resnet18_sentinel2_all_moco-59bfdff9.pth`, `$DATA/weights/resnet18_imagenet-b1d1d36f.safetensors` |
+| `garimpo download_data weights --encoder-weights imagenet sentinel2_moco` | any | Hugging Face | `$DATA/weights/resnet18_sentinel2_all_moco-59bfdff9.pth`, `$DATA/weights/resnet18_imagenet-b1d1d36f.safetensors` |
 | `garimpo validate_data` | CPU | store, sidecars, split, fraction | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
 | `garimpo train` | GPU | the run's slots and sidecars, split, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
 | `garimpo infer` | GPU | checkpoint, store | `predictions/cells.npz`, `predictions/{validation,calibration,test}.npy` |
@@ -20,7 +20,7 @@ Paths without a prefix are inside the run directory.
 | `garimpo choose_layer` | CPU | `directions/diagnostics.csv`, validation rows of `monotonicity_layer.csv` | `chosen_layer.json` (the layer, the threshold, each candidate's explained variance and fractions) |
 | `garimpo verify_monotonicity --use endpoint` | GPU | checkpoint, direction of the layer, calibration and test slots | `monotonicity_endpoint.csv` |
 | `garimpo compass_scores` | GPU | checkpoint, direction of the layer, validation, calibration and test slots | `scores/scores.npz` |
-| `garimpo calibrate` | CPU | `predictions/cells.npz`, `scores/scores.npz` | `calibration/quantiles.npz` (`quantile`, the `beta_hat` of each row and cell) |
+| `garimpo calibrate` | CPU | `predictions/cells.npz`, `scores/scores.npz` | `calibration/quantiles.npz` (`quantile`, `lower_term`, `upper_term` and `scale` of each row and cell; every array in [data-layout.md](data-layout.md#run-artifacts)) |
 | `garimpo generate_intervals` | GPU | checkpoint, `calibration/quantiles.npz`, directions, `scores/scores.npz`, test slots; one pass, one encoder pass per batch | `intervals/intervals.npz` |
 | `garimpo compute_metrics` | CPU | `intervals/intervals.npz`, `predictions/`, `masks.npy`, `calibration/quantiles.npz`, `scores/scores.npz` | `metrics/cell_metrics.npz`, `metrics/results.csv`, `metrics/width_comparisons.csv`, `metrics/coverage_comparisons.csv`, `metrics/q1_spearman.csv`, `metrics/coverage_by_stratum.csv`, `metrics/score_relation.csv` |
 | `garimpo merge` | any | small tables of each run, every stage `ok`, the other layers' included | `outputs/results.csv`, `outputs/width_comparisons.csv`, `outputs/coverage_comparisons.csv`, `outputs/q1_spearman.csv`, `outputs/coverage_by_stratum.csv`, `outputs/score_relation.csv`, `outputs/layer_diagnostics.csv`, `outputs/monotonicity_layer.csv`, `outputs/monotonicity_endpoint.csv`, `outputs/chosen_layers.csv`, `outputs/layer_results.csv` |
@@ -124,7 +124,8 @@ Code is not part of any fingerprint. A run calibrated before rows were added to
 rerun with `--force-from calibrate`.
 
 Only a fresh start of `garimpo train` reads starting weights. Without the file it fails, naming the
-`garimpo download_data weights` command of [full-run.md](full-run.md#download-the-store). A finished or
+`garimpo download_data weights --encoder-weights <WEIGHTS>` command; `garimpo download_data all` of
+[full-run.md](full-run.md#download-the-store) downloads both. A finished or
 resumed run needs no weights file and takes the hash it started from out of `run_meta.json`; with
 both absent, `garimpo train` fails naming both.
 
