@@ -6,11 +6,14 @@ root is the run root, and every other layer of LAYERS has its own under layers/<
 stages of a layer read the shared predictions from one root and their own scores from the other.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
 LAYERS_DIR = "layers"
+# What a broken chosen_layer.json raises: unreadable, not JSON, not an object, or a key missing.
+UNREADABLE = (OSError, ValueError, KeyError, TypeError)
 METRIC_TABLES = (
     "results",
     "width_comparisons",
@@ -103,3 +106,13 @@ class RunPaths:
     @property
     def cell_metrics(self) -> Path:
         return self.layer_root / "metrics" / "cell_metrics.npz"
+
+
+def read_chosen_layer(path: Path) -> dict:
+    """Return chosen_layer.json; raise one of UNREADABLE when it cannot say which layer won."""
+    chosen = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(chosen, dict):
+        raise TypeError(f"a JSON {type(chosen).__name__}, not an object")
+    if absent := {"layer", "min_fraction_ascending", "candidates"} - set(chosen):
+        raise KeyError(f"no {sorted(absent)}")
+    return chosen

@@ -1,7 +1,6 @@
 """Stage: joins the small tables of several runs; a run is identified by (model, train_fraction)."""
 
 import argparse
-import json
 from pathlib import Path
 
 import pandas as pd
@@ -31,14 +30,14 @@ def read_table(path: Path) -> pd.DataFrame:
     """Read a CSV as is, and chosen_layer.json as one row: its candidates are already tables."""
     if path.suffix == ".csv":
         return pd.read_csv(path)
-    chosen = json.loads(path.read_text(encoding="utf-8"))
+    chosen = garimpo_uncertainty.artifacts.read_chosen_layer(path)
     return pd.DataFrame([{k: chosen[k] for k in ("layer", "min_fraction_ascending")}])
 
 
 def layer_paths(run_dir: Path) -> dict[str, garimpo_uncertainty.artifacts.RunPaths]:
     """Every candidate layer and where its stages wrote, the chosen one first, at the run's root."""
     run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
-    chosen = json.loads(run.chosen_layer.read_text(encoding="utf-8"))
+    chosen = garimpo_uncertainty.artifacts.read_chosen_layer(run.chosen_layer)
     others = [c["layer"] for c in chosen["candidates"] if c["layer"] != chosen["layer"]]
     return {chosen["layer"]: run} | {layer: run.other_layer(layer) for layer in others}
 
@@ -58,7 +57,7 @@ def stage_statuses(run_dir: Path) -> dict[str, str]:
         return statuses
     try:
         others = list(layer_paths(run_dir).items())[1:]
-    except (OSError, ValueError, KeyError, TypeError) as error:
+    except garimpo_uncertainty.artifacts.UNREADABLE as error:
         return statuses | {run.chosen_layer.name: f"unreadable ({type(error).__name__}: {error})"}
     return statuses | {
         f"{stage} [{name}]": status_of(paths.layer_status, stage)

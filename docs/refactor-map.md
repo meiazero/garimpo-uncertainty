@@ -68,7 +68,7 @@ Constraints every fix keeps:
 
 - [x] 9. Delete the stages' fallback to the run root, which `RunPaths.of` already does. (4 files)
   - `args.layer_dir = args.layer_dir or args.run_dir` at `stages/calibrate.py:428`, `compass_scores.py:194`, `generate_intervals.py:234`, `compute_metrics.py:189`; `artifacts.py:32` falls back the same way, and `layer_dir` is outside the fingerprint (`pipeline/runner.py:34`).
-- [ ] 10. Read `chosen_layer.json` through one function, so the job, the check and the merge refuse the same broken files. (4 files)
+- [x] 10. Read `chosen_layer.json` through one function, so the job, the check and the merge refuse the same broken files. (4 files)
   - `pipeline/run.py:164` catches `(OSError, ValueError, KeyError)`; `pipeline/check.py:26` (`UNREADABLE`) also catches `TypeError`, so a JSON list there is a FAIL in the check but a traceback in the job, before the check runs.
   - `pipeline/merge.py:41` is a third reader.
 - [ ] 11. Make the config the only source of each value the job passes: those flags have no default in their stage, and the test builders take their flags from `pipeline/commands.py`. (~10 files)
