@@ -5,7 +5,6 @@ No hyperparameter has a default, so a run states every value it uses.
 
 import argparse
 import datetime as dt
-import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ import pandas as pd
 import segmentation_models_pytorch
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
@@ -23,14 +23,14 @@ import garimpo_uncertainty.files
 import garimpo_uncertainty.models
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.models.unet
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 NO_BEST_DICE = -1.0
 
 
 def result_arguments(args: argparse.Namespace) -> dict[str, str]:
     """Arguments that shape the trained weights; batch size does, unlike in the later stages."""
-    ignored = garimpo_uncertainty.stages.IGNORED_ARGUMENTS - {"batch_size"}
+    ignored = garimpo_uncertainty.pipeline.runner.IGNORED_ARGUMENTS - {"batch_size"}
     return {k: str(v) for k, v in vars(args).items() if k not in ignored}
 
 
@@ -45,13 +45,14 @@ def starting_weights_sha256(args: argparse.Namespace, root: Path) -> str | None:
         return None
     if weights_file.exists():
         return garimpo_uncertainty.files.file_sha256(weights_file)
-    if not (args.run_dir / "run_meta.json").exists():
-        garimpo_uncertainty.stages.fail_stage(
-            args.run_dir / "status",
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    if not run.run_meta.exists():
+        garimpo_uncertainty.pipeline.runner.fail_stage(
+            run.status,
             "train",
             f"train: cannot tell which weights this run used: {weights_file} and "
-            f"{args.run_dir / 'run_meta.json'} are both absent. On a node with internet run "
-            f"scripts/download_data.py weights --encoder-weights {args.encoder_weights}, or "
+            f"{run.run_meta} are both absent. On a node with internet run "
+            f"garimpo download_data weights --encoder-weights {args.encoder_weights}, or "
             "restore run_meta.json with the run.",
         )
     return garimpo_uncertainty.data.read_run_metadata(args.run_dir).get("encoder_weights_sha256")
@@ -136,7 +137,7 @@ DISCARDED = {"discarded": True}
 
 def read_resume(args: argparse.Namespace) -> dict | None:
     """Return last.pt when this run continues it; refuse one written with other arguments."""
-    last_path = args.run_dir / "last.pt"
+    last_path = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).last_checkpoint
     if not last_path.exists() or args.force:
         return None
     resume = torch.load(last_path, map_location="cpu", weights_only=True)
@@ -162,19 +163,19 @@ def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
     from its end: a deleted file would come back with the next restore from Drive, whose rsync
     has no --delete, where the mark replaces it.
     """
-    last = run_dir / "last.pt"
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
+    last = run.last_checkpoint
     if not force or not last.exists():
         return
     if torch.load(last, map_location="cpu", weights_only=True) == DISCARDED:
         return
-    status_path = run_dir / "status" / "train.json"
-    status = json.loads(status_path.read_text()) if status_path.exists() else {}
+    status = garimpo_uncertainty.pipeline.runner.read_status(run.status, "train")
     # Starting the work drops completed_fingerprint, so only a finished training still has it.
     if "completed_fingerprint" not in status:
-        garimpo_uncertainty.stages.fail_stage(
-            run_dir / "status",
+        garimpo_uncertainty.pipeline.runner.fail_stage(
+            run.status,
             "train",
-            f"{last} holds an unfinished training (status {status.get('status', 'absent')}): "
+            f"{last} holds an unfinished training (status {status['status']}): "
             f"run without --force (--force-from train) to resume it, or delete {last} to start "
             "over",
         )
@@ -297,19 +298,20 @@ def fit_epoch(
 
 def save_epoch(args: argparse.Namespace, state: TrainingState, epoch: int, dice: float) -> None:
     """Write the epoch's history and checkpoints; best_model.pt only when its Dice improved."""
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
     # Every epoch, so a job killed at its limit still reports what it measured.
-    with garimpo_uncertainty.files.atomic(args.run_dir / "history.csv") as temporary:
+    with garimpo_uncertainty.files.atomic(run.history) as temporary:
         pd.DataFrame(state.history).to_csv(temporary, index=False)
     score = NO_BEST_DICE if np.isnan(dice) else dice
     weights = {k: v.cpu() for k, v in state.model.state_dict().items()}
     if score > state.best_dice:
         state.best_dice = score
         garimpo_uncertainty.checkpoints.save(
-            args.run_dir / "best_model.pt",
+            run.best_model,
             {"model": weights, "meta": state.metadata, "epoch": epoch, "val_dice": dice},
         )
     garimpo_uncertainty.checkpoints.save(
-        args.run_dir / "last.pt",
+        run.last_checkpoint,
         {
             "model": weights,
             "optimizer": state.optimizer.state_dict(),
@@ -340,7 +342,7 @@ def evaluate_epoch(state: TrainingState, loaders: Loaders, device: str) -> dict:
     validation_start = time.monotonic()
     validated = validate(state.model, loaders.validation, device, state.loss_fn, "val")
     validation_end = time.monotonic()
-    validation_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
+    validation_peak = garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes()
     # Each pass over a loader draws a seed from torch's CPU generator. Restoring it afterwards keeps
     # the training's random stream, and with it the trained weights, as they are without this pass.
     with torch.random.fork_rng(devices=[]):
@@ -358,13 +360,13 @@ def run_epoch(
     state: TrainingState, loaders: Loaders, device: str, epoch: int
 ) -> tuple[dict, list[int] | None]:
     """Train, validate and score the training subset once; return the record and the last shape."""
-    garimpo_uncertainty.stages.take_gpu_peak_bytes()
+    garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes()
     state.model.train()
     epoch_start = time.monotonic()
     fitted, batch_shape = fit_epoch(state, loaders.train, device, epoch_start)
     train_end = time.monotonic()
     cells = fitted.pop("cells")
-    train_peak = garimpo_uncertainty.stages.take_gpu_peak_bytes()
+    train_peak = garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes()
     evaluated = evaluate_epoch(state, loaders, device)
     record = {
         "epoch": epoch,
@@ -477,7 +479,7 @@ def train(
     if resume is None and weights_file is not None and not weights_file.exists():
         raise FileNotFoundError(
             f"{weights_file} is absent: on a node with internet run "
-            f"scripts/download_data.py weights --encoder-weights {args.encoder_weights}"
+            f"garimpo download_data weights --encoder-weights {args.encoder_weights}"
         )
 
     if resume is None:
@@ -485,7 +487,9 @@ def train(
     else:
         metadata = resume["meta"]
         garimpo_uncertainty.data.check_split(metadata, cells)
-    garimpo_uncertainty.files.write_json(args.run_dir / "run_meta.json", metadata)
+    garimpo_uncertainty.files.write_json(
+        garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).run_meta, metadata
+    )
 
     state = start_training(args, device, metadata, weights_file, resume)
     loaders = build_loaders(args, root, metadata["normalization"], train_cells, validation_cells)
@@ -544,10 +548,12 @@ def main() -> None:
     parser.add_argument("--loss", choices=["dice", "bce", "dice_bce"], required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--device")
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--num-workers", type=int, default=garimpo_uncertainty.pipeline.runner.available_cpus()
+    )
     parser.add_argument("--force", action="store_true", help="restart, ignoring last.pt")
     args = parser.parse_args()
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
     try:
         garimpo_uncertainty.models.common.check_encoder_weights(args.arch, args.encoder_weights)
     except ValueError as error:
@@ -566,11 +572,12 @@ def main() -> None:
     # In args, so a resume refuses tiles re-cut since last.pt, as it refuses other weights.
     args.tiles_sha256 = next(iter(identity.values()))
     keep_unfinished_training(args.run_dir, force=args.force)
-    garimpo_uncertainty.stages.run_stage(
-        args.run_dir / "status",
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    garimpo_uncertainty.pipeline.runner.run_stage(
+        run.status,
         "train",
-        [args.run_dir / "best_model.pt", args.run_dir / "history.csv"],
-        garimpo_uncertainty.stages.fingerprint(
+        [run.best_model, run.history],
+        garimpo_uncertainty.pipeline.runner.fingerprint(
             args,
             [],
             keep=["batch_size"],
@@ -579,7 +586,3 @@ def main() -> None:
         lambda: train(args, root, device, split, tile_ids),
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

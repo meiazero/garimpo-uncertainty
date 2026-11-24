@@ -44,7 +44,7 @@ def test_training_with_workers_is_fixed_by_the_seed(
         run_dir = tmp_path / name
         args = with_workers(support.train_args("convnet", run_dir, epochs="1"))
         with support.one_core():
-            support.run("train.py", *args, data_root=data_root)
+            support.run("train", *args, data_root=data_root)
         metadata = garimpo_uncertainty.data.read_run_metadata(run_dir)
         assert metadata["normalization"] == expected
         weights.append(torch.load(run_dir / "last.pt", weights_only=True)["model"])
@@ -59,7 +59,7 @@ def test_inference_with_workers_matches_inference_without(
     results = []
     for stage_args in (args, with_workers(args)):
         with support.one_core():
-            support.run("infer.py", *stage_args, data_root=data_root)
+            support.run("infer", *stage_args, data_root=data_root)
         results.append(predictions(private_convnet.run_dir))
     without, with_two = results
     assert with_two.keys() == without.keys()

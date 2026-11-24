@@ -19,10 +19,11 @@ import numpy as np
 import pandas as pd
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 
 def quantile_rule(
@@ -192,9 +193,10 @@ def read_scores(
     cells: pd.DataFrame, args: argparse.Namespace
 ) -> tuple[CompassScores, np.ndarray, np.ndarray]:
     """Return the scores and the density ratio of test over calibration features at both."""
-    by_role = {role: cells[cells.role == role] for role in ("validation", "calibration", "test")}
+    by_role = {role: cells[cells.role == role] for role in garimpo_uncertainty.data.EVALUATED_ROLES}
     calibration_cells, test_cells = by_role["calibration"], by_role["test"]
-    with np.load(args.layer_dir / "scores" / "scores.npz") as stored:
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
+    with np.load(run.scores) as stored:
         at = {
             role: garimpo_uncertainty.data.positions_of(
                 stored["cell_index"], frame.cell_index.to_numpy()
@@ -406,7 +408,7 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
-    garimpo_uncertainty.stages.add_layer_dir(parser)
+    garimpo_uncertainty.pipeline.runner.add_layer_dir(parser)
     parser.add_argument(
         "--cells",
         choices=["all", "nonempty"],
@@ -427,23 +429,19 @@ def main() -> None:
     # An infinite floor turns every relative margin into NaN.
     if not (math.isfinite(args.score_floor_ha) and args.score_floor_ha > 0):
         parser.error(f"--score-floor-ha must be positive and finite, got {args.score_floor_ha}")
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
-    run_dir, layer_dir = args.run_dir, args.layer_dir
-    quantiles_path = layer_dir / "calibration" / "quantiles.npz"
-    inputs = [run_dir / "predictions" / "cells.npz", layer_dir / "scores" / "scores.npz"]
-    garimpo_uncertainty.stages.run_stage(
-        layer_dir / "status",
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
+    garimpo_uncertainty.pipeline.runner.run_stage(
+        run.layer_status,
         "calibrate",
-        [quantiles_path],
-        garimpo_uncertainty.stages.fingerprint(
-            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
+        [run.quantiles],
+        garimpo_uncertainty.pipeline.runner.fingerprint(
+            args,
+            [run.predictions, run.scores],
+            hashed=garimpo_uncertainty.data.run_identity(root, run.root),
         ),
-        lambda: calibrate(args, root, quantiles_path),
+        lambda: calibrate(args, root, run.quantiles),
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

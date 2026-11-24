@@ -61,11 +61,11 @@ def boundary_f1(prediction: np.ndarray, reference: np.ndarray, tolerance_px: flo
 
 
 def segmentation_metrics(
-    root: Path, cell_index: np.ndarray, prediction_dir: Path, tolerance_px: float
+    root: Path, cell_index: np.ndarray, test_probabilities: Path, tolerance_px: float
 ) -> dict[str, np.ndarray]:
     """Per-cell Dice and boundary F1 on test cells with mining, from the persisted probabilities."""
     masks = np.load(root / "masks.npy", mmap_mode="r")
-    probabilities = np.load(prediction_dir / "test.npy", mmap_mode="r")
+    probabilities = np.load(test_probabilities, mmap_mode="r")
     dice_values = np.full(len(cell_index), np.nan)
     boundary_values = np.full(len(cell_index), np.nan)
     by_rule = np.zeros(len(cell_index), dtype=bool)

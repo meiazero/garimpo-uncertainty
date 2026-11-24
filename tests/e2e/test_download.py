@@ -7,7 +7,6 @@ import io
 import json
 import os
 import re
-import runpy
 import signal
 import subprocess
 import sys
@@ -30,7 +29,8 @@ import shapely.affinity
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
+import garimpo_uncertainty.stages.download_data
 import garimpo_uncertainty.validation
 from tests.e2e import support
 
@@ -403,7 +403,7 @@ def test_ctrl_c_finishes_the_tile_in_progress_and_starts_no_other(
 
     status = root / "status" / "download_scenes.json"
     with pytest.raises(KeyboardInterrupt):
-        garimpo_uncertainty.stages.run_stage(
+        garimpo_uncertainty.pipeline.runner.run_stage(
             root / "status",
             "download_scenes",
             [],
@@ -468,8 +468,8 @@ def test_second_ctrl_c_quits_without_waiting_and_names_the_abandoned_tile(
 
 SLOW_POOL = """
 import time
-import garimpo_uncertainty.download, garimpo_uncertainty.stages
-garimpo_uncertainty.stages.log_to_stdout()
+import garimpo_uncertainty.download, garimpo_uncertainty.pipeline.runner
+garimpo_uncertainty.pipeline.runner.log_to_stdout()
 def one(tile_id):
     time.sleep(3)
     return tile_id, "ok"
@@ -606,12 +606,12 @@ def run_scenes_command(patch: pytest.MonkeyPatch, root: Path, tile_list: Path) -
     patch.setenv("GARIMPO_DATA_DIR", str(root))
     arguments = ["--split", str(LIST_SPLIT_PATH), "--tiles", str(tile_list)]
     arguments += ["--resampling-20m", "bilinear"]
-    patch.setattr(sys, "argv", ["download_data.py", "scenes", *arguments])
+    patch.setattr(sys, "argv", ["garimpo download_data", "scenes", *arguments])
     try:
-        runpy.run_path(str(support.ROOT / "scripts" / "download_data.py"), run_name="__main__")
+        garimpo_uncertainty.stages.download_data.main()
     finally:
         # Drop the command's log file, or later tests in this process would append to it.
-        garimpo_uncertainty.stages.log_to_stdout()
+        garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
 
 def sidecars() -> dict[int, tuple[str, int]]:
@@ -654,7 +654,7 @@ def incremental(scene: tuple[dict, np.ndarray]) -> Incremental:
         "--out",
         str(LISTS),
     ]
-    support.run("download_data.py", *arguments, data_root=LISTS)
+    support.run("download_data", *arguments, data_root=LISTS)
     small, large = listed_ids("tiles_1pct.json"), listed_ids("tiles_100pct.json")
 
     # A different mask per tile, so slots written under another tile's index cannot pass.

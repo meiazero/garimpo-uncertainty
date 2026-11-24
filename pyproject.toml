@@ -21,6 +21,9 @@ dependencies = [
     "torchvision>=0.29.0",  # required by segmentation-models-pytorch; here so the cu126 index applies
 ]
 
+[project.scripts]
+garimpo = "garimpo_uncertainty.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
@@ -161,7 +164,9 @@ ban-relative-imports = "all"
     "ANN", "ARG", "C901", "FBT", "N801", "PLC2701", "PLC2801", "PLR0912",
     "PLR0914", "PLR0915", "PLR2004", "PLR6301", "RUF069", "S101", "SLF001", "T201",
 ]
-# The output of a script is its purpose.
+# The output of a script or a command is its purpose.
 "scripts/*" = ["T201"]
+"src/garimpo_uncertainty/stages/*" = ["T201"]
+"src/garimpo_uncertainty/pipeline/*" = ["T201"]
 # A Colab form line cannot wrap, and the notebook's prints are its output.
 "notebooks/*.ipynb" = ["E501", "T201"]

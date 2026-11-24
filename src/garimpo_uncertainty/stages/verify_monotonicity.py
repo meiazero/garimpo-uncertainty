@@ -15,12 +15,13 @@ import numpy as np
 import pandas as pd
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 ROLES_BY_USE = {"layer": ("validation",), "endpoint": ("calibration", "test")}
 
@@ -92,9 +93,9 @@ def sweep_role(
     args: argparse.Namespace,
     device: str,
 ) -> list[dict]:
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
     fitted = {
-        layer: compass2d.directions.Directions.load(args.run_dir / "directions" / f"{layer}.npz")
-        for layer in args.layers
+        layer: compass2d.directions.Directions.load(run.directions(layer)) for layer in args.layers
     }
     uniform = []
     per_direction: dict[tuple[str, str], list] = {}
@@ -149,16 +150,19 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--num-workers", type=int, default=garimpo_uncertainty.pipeline.runner.available_cpus()
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
-    output = args.run_dir / f"monotonicity_{args.use}.csv"
-    inputs = [args.checkpoint, args.run_dir / "directions/diagnostics.csv"]
-    inputs += [args.run_dir / "directions" / f"{layer}.npz" for layer in args.layers]
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    output = run.monotonicity(args.use)
+    inputs = [args.checkpoint, run.direction_diagnostics]
+    inputs += [run.directions(layer) for layer in args.layers]
 
     def work() -> dict:
         cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
@@ -174,17 +178,13 @@ def main() -> None:
             pd.DataFrame(rows).to_csv(temporary, index=False)
         return {"rows": len(rows), "cells_per_role": args.cells_per_role}
 
-    garimpo_uncertainty.stages.run_stage(
-        args.run_dir / "status",
+    garimpo_uncertainty.pipeline.runner.run_stage(
+        run.status,
         f"{args.use}_monotonicity",
         [output],
-        garimpo_uncertainty.stages.fingerprint(
+        garimpo_uncertainty.pipeline.runner.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),
         work,
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

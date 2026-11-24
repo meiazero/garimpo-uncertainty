@@ -19,10 +19,11 @@ import rasterio.transform
 import shapely
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.commands
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "tests" / "artifacts" / "e2e"
@@ -84,13 +85,10 @@ EXPECTED_ROWS |= {
     for method, calibration in EXPECTED_ROWS
     if calibration in {"external", "own_region"}
 }
+# Each architecture's starting weights, then its layers in the order the runs list them.
 RUN_ORDER = {
-    "convnet": ([], "decoder.relu", "decoder.aspp"),
-    "unet": (
-        ["--encoder-weights", "none"],
-        "decoder.blocks.4",
-        "decoder.blocks.3",
-    ),
+    "convnet": (None, "decoder.relu", "decoder.aspp"),
+    "unet": ("none", "decoder.blocks.4", "decoder.blocks.3"),
 }
 MODEL_NAMES = {"convnet": "convnet", "unet": "unet_scratch"}
 # GARIMPO_TEST_DEVICE=cuda runs the suite as production runs on a GPU: no --device, so the stages
@@ -102,9 +100,10 @@ if DEVICE == "cuda" and not torch.cuda.is_available():
     raise RuntimeError("GARIMPO_TEST_DEVICE=cuda, but torch sees no GPU")
 DEVICE_ARGS = ["--device", "cpu"] if DEVICE == "cpu" else []
 NUM_WORKERS = "0" if DEVICE == "cpu" else "2"
+# The `garimpo` command itself, then a check that it never imported torch.
 TORCH_FREE = (
-    "import runpy, sys; sys.argv = sys.argv[1:]; "
-    "runpy.run_path(sys.argv[0], run_name='__main__'); "
+    "import runpy, sys; sys.argv = ['garimpo', *sys.argv[1:]]; "
+    "runpy.run_module('garimpo_uncertainty', run_name='__main__'); "
     "assert 'torch' not in sys.modules, 'metrics stage imported torch'"
 )
 
@@ -169,7 +168,7 @@ def build_once(name: str, build: Callable[[], object]) -> None:
 
 
 def finish_run(arch: str, run_dir: Path, data_root: Path) -> FinishedRun:
-    run("train.py", *train_args(arch, run_dir), data_root=data_root)
+    run("train", *train_args(arch, run_dir), data_root=data_root)
     layers = list(RUN_ORDER[arch][1:])
     layer = run_stages_after_training(run_dir, layers, data_root)
     compute_metrics(run_dir, BOUNDARY_TOLERANCE, data_root)
@@ -178,10 +177,10 @@ def finish_run(arch: str, run_dir: Path, data_root: Path) -> FinishedRun:
 
 
 def run_other_layers(run_dir: Path, layers: list[str], data_root: Path) -> None:
-    """Run the layer stages on every other layer, into layers/<layer>/, as scripts/run.py."""
+    """Run the layer stages on every other layer, into layers/<layer>/, as `garimpo run` does."""
     for layer in layers:
         if layer != chosen_layer(run_dir):
-            layer_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer
+            layer_dir = run_dir / garimpo_uncertainty.artifacts.LAYERS_DIR / layer
             run_scores_and_intervals(
                 run_dir, layer, data_root, beta_range="100", threshold="1e-3", layer_dir=layer_dir
             )
@@ -293,11 +292,16 @@ def build_dataset(root: Path, split_path: Path) -> pd.DataFrame:
     return split
 
 
+def garimpo(command: str, *args: str) -> list[str]:
+    """Return `garimpo <command>` as the runner starts it, in a process of its own."""
+    return [sys.executable, "-m", "garimpo_uncertainty", command, *args]
+
+
 def run(
     script: str, *args: str, data_root: Path, check: bool = True
 ) -> subprocess.CompletedProcess:
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
-    command = [sys.executable, f"scripts/{script}", *args]
+    command = garimpo(script, *args)
     result = subprocess.run(  # noqa: S603 - arguments come from the tests
         command, check=False, cwd=ROOT, env=env, capture_output=True, text=True
     )
@@ -319,51 +323,34 @@ def train_args(
     fraction: str = "1.0",
     subset_seed: str = "0",
 ) -> list[str]:
-    return [
-        "--arch",
-        arch,
-        *RUN_ORDER[arch][0],
-        "--run-dir",
-        str(run_dir),
-        "--split",
-        str(split_path),
-        "--train-fraction",
-        fraction,
-        "--subset-seed",
-        subset_seed,
-        "--epochs",
-        epochs,
-        "--steps-per-epoch",
-        steps_per_epoch,
-        "--batch-size",
-        batch_size,
-        "--lr",
-        lr,
-        "--weight-decay",
-        "0",
-        "--loss",
-        "dice_bce",
-        "--seed",
-        "0",
-        *DEVICE_ARGS,
-        "--num-workers",
-        NUM_WORKERS,
-    ]
+    values = {
+        "ARCH": arch,
+        "ENCODER_WEIGHTS": RUN_ORDER[arch][0],
+        "RUN_DIR": run_dir,
+        "TRAIN_FRACTION": fraction,
+        "SUBSET_SEED": subset_seed,
+        "EPOCHS": epochs,
+        "STEPS_PER_EPOCH": steps_per_epoch,
+        "BATCH_SIZE": batch_size,
+        "LR": lr,
+        "WEIGHT_DECAY": "0",
+        "LOSS": "dice_bce",
+        "SEED": "0",
+        "NUM_WORKERS": NUM_WORKERS,
+    }
+    arguments = garimpo_uncertainty.pipeline.commands.arguments("train", values)
+    return [*arguments, "--split", str(split_path), *DEVICE_ARGS]
 
 
 def checkpoint_args(run_dir: Path, batch_size: str = "8") -> list[str]:
-    checkpoint = str(run_dir / "best_model.pt")
-    return [
-        "--checkpoint",
-        checkpoint,
-        "--run-dir",
-        str(run_dir),
-        "--batch-size",
-        batch_size,
-        *DEVICE_ARGS,
-        "--num-workers",
-        NUM_WORKERS,
-    ]
+    """Return the flags every stage reading the trained model takes, as the runner passes them."""
+    values = {
+        "CHECKPOINT": garimpo_uncertainty.artifacts.RunPaths.of(run_dir).best_model,
+        "RUN_DIR": run_dir,
+        "EVAL_BATCH_SIZE": batch_size,
+        "NUM_WORKERS": NUM_WORKERS,
+    }
+    return [*garimpo_uncertainty.pipeline.commands.arguments("infer", values), *DEVICE_ARGS]
 
 
 def validate(
@@ -376,7 +363,7 @@ def validate(
     summary: Path | None = None,
 ) -> subprocess.CompletedProcess:
     return run(
-        "validate_data.py",
+        "validate_data",
         "--split",
         str(split_path),
         "--train-fraction",
@@ -397,7 +384,7 @@ def pipeline_check(
     run_dir: Path, data_root: Path, *extra: str, check: bool = True
 ) -> subprocess.CompletedProcess:
     return run(
-        "pipeline_check.py",
+        "check",
         "--run-dir",
         str(run_dir),
         "--split",
@@ -428,18 +415,18 @@ def compute_metrics(
     if force:
         args.append("--force")
     env = {**os.environ, "GARIMPO_DATA_DIR": str(data_root)}
-    command = [sys.executable, "-c", TORCH_FREE, "scripts/compute_metrics.py", *args]
+    command = [sys.executable, "-c", TORCH_FREE, "compute_metrics", *args]
     return subprocess.run(command, cwd=ROOT, env=env, check=check, capture_output=True, text=True)  # noqa: S603 - arguments come from the tests
 
 
 def run_stages_after_training(
     run_dir: Path, layers: list[str], data_root: Path, direction_args: tuple[str, ...] = ()
 ) -> str:
-    """Run inference through the intervals as scripts/run.py does; return the chosen layer."""
+    """Run inference through the intervals as `garimpo run` does; return the chosen layer."""
     common = checkpoint_args(run_dir)
-    run("infer.py", *common, data_root=data_root)
+    run("infer", *common, data_root=data_root)
     run(
-        "fit_directions.py",
+        "fit_directions",
         *common,
         "--layers",
         *layers,
@@ -455,7 +442,7 @@ def run_stages_after_training(
     sweep(run_dir, "layer", layers, data_root)
     # Every layer qualifies, as in the pilot: a few epochs on synthetic tiles need not be monotonic.
     run(
-        "choose_layer.py",
+        "choose_layer",
         "--run-dir",
         str(run_dir),
         "--min-fraction-ascending",
@@ -469,9 +456,9 @@ def run_stages_after_training(
 
 
 def sweep(run_dir: Path, use: str, layers: list[str], data_root: Path) -> None:
-    """Algorithm 2, with beta_max equal to the search range below, as scripts/run.py passes it."""
+    """Algorithm 2, with beta_max equal to the search range below, as `garimpo run` passes it."""
     run(
-        "verify_monotonicity.py",
+        "verify_monotonicity",
         *checkpoint_args(run_dir),
         "--use",
         use,
@@ -501,7 +488,7 @@ def run_scores_and_intervals(
     common = checkpoint_args(run_dir)
     where = [] if layer_dir is None else ["--layer-dir", str(layer_dir)]
     run(
-        "compass_scores.py",
+        "compass_scores",
         *common,
         "--layer",
         layer,
@@ -513,7 +500,7 @@ def run_scores_and_intervals(
         data_root=data_root,
     )
     run(
-        "calibrate.py",
+        "calibrate",
         "--run-dir",
         str(run_dir),
         "--cells",
@@ -523,7 +510,7 @@ def run_scores_and_intervals(
         *where,
         data_root=data_root,
     )
-    run("generate_intervals.py", *common, "--layer", layer, *where, data_root=data_root)
+    run("generate_intervals", *common, "--layer", layer, *where, data_root=data_root)
 
 
 def file_hashes(directory: Path) -> dict[str, str]:

@@ -6,22 +6,25 @@ from pathlib import Path
 
 import pandas as pd
 
+import garimpo_uncertainty.artifacts
+import garimpo_uncertainty.config
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
-TABLES = {
-    "results.csv": "metrics/results.csv",
-    "width_comparisons.csv": "metrics/width_comparisons.csv",
-    "coverage_comparisons.csv": "metrics/coverage_comparisons.csv",
-    "q1_spearman.csv": "metrics/q1_spearman.csv",
-    "coverage_by_stratum.csv": "metrics/coverage_by_stratum.csv",
-    "score_relation.csv": "metrics/score_relation.csv",
-    "layer_diagnostics.csv": "directions/diagnostics.csv",
-    "monotonicity_layer.csv": "monotonicity_layer.csv",
-    "monotonicity_endpoint.csv": "monotonicity_endpoint.csv",
-    "chosen_layers.csv": "chosen_layer.json",
-}
+
+def tables(run: garimpo_uncertainty.artifacts.RunPaths) -> dict[str, Path]:
+    """Return each merged table's name and the file of `run` it takes its rows from."""
+    metrics = {
+        f"{name}.csv": run.metric_table(name)
+        for name in garimpo_uncertainty.artifacts.METRIC_TABLES
+    }
+    return metrics | {
+        "layer_diagnostics.csv": run.direction_diagnostics,
+        "monotonicity_layer.csv": run.monotonicity("layer"),
+        "monotonicity_endpoint.csv": run.monotonicity("endpoint"),
+        "chosen_layers.csv": run.chosen_layer,
+    }
 
 
 def read_table(path: Path) -> pd.DataFrame:
@@ -32,60 +35,73 @@ def read_table(path: Path) -> pd.DataFrame:
     return pd.DataFrame([{k: chosen[k] for k in ("layer", "min_fraction_ascending")}])
 
 
-def layer_dirs(run_dir: Path) -> dict[str, Path]:
+def layer_paths(run_dir: Path) -> dict[str, garimpo_uncertainty.artifacts.RunPaths]:
     """Every candidate layer and where its stages wrote, the chosen one first, at the run's root."""
-    chosen = json.loads((run_dir / "chosen_layer.json").read_text(encoding="utf-8"))
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
+    chosen = json.loads(run.chosen_layer.read_text(encoding="utf-8"))
     others = [c["layer"] for c in chosen["candidates"] if c["layer"] != chosen["layer"]]
-    layers_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR
-    return {chosen["layer"]: run_dir} | {layer: layers_dir / layer for layer in others}
+    return {chosen["layer"]: run} | {layer: run.other_layer(layer) for layer in others}
 
 
-def read_status(status_dir: Path, stage: str) -> str:
-    path = status_dir / f"{stage}.json"
-    return json.loads(path.read_text())["status"] if path.exists() else "not_run"
+def status_of(status_dir: Path, stage: str) -> str:
+    return garimpo_uncertainty.pipeline.runner.read_status(status_dir, stage)["status"]
 
 
 def stage_statuses(run_dir: Path) -> dict[str, str]:
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
     statuses = {
-        stage: read_status(run_dir / "status", stage)
-        for stage in garimpo_uncertainty.stages.STAGE_ORDER
+        stage: status_of(run.status, stage)
+        for stage in garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     }
     # Without a choice there is no list of the other layers to check.
     if statuses["choose_layer"] != "ok":
         return statuses
     try:
-        others = list(layer_dirs(run_dir).items())[1:]
+        others = list(layer_paths(run_dir).items())[1:]
     except (OSError, ValueError, KeyError, TypeError) as error:
-        return statuses | {"chosen_layer.json": f"unreadable ({type(error).__name__}: {error})"}
+        return statuses | {run.chosen_layer.name: f"unreadable ({type(error).__name__}: {error})"}
     return statuses | {
-        f"{stage} [{layer}]": read_status(layer_dir / "status", stage)
-        for layer, layer_dir in others
-        for stage in garimpo_uncertainty.stages.LAYER_STAGES
+        f"{stage} [{name}]": status_of(paths.layer_status, stage)
+        for name, paths in others
+        for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES
     }
 
 
 def layer_results(run_dir: Path) -> pd.DataFrame:
-    frames = [
-        pd.read_csv(layer_dir / "metrics" / "results.csv")
-        for layer_dir in layer_dirs(run_dir).values()
-    ]
+    frames = [pd.read_csv(layer.results) for layer in layer_paths(run_dir).values()]
     table = pd.concat(frames, ignore_index=True)
     return table[garimpo_uncertainty.intervals.depends_on_layer(table)]
 
 
-def merged_table(runs: list[Path], identities: list[dict], relative: str) -> pd.DataFrame:
+def merged_table(runs: list[Path], identities: list[dict], name: str) -> pd.DataFrame:
     frames = []
     for run_dir, identity in zip(runs, identities, strict=True):
-        frame = read_table(run_dir / relative)
+        frame = read_table(tables(garimpo_uncertainty.artifacts.RunPaths.of(run_dir))[name])
         frames.append(frame.assign(**{k: v for k, v in identity.items() if k not in frame}))
     return pd.concat(frames, ignore_index=True)
 
 
+def scale_runs(scale: str) -> list[Path]:
+    """Return every model's run directory at `scale`; stop on a config that cannot run."""
+    configs = Path("configs")
+    try:
+        return [
+            Path(garimpo_uncertainty.config.RunConfig.load(configs, scale, model).run_dir)
+            for model in garimpo_uncertainty.config.models(configs)
+        ]
+    except garimpo_uncertainty.config.ConfigError as error:
+        raise SystemExit(str(error)) from error
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--runs", type=Path, nargs="+", required=True)
+    runs = parser.add_mutually_exclusive_group(required=True)
+    runs.add_argument("--runs", type=Path, nargs="+")
+    runs.add_argument("--scale", help="every model of configs/models/ at this scale")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+    if args.scale:
+        args.runs = scale_runs(args.scale)
 
     metadata = [garimpo_uncertainty.data.read_run_metadata(run_dir) for run_dir in args.runs]
     identities = [{"model": m["variant"], "train_fraction": m["train_fraction"]} for m in metadata]
@@ -107,17 +123,12 @@ def main() -> None:
         )
 
     # Read everything first: a table missing under an ok status must not leave a partial merge.
-    tables = {
-        name: merged_table(args.runs, identities, relative) for name, relative in TABLES.items()
-    }
-    tables["layer_results.csv"] = pd.concat(
+    names = tables(garimpo_uncertainty.artifacts.RunPaths.of(args.runs[0]))
+    merged = {name: merged_table(args.runs, identities, name) for name in names}
+    merged["layer_results.csv"] = pd.concat(
         [layer_results(run_dir) for run_dir in args.runs], ignore_index=True
     )
     args.out.mkdir(parents=True, exist_ok=True)
-    for name, table in tables.items():
+    for name, table in merged.items():
         table.to_csv(args.out / name, index=False)
         print(f"{args.out / name}: {len(table)} rows")
-
-
-if __name__ == "__main__":
-    main()

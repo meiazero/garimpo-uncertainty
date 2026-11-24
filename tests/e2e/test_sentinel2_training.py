@@ -31,7 +31,7 @@ class Sentinel2Run:
         self.weights.rename(self.weights.with_suffix(".away"))
 
     def train(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-        return support.run("train.py", *args, data_root=self.data_root, check=check)
+        return support.run("train", *args, data_root=self.data_root, check=check)
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +44,7 @@ def trained_sentinel2(data_root: Path) -> Sentinel2Run:
     run_dir = support.RUNS / "unet_sentinel2"
     base = support.train_args("unet", run_dir, epochs="1")
     args = [*base, "--encoder-weights", "sentinel2_moco"]
-    support.run("train.py", *args, data_root=root)
+    support.run("train", *args, data_root=root)
     return Sentinel2Run(root, run_dir, weights, args, [*base, "--encoder-weights", "none"])
 
 
@@ -73,9 +73,7 @@ def test_sentinel2_checkpoint_records_the_weights(trained_sentinel2: Sentinel2Ru
 
 def test_later_stage_rebuilds_the_model_without_the_weights_file(sentinel2: Sentinel2Run) -> None:
     sentinel2.hide_weights()
-    support.run(
-        "infer.py", *support.checkpoint_args(sentinel2.run_dir), data_root=sentinel2.data_root
-    )
+    support.run("infer", *support.checkpoint_args(sentinel2.run_dir), data_root=sentinel2.data_root)
 
 
 def test_finished_training_skips_without_the_weights_file(sentinel2: Sentinel2Run) -> None:
@@ -108,7 +106,7 @@ def test_unknown_identity_names_what_restores_it(sentinel2: Sentinel2Run) -> Non
     assert unknown.returncode != 0
     record = json.loads(sentinel2.status.read_text())
     assert record["status"] == "failed"
-    for name in ("run_meta.json", "download_data.py weights"):
+    for name in ("run_meta.json", "garimpo download_data weights"):
         assert name in record["error"], name
     # Restoring it must skip again rather than retrain.
     run_meta.with_suffix(".away").rename(run_meta)
@@ -127,7 +125,7 @@ def test_training_that_must_run_names_the_command_for_the_file(sentinel2: Sentin
     assert sentinel2.train(*fresh, check=False).returncode != 0
     record = json.loads((fresh_dir / "status" / "train.json").read_text())
     assert record["status"] == "failed"
-    assert "download_data.py weights" in record["error"]
+    assert "garimpo download_data weights" in record["error"]
 
 
 def test_interrupted_run_refuses_other_weights(sentinel2: Sentinel2Run) -> None:

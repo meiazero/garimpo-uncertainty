@@ -42,9 +42,9 @@ slots.
 
 `slots_sha256` hashes a tile's images, masks and SCL when they are written.
 
-- `validate_data.py` recomputes it once for the selection on every call, skip included, and on any
+- `garimpo validate_data` recomputes it once for the selection on every call, skip included, and on any
   difference validates again, reusing those hashes, and fails with `slot_hash`.
-- `pipeline_check.py` also recomputes it, last, and fails on `slot_hash`, `store_missing` or
+- `garimpo check` also recomputes it, last, and fails on `slot_hash`, `store_missing` or
   `sidecars_missing`.
 
 Each of the two therefore reads every slot of the selection, up to 69.2 GB per call on the full
@@ -107,14 +107,14 @@ what `nvidia-smi` shows. Each part's peak starts from what is already allocated,
 | `status/infer.json`, `shapes` | `data_wait_seconds` | Time spent waiting for data, per role |
 | `status/infer.json`, `shapes` | `seconds_per_role` | Unrounded time per role, including writing its probabilities |
 | `status/infer.json`, `shapes` | `peak_gpu_bytes_per_role` | GPU peak per role, `null` if no GPU is in use |
-| `status/<stage>.json` | `seconds`, `peak_rss_gb`, `peak_gpu_gb`, `host`, `slurm_job_id` | The stage's last process, so a resumed `train` reports only its last stretch; `history.csv` keeps every epoch. `peak_rss_gb` is the largest single process, not a sum |
+| `status/<stage>.json` | `seconds`, `peak_rss_gb`, `peak_gpu_gb`, `host` | The stage's last process, so a resumed `train` reports only its last stretch; `history.csv` keeps every epoch. `peak_rss_gb` is the largest single process, not a sum |
 | `status/<stage>.json` | `root_commit`, `root_dirty`, `compass_commit`, `compass_dirty` | The code the stage's last process ran, and whether it had uncommitted changes. Outside a git clone the commits read `unknown` and the flags `true`. A session may pull between two stages of one run, so each stage records its own |
 
-`pipeline_check.py` prints the data wait of both `history.csv` and `infer.py`.
+`garimpo check` prints the data wait of both `history.csv` and `garimpo infer`.
 
 ## Training history
 
-`history.csv` holds one row per epoch. `train.py` also prints the main values, rounded, as one
+`history.csv` holds one row per epoch. `garimpo train` also prints the main values, rounded, as one
 line per epoch with the best `val_dice` so far and the time left. Besides the resource fields above:
 
 | Field | Meaning |

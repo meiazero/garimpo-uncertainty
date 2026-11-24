@@ -13,10 +13,11 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
 import garimpo_uncertainty.files
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 
 class Intervals(NamedTuple):
@@ -27,8 +28,8 @@ class Intervals(NamedTuple):
     alphas: np.ndarray
 
 
-def read_intervals(run_dir: Path) -> Intervals:
-    with np.load(run_dir / "intervals" / "intervals.npz") as stored:
+def read_intervals(path: Path) -> Intervals:
+    with np.load(path) as stored:
         return Intervals(
             stored["cell_index"],
             stored["lower"],
@@ -38,8 +39,8 @@ def read_intervals(run_dir: Path) -> Intervals:
         )
 
 
-def read_saturation(run_dir: Path) -> dict[str, np.ndarray]:
-    with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
+def read_saturation(quantiles_path: Path) -> dict[str, np.ndarray]:
+    with np.load(quantiles_path) as stored:
         return {
             name: stored[name]
             for name in (
@@ -74,7 +75,8 @@ def tables_at_level(
     identity: dict,
 ) -> dict[str, pd.DataFrame]:
     """Return the interval tables at one level of ALPHAS, each row carrying that alpha."""
-    saturation = read_saturation(args.layer_dir)
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
+    saturation = read_saturation(run.quantiles)
     alpha = float(intervals.alphas[a])
     at_level = identity | {"alpha": alpha}
     results, widths, coverages = garimpo_uncertainty.evaluation.summarize(
@@ -110,7 +112,9 @@ def metric_tables(
     test_cells: pd.DataFrame,
     segmentation: dict[str, np.ndarray],
 ) -> dict[str, pd.DataFrame]:
-    intervals = read_intervals(args.layer_dir)
+    intervals = read_intervals(
+        garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir).intervals
+    )
     cells = aligned_cells(test_cells, segmentation, intervals.cell_index)
     identity = {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]}
     levels = [
@@ -128,10 +132,10 @@ def metric_tables(
     return frames | {"q1_spearman": spearman}
 
 
-def score_relation(run_dir: Path, cells: pd.DataFrame, identity: dict) -> pd.DataFrame:
+def score_relation(scores_path: Path, cells: pd.DataFrame, identity: dict) -> pd.DataFrame:
     """COMPASS scores against split-conformal scores on the calibration cells."""
     calibration = cells[cells.role == "calibration"]
-    with np.load(run_dir / "scores" / "scores.npz") as stored:
+    with np.load(scores_path) as stored:
         at = garimpo_uncertainty.data.positions_of(
             stored["cell_index"], calibration.cell_index.to_numpy()
         )
@@ -142,26 +146,26 @@ def score_relation(run_dir: Path, cells: pd.DataFrame, identity: dict) -> pd.Dat
 
 
 def compute(
-    args: argparse.Namespace, root: Path, cell_metrics_path: Path, outputs: dict[str, Path]
+    args: argparse.Namespace, root: Path, run: garimpo_uncertainty.artifacts.RunPaths
 ) -> dict:
-    cells = garimpo_uncertainty.data.read_predictions(root, args.run_dir)
-    metadata = garimpo_uncertainty.data.read_run_metadata(args.run_dir)
+    cells = garimpo_uncertainty.data.read_predictions(root, run.root)
+    metadata = garimpo_uncertainty.data.read_run_metadata(run.root)
     garimpo_uncertainty.data.check_split(metadata, cells)
     test_cells = cells[cells.role == "test"]
     segmentation = garimpo_uncertainty.evaluation.segmentation_metrics(
         root,
         test_cells.cell_index.to_numpy(),
-        args.run_dir / "predictions",
+        run.probabilities("test"),
         args.boundary_tolerance_px,
     )
     frames = metric_tables(args, metadata, test_cells, segmentation)
     identity = {"model": metadata["variant"], "train_fraction": metadata["train_fraction"]}
-    frames["score_relation"] = score_relation(args.layer_dir, cells, identity)
+    frames["score_relation"] = score_relation(run.scores, cells, identity)
     garimpo_uncertainty.files.write_arrays(
-        cell_metrics_path, cell_index=test_cells.cell_index.to_numpy(), **segmentation
+        run.cell_metrics, cell_index=test_cells.cell_index.to_numpy(), **segmentation
     )
     for name, frame in frames.items():
-        with garimpo_uncertainty.files.atomic(outputs[name]) as temporary:
+        with garimpo_uncertainty.files.atomic(run.metric_table(name)) as temporary:
             frame.to_csv(temporary, index=False)
     return {name: list(frame.shape) for name, frame in frames.items()}
 
@@ -169,7 +173,7 @@ def compute(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
-    garimpo_uncertainty.stages.add_layer_dir(parser)
+    garimpo_uncertainty.pipeline.runner.add_layer_dir(parser)
     parser.add_argument(
         "--boundary-tolerance-px",
         type=float,
@@ -183,40 +187,19 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     args.layer_dir = args.layer_dir or args.run_dir
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
-    run_dir, layer_dir = args.run_dir, args.layer_dir
-    metrics_dir = layer_dir / "metrics"
-    tables = (
-        "results",
-        "width_comparisons",
-        "coverage_comparisons",
-        "q1_spearman",
-        "coverage_by_stratum",
-        "score_relation",
-    )
-    outputs = {name: metrics_dir / f"{name}.csv" for name in tables}
-    cell_metrics_path = metrics_dir / "cell_metrics.npz"
-    inputs = [
-        run_dir / "predictions" / "cells.npz",
-        run_dir / "predictions" / "test.npy",
-        layer_dir / "intervals" / "intervals.npz",
-        layer_dir / "calibration" / "quantiles.npz",
-        layer_dir / "scores" / "scores.npz",
-    ]
-
-    garimpo_uncertainty.stages.run_stage(
-        layer_dir / "status",
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
+    tables = [run.metric_table(name) for name in garimpo_uncertainty.artifacts.METRIC_TABLES]
+    inputs = [run.predictions, run.probabilities("test"), run.intervals, run.quantiles, run.scores]
+    garimpo_uncertainty.pipeline.runner.run_stage(
+        run.layer_status,
         "compute_metrics",
-        [cell_metrics_path, *outputs.values()],
-        garimpo_uncertainty.stages.fingerprint(
-            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
+        [run.cell_metrics, *tables],
+        garimpo_uncertainty.pipeline.runner.fingerprint(
+            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run.root)
         ),
-        lambda: compute(args, root, cell_metrics_path, outputs),
+        lambda: compute(args, root, run),
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

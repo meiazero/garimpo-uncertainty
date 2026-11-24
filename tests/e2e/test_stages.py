@@ -18,7 +18,7 @@ import torch
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 from tests.e2e import support
 
 
@@ -39,16 +39,18 @@ def test_stage_peak_survives_per_section_restarts(
         reset_peak_memory_stats=restart,
     )
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=cuda))
-    monkeypatch.setitem(garimpo_uncertainty.stages.GPU_PEAK, "highest_bytes", 0)
+    monkeypatch.setitem(garimpo_uncertainty.pipeline.runner.GPU_PEAK, "highest_bytes", 0)
     sections = []
 
     def work() -> dict:
-        sections.append(garimpo_uncertainty.stages.take_gpu_peak_bytes())
-        sections.append(garimpo_uncertainty.stages.take_gpu_peak_bytes())
+        sections.append(garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes())
+        sections.append(garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes())
         return {}
 
     fingerprint = {"arguments": {}, "inputs": {}}
-    garimpo_uncertainty.stages.run_stage(tmp_path, "probe", [], fingerprint, work, force=True)
+    garimpo_uncertainty.pipeline.runner.run_stage(
+        tmp_path, "probe", [], fingerprint, work, force=True
+    )
     status = json.loads((tmp_path / "probe.json").read_text(encoding="utf-8"))
     assert sections == [3 * gib, gib]
     assert status["peak_gpu_gb"] == 3.0
@@ -58,7 +60,7 @@ def test_a_cpu_run_on_a_gpu_host_records_no_gpu_peak(monkeypatch: pytest.MonkeyP
     """A GPU the run never touched must read as absent, not as a peak of zero bytes."""
     cuda = SimpleNamespace(is_available=lambda: True, is_initialized=lambda: False)
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=cuda))
-    assert garimpo_uncertainty.stages.take_gpu_peak_bytes() is None
+    assert garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes() is None
 
 
 def test_every_stage_records_the_code_it_ran(finished_run: support.FinishedRun) -> None:
@@ -68,7 +70,7 @@ def test_every_stage_records_the_code_it_ran(finished_run: support.FinishedRun) 
         command = ["git", "-C", str(directory), "rev-parse", "HEAD"]
         return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
 
-    for name in garimpo_uncertainty.stages.STAGE_ORDER:
+    for name in garimpo_uncertainty.pipeline.runner.STAGE_ORDER:
         status = json.loads((finished_run.run_dir / "status" / f"{name}.json").read_text())
         assert status["root_commit"] == head(support.ROOT), name
         assert status["compass_commit"] == head(support.ROOT / "compass"), name
@@ -81,7 +83,7 @@ def test_metrics_stage_requires_a_tolerance(
 ) -> None:
     """An undefined boundary tolerance must stop the stage, not be chosen silently."""
     missing = support.run(
-        "compute_metrics.py",
+        "compute_metrics",
         "--run-dir",
         str(finished_run.run_dir),
         data_root=data_root,
@@ -97,7 +99,7 @@ def test_finished_stage_skips_with_another_batch_size(
     predictions = unet_run.run_dir / "predictions" / "test.npy"
     before = predictions.stat().st_mtime_ns
     rerun = support.run(
-        "infer.py", *support.checkpoint_args(unet_run.run_dir, batch_size="4"), data_root=data_root
+        "infer", *support.checkpoint_args(unet_run.run_dir, batch_size="4"), data_root=data_root
     )
     assert "skipping" in rerun.stdout
     assert predictions.stat().st_mtime_ns == before
@@ -254,7 +256,7 @@ def test_saturated_quantiles_give_the_whole_cell(saturated_run: Path, data_root:
 def test_missing_input_is_recorded(saturated_run: Path, data_root: Path, tmp_path: Path) -> None:
     run_dir = Path(shutil.copytree(saturated_run, tmp_path / "saturated"))
     result = support.run(
-        "compass_scores.py",
+        "compass_scores",
         *support.checkpoint_args(run_dir),
         "--layer",
         "absent.layer",
@@ -276,7 +278,7 @@ def merged_results(
     support.build_once(
         "merged_results",
         lambda: support.run(
-            "merge_results.py",
+            "merge",
             "--runs",
             str(convnet_run.run_dir),
             str(unet_run.run_dir),
@@ -333,7 +335,7 @@ def test_merge_refuses_a_run_whose_other_layer_failed(
     status.write_text(json.dumps({"stage": "compute_metrics", "status": "failed", "error": "x"}))
     out = support.ARTIFACTS / "merged_layer_failed"
     refused = support.run(
-        "merge_results.py",
+        "merge",
         "--runs",
         str(private_convnet.run_dir),
         str(unet_run.run_dir),
@@ -352,7 +354,7 @@ def test_merge_refuses_two_runs_of_one_variant(
 ) -> None:
     """They would merge into one model in every table."""
     same_variant = support.run(
-        "merge_results.py",
+        "merge",
         "--runs",
         str(convnet_run.run_dir),
         str(saturated_run),
@@ -374,7 +376,7 @@ def test_merge_refuses_a_run_whose_stages_are_not_all_ok(
     )
     out = support.ARTIFACTS / "merged_not_ok"
     refused = support.run(
-        "merge_results.py",
+        "merge",
         "--runs",
         str(private_convnet.run_dir),
         str(unet_run.run_dir),
@@ -491,12 +493,12 @@ def absent_cells(private_convnet: support.FinishedRun, data_root: Path) -> Absen
 
 def calibrate_command(run_dir: Path) -> tuple[str, str, list[str]]:
     args = ["--run-dir", str(run_dir), "--cells", "all", "--score-floor-ha", "0.01", "--force"]
-    return "calibrate.py", "calibrate", args
+    return "calibrate", "calibrate", args
 
 
 def generate_command(run_dir: Path) -> tuple[str, str, list[str]]:
     args = [*support.checkpoint_args(run_dir), "--layer", support.chosen_layer(run_dir), "--force"]
-    return "generate_intervals.py", "generate_intervals", args
+    return "generate_intervals", "generate_intervals", args
 
 
 @pytest.mark.parametrize(
@@ -622,7 +624,7 @@ def test_a_data_root_missing_a_tile_refuses_the_checkpoint(
     sidecar.write_text(json.dumps(json.loads(sidecar.read_text()) | {"status": "missing_item"}))
     run_dir = private_convnet.run_dir
     result = support.run(
-        "infer.py",
+        "infer",
         *support.checkpoint_args(run_dir),
         "--force",
         data_root=private_data_root,
@@ -636,7 +638,7 @@ def test_a_data_root_missing_a_tile_refuses_the_checkpoint(
 def test_calibration_requires_a_score_floor(data_root: Path, tmp_path: Path) -> None:
     """Relative and local scores divide by an area, zero on empty cells; no default may hide it."""
     missing = support.run(
-        "calibrate.py",
+        "calibrate",
         "--run-dir",
         str(tmp_path / "never_read"),
         "--cells",
@@ -655,7 +657,7 @@ def test_calibration_refuses_a_floor_that_is_not_positive_and_finite(
     """0 divides an empty cell by zero, a negative floor flips the sign, inf gives NaN margins."""
     run_dir = tmp_path / "never_read"
     refused = support.run(
-        "calibrate.py",
+        "calibrate",
         "--run-dir",
         str(run_dir),
         "--cells",
@@ -701,7 +703,7 @@ def fit_directions(
     run: support.FinishedRun, data_root: Path, *extra: str
 ) -> subprocess.CompletedProcess:
     return support.run(
-        "fit_directions.py",
+        "fit_directions",
         *support.checkpoint_args(run.run_dir),
         "--layers",
         run.layer,

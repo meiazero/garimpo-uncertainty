@@ -91,7 +91,7 @@ def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(data_root: Pa
     """
     run_dir = support.RUNS / "convnet_uneven_validation"
     arguments = support.train_args("convnet", run_dir, batch_size=str(UNEVEN_BATCH), epochs="2")
-    support.run("train.py", *arguments, data_root=data_root)
+    support.run("train", *arguments, data_root=data_root)
     history = pd.read_csv(run_dir / "history.csv")
     best = torch.load(run_dir / "best_model.pt", map_location="cpu", weights_only=True)["epoch"]
     record = history.set_index("epoch").loc[best]
@@ -133,7 +133,7 @@ def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(data_root: Pa
 def own_run(data_root: Path) -> Path:
     """Skipping needs the path the stage recorded, so these scenarios share a run of their own."""
     run_dir = support.RUNS / "convnet_refusals"
-    support.run("train.py", *support.train_args("convnet", run_dir), data_root=data_root)
+    support.run("train", *support.train_args("convnet", run_dir), data_root=data_root)
     return run_dir
 
 
@@ -149,12 +149,10 @@ def test_another_batch_size_refuses_and_the_original_skips(
     """Training's batch size shapes the weights."""
     status = refusal_run / "status" / "train.json"
     args = support.train_args("convnet", refusal_run, batch_size="4")
-    refused = support.run("train.py", *args, data_root=data_root, check=False)
+    refused = support.run("train", *args, data_root=data_root, check=False)
     assert refused.returncode != 0
     assert json.loads(status.read_text())["status"] == "refused"
-    rerun = support.run(
-        "train.py", *support.train_args("convnet", refusal_run), data_root=data_root
-    )
+    rerun = support.run("train", *support.train_args("convnet", refusal_run), data_root=data_root)
     assert "skipping" in rerun.stdout
     assert json.loads(status.read_text())["status"] == "ok"
 
@@ -165,7 +163,7 @@ def test_interrupted_run_refuses_other_arguments(refusal_run: Path, data_root: P
     weights = support.file_hashes(refusal_run)["last.pt"]
     status.unlink()
     args = support.train_args("convnet", refusal_run, lr="1e-2")
-    resumed = support.run("train.py", *args, data_root=data_root, check=False)
+    resumed = support.run("train", *args, data_root=data_root, check=False)
     assert resumed.returncode != 0
     record = json.loads(status.read_text())
     assert record["status"] == "failed"
@@ -184,7 +182,7 @@ def test_all_nan_dice_fails(data_root: Path) -> None:
     masks.flush()
     run_dir = support.RUNS / "convnet_all_nan"
     result = support.run(
-        "train.py",
+        "train",
         *support.train_args("convnet", run_dir, epochs="1"),
         data_root=no_mining,
         check=False,
@@ -204,7 +202,7 @@ def test_training_refuses_a_split_that_moved_a_tile(
     path, message = support.write_changed_split(name, tmp_path)
     run_dir = tmp_path / "run"
     args = support.train_args("convnet", run_dir, epochs="1", split_path=path)
-    assert support.run("train.py", *args, data_root=data_root, check=False).returncode != 0
+    assert support.run("train", *args, data_root=data_root, check=False).returncode != 0
     record = json.loads((run_dir / "status" / "train.json").read_text())
     assert record["status"] == "failed"
     assert message in record["error"], name
@@ -232,7 +230,7 @@ def encoder_weights_args(case: str, run_dir: Path) -> list[str]:
 )
 def test_encoder_weights_refusals(data_root: Path, tmp_path: Path, case: str, message: str) -> None:
     args = encoder_weights_args(case, tmp_path / "run")
-    result = support.run("train.py", *args, data_root=data_root, check=False)
+    result = support.run("train", *args, data_root=data_root, check=False)
     assert result.returncode == 2, message
     assert message in result.stderr
 
@@ -240,8 +238,8 @@ def test_encoder_weights_refusals(data_root: Path, tmp_path: Path, case: str, me
 def test_imagenet_absent_file_names_the_command(data_root: Path, tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     args = [*support.train_args("unet", run_dir, epochs="1"), "--encoder-weights", "imagenet"]
-    result = support.run("train.py", *args, data_root=data_root, check=False)
+    result = support.run("train", *args, data_root=data_root, check=False)
     assert result.returncode != 0
     record = json.loads((run_dir / "status" / "train.json").read_text())
     assert record["status"] == "failed"
-    assert "download_data.py weights" in record["error"]
+    assert "garimpo download_data weights" in record["error"]

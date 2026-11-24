@@ -7,11 +7,12 @@ script: 186 tiles and 2,976 cells, since validation, calibration and test stay w
 the versioned list `outputs/tiles/tiles_1pct.json`. Its purpose is to check on the GPU the code the
 full runs will run, and its numbers say nothing about any method.
 
-Each model's pilot config in `configs/pilot/` equals its full config in `configs/full/`
-([decisions.md](decisions.md)) except in its scale: `TRAIN_FRACTION` 0.01, `EPOCHS` 2 and
-`STEPS_PER_EPOCH` 20, so it stays short, `MIN_FRACTION_ASCENDING` 0, so a model trained for 40
-updates still reaches the last stage, and `RUN_DIR` `runs/pilot/<model>-f0.01`. `test_run.py`
-fails on any other difference. Its runs and result tables go to `runs/pilot/`, never to `outputs/`.
+The pilot reads the same `configs/base.json` and `configs/models/<model>.json` as the full run
+([decisions.md](decisions.md)); only its scale, `configs/scales/pilot.json`, differs:
+`TRAIN_FRACTION` 0.01, `EPOCHS` 2 and `STEPS_PER_EPOCH` 20, so it stays short,
+`MIN_FRACTION_ASCENDING` 0, so a model trained for 40 updates still reaches the last stage, and
+`RUNS_DIR` `runs/pilot`, so each run writes to `runs/pilot/<model>-f0.01`. Its runs and result
+tables go to `runs/pilot/`, never to `outputs/`.
 
 ## Steps
 
@@ -27,12 +28,11 @@ Each model has its own cell, and they run one after another on the one GPU. Each
 `runs/pilot/<model>-f0.01/`, and section 6 merges their tables into `runs/pilot/tables/`. The runs
 and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
 
-Outside Colab, `uv run --no-sync python scripts/run.py configs/pilot/<model>.json` runs one
-model's pilot.
+Outside Colab, `uv run --no-sync garimpo run pilot <model>` runs one model's pilot.
 
 ## The check report
 
-Every run ends with `scripts/pipeline_check.py`, which prints:
+Every run ends with `garimpo check`, which prints:
 
 - status, seconds, peak memory and shapes per stage;
 - the failing stage with its error;
@@ -61,7 +61,7 @@ fail the check: [stages.md](stages.md#statuses).
 
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
 invalidates nothing; that is why the stage has to be named. The cell passes `FORCE_FROM` to
-`scripts/run.py` as `--force-from`, which takes a name from `STAGE_ORDER` and redoes that stage and
+`garimpo run` as `--force-from`, which takes a name from `STAGE_ORDER` and redoes that stage and
 every stage after it. Earlier stages skip, and `train` runs again only with `--force-from train`,
 which refuses while `last.pt` holds an
 unfinished training: drop it to resume, or delete `last.pt` to start over. The data validation is

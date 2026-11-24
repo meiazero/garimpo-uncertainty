@@ -6,8 +6,8 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 
 1. Download the store once on your own machine and upload it to Drive
    ([below](#download-the-store)). The notebook downloads nothing.
-2. Each run reads every value from its config in `configs/full/` ([below](#the-run-configs)). To
-   change one, edit the file, then commit and push it from your machine: each session starts from a
+2. Each run reads every value from `configs/` ([below](#the-run-configs)). To
+   change one, edit its file, then commit and push it from your machine: each session starts from a
    fresh clone, which cannot push.
 3. On a GPU runtime, choose `SCALE` `full` in section 3 of `notebooks/01_run_experiment.ipynb` and
    run Runtime > Run all. Section 5 runs the four models one after another
@@ -20,7 +20,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
    machine, copy `runs/` from Drive first.
 
    ```bash
-   uv run --no-sync python scripts/merge_results.py --out outputs --runs runs/unet_scratch-f1.0 runs/unet_imagenet-f1.0 runs/unet_sentinel2-f1.0 runs/convnet-f1.0
+   uv run --no-sync garimpo merge --out outputs --scale full
    ```
 
 6. On Colab, section 6 copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit it
@@ -28,29 +28,30 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 
 ## The run configs
 
-| Config | Model |
+| Model config | Model |
 |---|---|
-| `configs/full/unet_scratch.json` | U-Net from scratch |
-| `configs/full/unet_imagenet.json` | U-Net from ImageNet weights |
-| `configs/full/unet_sentinel2.json` | U-Net from Sentinel-2 MoCo weights |
-| `configs/full/convnet.json` | DeepLabV3 from segmentation-models-pytorch |
+| `configs/models/unet_scratch.json` | U-Net from scratch |
+| `configs/models/unet_imagenet.json` | U-Net from ImageNet weights |
+| `configs/models/unet_sentinel2.json` | U-Net from Sentinel-2 MoCo weights |
+| `configs/models/convnet.json` | DeepLabV3 from segmentation-models-pytorch |
 
-Each value has its source in [decisions.md](decisions.md). `scripts/run.py` reads a config and
-stops the run before any stage when a key is missing, null, empty or unknown, or when
-`SCORE_FLOOR_HA` is not a positive finite number. `RUN_DIR` is `runs/<config name>-f1.0`: the
-merge reads the runs from those paths. `configs/pilot/` holds the same four configs at 1%
-([pilot.md](pilot.md)).
+A run is one of these models at the `full` scale, `configs/scales/full.json`, with the values of
+`configs/base.json` that every run shares. Each value has its source in
+[decisions.md](decisions.md). `garimpo run` composes the three files and stops the run before
+any stage when a key is missing, null, empty, unknown or in another file, or when `SCORE_FLOOR_HA`
+is not a positive finite number. The run writes to `runs/<model>-f1.0`: the merge reads the runs
+from those paths. The `pilot` scale runs the same four models at 1% ([pilot.md](pilot.md)).
 
 ## Download the store
 
 On your own machine:
 
 ```bash
-GARIMPO_DATA_DIR=<DIR> uv run --no-sync python scripts/download_data.py all
+GARIMPO_DATA_DIR=<DIR> uv run --no-sync garimpo download_data all
 tar --format=posix -I 'zstd -19 -T0' -cf <DIR>.tar.zst -C <DIR> .
 ```
 
-Then upload the archive to Drive as `garimpo/data.tar.zst`. `download_data.py all` downloads the
+Then upload the archive to Drive as `garimpo/data.tar.zst`. `garimpo download_data all` downloads the
 metadata, the 100% list and both starting weights. It stops before downloading when the disk cannot
 hold the store, counting what is already downloaded as available, and resumes when rerun. It uses
 one worker per CPU minus one, between 1 and 16. Each tile is printed as it ends, with the rate
@@ -74,7 +75,7 @@ About the download:
 
 Section 5 of the notebook has one cell per model, run in order:
 
-1. "Run <model>" runs `uv run --no-sync python scripts/run.py configs/<scale>/<model>.json`,
+1. "Run <model>" runs `uv run --no-sync garimpo run <scale> <model>`,
    with `<scale>` `full` for the full runs. `--num-workers` defaults to the runtime's CPUs. The
    runner prints each stage's command, lines, exit code and duration with the UTC time, and
    appends them to `outputs/logs/<scale>-<model>.log`.
@@ -83,7 +84,8 @@ Section 5 of the notebook has one cell per model, run in order:
    `--force-validate`. An option stays set in the
    open tab, so clear `RUN` once the rerun passes. Reopening the notebook from its link restores
    the values on `main`.
-3. "Print the verdicts" prints one line per model.
+3. "Print the verdicts" runs `garimpo status <scale> --since <session start>`, which prints one
+   line per model: the verdict of its last attempt.
 
 The copy of `runs/` and the logs to Drive every 30 minutes starts at the top of section 5 and stops
 in section 7, which saves the runs and logs once more and releases the GPU.
@@ -92,13 +94,13 @@ With the copy every 30 minutes, a session that ends mid-run keeps the finished s
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
 its first epoch and requires the rerun to end where an uninterrupted run ends, on CPU; on a GPU the
 kernels are not deterministic, so only the resume itself is the same. Rerun without
-`--force-from train` to resume: with it, `train.py` refuses to discard an unfinished training and says so. Every script
+`--force-from train` to resume: with it, `garimpo train` refuses to discard an unfinished training and says so. Every script
 runs with `uv run --no-sync`, so a run never changes the environment under itself.
 
 Outside Colab, one run is one job:
 
 ```bash
-uv run --no-sync python scripts/run.py configs/full/unet_scratch.json
+uv run --no-sync garimpo run full unet_scratch
 ```
 
 ## Regenerate the tile lists
@@ -107,7 +109,7 @@ The versioned lists use subset seed 0, the decided `SUBSET_SEED`. `lists` regene
 it only after `outputs/split.csv` changes, or to use another seed:
 
 ```bash
-uv run --no-sync python scripts/download_data.py lists --subset-seed <SUBSET_SEED>
+uv run --no-sync garimpo download_data lists --subset-seed <SUBSET_SEED>
 ```
 
 The E2E suite fails if regenerating with the recorded seed does not reproduce the versioned files
@@ -116,10 +118,10 @@ byte for byte, so commit the regenerated files together with whatever changed th
 ## Rerun one stage
 
 A stage reruns on its own, without the earlier stages:
-`uv run --no-sync python scripts/<stage>.py ...`. Use a GPU runtime for the stages that
+`uv run --no-sync garimpo <stage> ...`. Use a GPU runtime for the stages that
 [stages.md](stages.md#stage-table) marks GPU. For example, a new metric or another boundary F1
 tolerance, passing the run's `SEED` because the seed is part of the fingerprint:
 
 ```bash
-uv run --no-sync python scripts/compute_metrics.py --run-dir runs/unet_scratch-f1.0 --boundary-tolerance-px <PX> --seed <SEED> --force
+uv run --no-sync garimpo compute_metrics --run-dir runs/unet_scratch-f1.0 --boundary-tolerance-px <PX> --seed <SEED> --force
 ```

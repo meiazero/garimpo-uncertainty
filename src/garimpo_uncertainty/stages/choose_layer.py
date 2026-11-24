@@ -11,8 +11,9 @@ from pathlib import Path
 
 import pandas as pd
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.files
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 DIRECTIONS = ("pca", "svm")
 
@@ -52,11 +53,12 @@ def main() -> None:
     parser.add_argument("--min-fraction-ascending", type=float, required=True)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
-    diagnostics_path = args.run_dir / "directions" / "diagnostics.csv"
-    monotonicity_path = args.run_dir / "monotonicity_layer.csv"
-    output = args.run_dir / "chosen_layer.json"
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
+    diagnostics_path = run.direction_diagnostics
+    monotonicity_path = run.monotonicity("layer")
+    output = run.chosen_layer
 
     def work() -> dict:
         # A refusal must not leave an earlier choice for the pipeline check to print as this one.
@@ -73,15 +75,13 @@ def main() -> None:
         )
         return {"layer": layer, "candidates": len(table)}
 
-    garimpo_uncertainty.stages.run_stage(
-        args.run_dir / "status",
+    garimpo_uncertainty.pipeline.runner.run_stage(
+        run.status,
         "choose_layer",
         [output],
-        garimpo_uncertainty.stages.fingerprint(args, [diagnostics_path, monotonicity_path]),
+        garimpo_uncertainty.pipeline.runner.fingerprint(
+            args, [diagnostics_path, monotonicity_path]
+        ),
         work,
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

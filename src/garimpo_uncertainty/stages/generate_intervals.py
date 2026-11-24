@@ -17,13 +17,14 @@ import numpy as np
 import pandas as pd
 import torch
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models.common
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 COMPASS_ROWS = (
     garimpo_uncertainty.intervals.COMPASS_METHODS + garimpo_uncertainty.intervals.ASYMMETRIC_METHODS
@@ -92,8 +93,8 @@ class Calibrated(NamedTuple):
     side_ratio: np.ndarray
 
     @classmethod
-    def read(cls, run_dir: Path) -> Self:
-        with np.load(run_dir / "calibration" / "quantiles.npz") as stored:
+    def read(cls, path: Path) -> Self:
+        with np.load(path) as stored:
             return cls(stored["quantile"], stored["censor_at"], stored["side_ratio"])
 
 
@@ -164,21 +165,23 @@ def widen_saturated(
     upper[:] = np.where(trivial, cell_ha, upper)
 
 
-def read_jacobians(run_dir: Path, cell_index: np.ndarray) -> np.ndarray:
-    with np.load(run_dir / "scores" / "scores.npz") as stored:
+def read_jacobians(scores_path: Path, cell_index: np.ndarray) -> np.ndarray:
+    with np.load(scores_path) as stored:
         return stored["jacobians"][
             garimpo_uncertainty.data.positions_of(stored["cell_index"], cell_index)
         ]
 
 
-def generate(args: argparse.Namespace, root: Path, device: str, output: Path) -> dict:
-    predictions = garimpo_uncertainty.data.read_predictions(root, args.run_dir)
+def generate(
+    args: argparse.Namespace, root: Path, device: str, run: garimpo_uncertainty.artifacts.RunPaths
+) -> dict:
+    predictions = garimpo_uncertainty.data.read_predictions(root, run.root)
     model, metadata = garimpo_uncertainty.checkpoints.load_model(
         args.checkpoint, predictions, device
     )
-    fitted = compass2d.directions.Directions.load(args.run_dir / "directions" / f"{args.layer}.npz")
-    calibrated = Calibrated.read(args.layer_dir)
-    with np.load(args.layer_dir / "calibration" / "quantiles.npz") as stored:
+    fitted = compass2d.directions.Directions.load(run.directions(args.layer))
+    calibrated = Calibrated.read(run.quantiles)
+    with np.load(run.quantiles) as stored:
         cell_index = stored["cell_index"]
         alpha = stored["alpha"]
         # Terms are NaN on COMPASS rows, which compass_endpoints then fills.
@@ -191,7 +194,7 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
         model,
         calibrated,
         test,
-        read_jacobians(args.layer_dir, cell_index),
+        read_jacobians(run.scores, cell_index),
         fitted,
         root=root,
         metadata=metadata,
@@ -203,7 +206,7 @@ def generate(args: argparse.Namespace, root: Path, device: str, output: Path) ->
     widen_saturated(calibrated, test.cell_ha.to_numpy(), lower, upper)
     lower, upper = garimpo_uncertainty.intervals.clip_to_cell(lower, upper, test.cell_ha.to_numpy())
     garimpo_uncertainty.files.write_arrays(
-        output,
+        run.intervals,
         cell_index=cell_index,
         lower=lower,
         upper=upper,
@@ -219,38 +222,35 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--layer", required=True)
-    garimpo_uncertainty.stages.add_layer_dir(parser)
+    garimpo_uncertainty.pipeline.runner.add_layer_dir(parser)
     parser.add_argument("--temperature", type=float, default=compass2d.metrics.UPSTREAM_TEMPERATURE)
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device")
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument(
+        "--num-workers", type=int, default=garimpo_uncertainty.pipeline.runner.available_cpus()
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     args.layer_dir = args.layer_dir or args.run_dir
-    garimpo_uncertainty.stages.log_to_stdout()
+    garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
-    run_dir, layer_dir = args.run_dir, args.layer_dir
-    output = layer_dir / "intervals" / "intervals.npz"
+    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir, args.layer_dir)
     inputs = [
         args.checkpoint,
-        run_dir / "predictions" / "cells.npz",
-        layer_dir / "calibration" / "quantiles.npz",
-        layer_dir / "scores" / "scores.npz",
-        run_dir / "directions" / f"{args.layer}.npz",
+        run.predictions,
+        run.quantiles,
+        run.scores,
+        run.directions(args.layer),
     ]
-    garimpo_uncertainty.stages.run_stage(
-        layer_dir / "status",
+    garimpo_uncertainty.pipeline.runner.run_stage(
+        run.layer_status,
         "generate_intervals",
-        [output],
-        garimpo_uncertainty.stages.fingerprint(
-            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run_dir)
+        [run.intervals],
+        garimpo_uncertainty.pipeline.runner.fingerprint(
+            args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, run.root)
         ),
-        lambda: generate(args, root, device, output),
+        lambda: generate(args, root, device, run),
         force=args.force,
     )
-
-
-if __name__ == "__main__":
-    main()

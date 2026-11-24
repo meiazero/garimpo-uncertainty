@@ -12,19 +12,18 @@ from pathlib import Path
 
 import pandas as pd
 
+import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 import garimpo_uncertainty.validation
 
+PASS, FAIL = "PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL"
+# Each run's log ends with one of these; `garimpo status` reads them back.
+VERDICTS = (PASS, FAIL)
 # What reading chosen_layer.json raises when the file is absent, a directory, or not the object
 # choose_layer writes; the report names it instead of stopping before its verdict.
 UNREADABLE = (OSError, ValueError, KeyError, TypeError)
-
-
-def read_status(status_dir: Path, stage: str) -> dict:
-    path = status_dir / f"{stage}.json"
-    return json.loads(path.read_text()) if path.exists() else {"stage": stage, "status": "not_run"}
 
 
 def not_current(statuses: dict[str, str], stage: str) -> str | None:
@@ -33,7 +32,7 @@ def not_current(statuses: dict[str, str], stage: str) -> str | None:
     Nothing is deleted in Drive, so a restore brings back files of an earlier attempt: only ok
     statuses, all the way up to the stage that wrote them, vouch for a table.
     """
-    for name in garimpo_uncertainty.stages.STAGE_ORDER:
+    for name in garimpo_uncertainty.pipeline.runner.STAGE_ORDER:
         if statuses[name] != "ok":
             return f"{name} is {statuses[name]}"
         if name == stage:
@@ -82,12 +81,11 @@ def print_stage_table(records: list[dict]) -> None:
     print("PIPELINE CHECK: debugging report of the run, not a result about any method")
     print("=" * 78)
     width = max(len(record["stage"]) for record in records) + 2
-    print(f"{'stage':<{width}}{'status':<10}{'seconds':>9}{'rss GB':>9}{'gpu GB':>9}  job")
+    print(f"{'stage':<{width}}{'status':<10}{'seconds':>9}{'rss GB':>9}{'gpu GB':>9}")
     for record in records:
         print(
             f"{record['stage']:<{width}}{record['status']:<10}{record.get('seconds', ''):>9}"
             f"{record.get('peak_rss_gb', ''):>9}{record.get('peak_gpu_gb', ''):>9}"
-            f"  {record.get('slurm_job_id') or ''}"
         )
     print("\n--- shapes")
     for record in records:
@@ -102,13 +100,20 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
     required = [r for r in records if r["stage"] != "download_scenes"]
     failed = [r for r in required if r["status"] != "ok"]
     # not_run has no error to print: the first stage that ran and is not ok is the cause.
-    first_failure = next((r for r in required if r["status"] not in ("ok", "not_run")), None)
+    first_failure = next(
+        (
+            r
+            for r in required
+            if r["status"] not in ("ok", garimpo_uncertainty.pipeline.runner.NOT_RUN)
+        ),
+        None,
+    )
     if first_failure is not None:
         print(f"\n--- failing stage: {first_failure['stage']} ({first_failure['status']})")
         print(first_failure.get("error", "no error recorded: the job died inside this stage"))
         print(first_failure.get("traceback", ""))
     if job_exit_code != 0:
-        # An import, syntax or argparse error, a refused config or merge_results reach no status.
+        # An import, syntax or argparse error, a refused config or the merge reach no status.
         failed.append({"stage": f"job exit code {job_exit_code}"})
         print(f"\n--- job exit code {job_exit_code}: see the lines above it in the job's log")
     return failed
@@ -175,27 +180,28 @@ def print_chosen_layer(path: Path, stale: str | None) -> None:
 
 def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     """Print each stage's table; history.csv always, as train rewrites it every epoch."""
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
     print_table(
         "losses, validation metrics, gradient norms, timings and GPU peaks per epoch",
-        run_dir / "history.csv",
+        run.history,
         lambda f: f.set_index("epoch"),
     )
     print_table(
         "monotonicity for choosing the layer (validation role)",
-        run_dir / "monotonicity_layer.csv",
+        run.monotonicity("layer"),
         lambda f: f.set_index(["layer", "direction", "role"]),
         not_current(statuses, "layer_monotonicity"),
     )
-    print_chosen_layer(run_dir / "chosen_layer.json", not_current(statuses, "choose_layer"))
+    print_chosen_layer(run.chosen_layer, not_current(statuses, "choose_layer"))
     print_table(
         "monotonicity of the chosen layer, on grid points only",
-        run_dir / "monotonicity_endpoint.csv",
+        run.monotonicity("endpoint"),
         lambda f: f.set_index(["layer", "direction", "role"]),
         not_current(statuses, "endpoint_monotonicity"),
     )
     print_table(
         "|cos(v1, w)| and PCA explained variance per layer",
-        run_dir / "directions" / "diagnostics.csv",
+        run.direction_diagnostics,
         lambda f: f[
             [
                 "layer",
@@ -211,7 +217,7 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     )
     print_table(
         "saturated searches",
-        run_dir / "metrics" / "results.csv",
+        run.results,
         lambda f: f.dropna(subset=["n_saturated_calibration"])[
             [
                 "alpha",
@@ -226,7 +232,7 @@ def print_run_tables(run_dir: Path, statuses: dict[str, str]) -> None:
     )
     print_table(
         "PICP and MPIW per method (pipeline check only)",
-        run_dir / "metrics" / "results.csv",
+        run.results,
         lambda f: f[
             ["alpha", "method", "calibration", "n_cells", "n_groups", "picp", "mpiw"]
         ].set_index(["alpha", "method", "calibration"]),
@@ -239,25 +245,26 @@ def other_layer_records(
 ) -> tuple[list[dict], list[str]]:
     """Return the other layers' stage statuses, each named after its layer, and those layers.
 
-    Empty until the chosen layer's stages are all ok, since run.py runs the others after those.
+    Empty until the chosen layer's stages are all ok, since the job runs the others after those.
     """
     statuses = {record["stage"]: record["status"] for record in records}
     if not layers or not_current(statuses, "compute_metrics") is not None:
         return [], []
-    path = run_dir / "chosen_layer.json"
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
+    path = run.chosen_layer
     try:
         chosen = read_chosen(path)[0]["layer"]
         if chosen not in layers:
             raise ValueError(f"layer {chosen!r} is not one of LAYERS {layers}")
     except UNREADABLE as error:
         cause = f"{path}: {type(error).__name__}: {error}"
-        return [{"stage": "chosen_layer.json", "status": "unreadable", "error": cause}], []
+        return [{"stage": path.name, "status": "unreadable", "error": cause}], []
     others = [layer for layer in layers if layer != chosen]
     layer_records = [
-        read_status(run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer / "status", stage)
+        garimpo_uncertainty.pipeline.runner.read_status(run.other_layer(layer).layer_status, stage)
         | {"stage": f"{stage} [{layer}]"}
         for layer in others
-        for stage in garimpo_uncertainty.stages.LAYER_STAGES
+        for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES
     ]
     return layer_records, others
 
@@ -289,12 +296,12 @@ def results_tables_failures(
     A stale results.csv would add failures of an earlier attempt to a verdict already FAIL.
     """
     failed = []
+    run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
     if not_current(statuses, "compute_metrics") is None:
-        failed += results_failures(run_dir / "metrics" / "results.csv")
+        failed += results_failures(run.results)
     for layer in others:
         if statuses[f"compute_metrics [{layer}]"] == "ok":
-            layer_dir = run_dir / garimpo_uncertainty.stages.LAYERS_DIR / layer
-            found = results_failures(layer_dir / "metrics" / "results.csv")
+            found = results_failures(run.other_layer(layer).results)
             failed += [{"stage": f"{failure['stage']} [{layer}]"} for failure in found]
     return failed
 
@@ -313,10 +320,10 @@ def report_slots(
 def exit_with_verdict(failed: list[dict]) -> None:
     print("\n" + "=" * 78)
     if failed:
-        print(f"PIPELINE CHECK: FAIL at {[r['stage'] for r in failed]}")
+        print(f"{FAIL} at {[r['stage'] for r in failed]}")
         print("=" * 78)
         raise SystemExit(1)
-    print("PIPELINE CHECK: PASS (every stage ran; this says nothing about method quality)")
+    print(f"{PASS} (every stage ran; this says nothing about method quality)")
     print("=" * 78)
 
 
@@ -324,12 +331,16 @@ def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list
     """Return every status the run needs, in order, and the other layers they cover."""
     selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
     records = [
-        read_status(root / "status", "download_scenes"),
-        read_status(root / "status" / selection, "validate_data"),
+        garimpo_uncertainty.pipeline.runner.read_status(root / "status", "download_scenes"),
+        garimpo_uncertainty.pipeline.runner.read_status(
+            root / "status" / selection, "validate_data"
+        ),
     ]
     records += [
-        read_status(args.run_dir / "status", stage)
-        for stage in garimpo_uncertainty.stages.STAGE_ORDER
+        garimpo_uncertainty.pipeline.runner.read_status(
+            garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).status, stage
+        )
+        for stage in garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     ]
     layer_records, others = other_layer_records(args.run_dir, args.layers, records)
     return records + layer_records, others
@@ -353,7 +364,3 @@ def main() -> None:
     store_problems = report_slots(root, tiles, store_problems, args.workers)
     failed += [{"stage": problem} for problem in store_problems]
     exit_with_verdict(failed)
-
-
-if __name__ == "__main__":
-    main()

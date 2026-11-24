@@ -18,7 +18,7 @@ import rasterio.enums
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
 import garimpo_uncertainty.files
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.pipeline.runner
 
 # A child of the package's logger, so its lines reach the terminal and the log file.
 logger = logging.getLogger("garimpo_uncertainty.download_data")
@@ -52,7 +52,7 @@ def listed_tiles(list_path: Path, split_path: Path, split: pd.DataFrame) -> pd.D
         raise ValueError(
             f"{list_path} has split_sha256 {tile_list['split_sha256'][:12]}, but {split_path} is "
             f"{current[:12]}: restore that split, or regenerate the lists with "
-            "download_data.py lists"
+            "garimpo download_data lists"
         )
     # Dropped tiles count as absent: they have no slot in the store.
     tiles = garimpo_uncertainty.data.tile_table(split)
@@ -87,11 +87,11 @@ def download_scenes_stage(root: Path, args: argparse.Namespace) -> None:
         return {"selected_tiles": len(selected), "statuses": statuses.to_dict()}
 
     # No outputs listed: a rerun always checks the sidecars and fetches what is still pending.
-    garimpo_uncertainty.stages.run_stage(
+    garimpo_uncertainty.pipeline.runner.run_stage(
         root / "status",
         "download_scenes",
         [],
-        garimpo_uncertainty.stages.fingerprint(args, []),
+        garimpo_uncertainty.pipeline.runner.fingerprint(args, []),
         work,
         force=False,
     )
@@ -129,6 +129,16 @@ def download_all(root: Path) -> None:
 
 
 def main() -> None:
+    try:
+        download()
+    except KeyboardInterrupt:
+        # A normal exit joins the worker threads, so after a second Ctrl+C it would wait for the
+        # tiles in progress; the stage status is already written by now.
+        sys.stdout.flush()
+        os._exit(130)
+
+
+def download() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
     # Subparsers do not inherit allow_abbrev from the main parser.
@@ -168,13 +178,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "lists":
-        garimpo_uncertainty.stages.log_to_stdout()
+        garimpo_uncertainty.pipeline.runner.log_to_stdout()
         write_tile_lists(args.split, args.subset_seed, args.out)
         return
     root = garimpo_uncertainty.data.data_root()
     root.mkdir(parents=True, exist_ok=True)
     # Beside the data it describes, so the log travels with the store's archive.
-    garimpo_uncertainty.stages.log_to_stdout(root / "logs" / "download.log")
+    garimpo_uncertainty.pipeline.runner.log_to_stdout(root / "logs" / "download.log")
     if args.command == "metadata":
         garimpo_uncertainty.download.download_metadata(root)
         return
@@ -185,13 +195,3 @@ def main() -> None:
         download_all(root)
         return
     download_scenes_stage(root, args)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        # A normal exit joins the worker threads, so after a second Ctrl+C it would wait for the
-        # tiles in progress; the stage status is already written by now.
-        sys.stdout.flush()
-        os._exit(130)
