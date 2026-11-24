@@ -23,9 +23,9 @@ from pathlib import Path
 from typing import NoReturn
 
 import garimpo_uncertainty.artifacts
-import garimpo_uncertainty.commands
 import garimpo_uncertainty.config
 import garimpo_uncertainty.data
+import garimpo_uncertainty.pipeline.commands
 import garimpo_uncertainty.pipeline.runner
 
 STAGE_ORDER = garimpo_uncertainty.pipeline.runner.STAGE_ORDER
@@ -115,8 +115,8 @@ class Log:
 
 
 def command(stage: str, values: dict, *extra: str) -> list[str]:
-    command = garimpo_uncertainty.commands.STAGES[stage].command
-    arguments = garimpo_uncertainty.commands.arguments(stage, values)
+    command = garimpo_uncertainty.pipeline.commands.STAGES[stage].command
+    arguments = garimpo_uncertainty.pipeline.commands.arguments(stage, values)
     return [sys.executable, "-m", "garimpo_uncertainty", command, *arguments, *extra]
 
 

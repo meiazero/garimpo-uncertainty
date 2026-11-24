@@ -23,11 +23,6 @@ import garimpo_uncertainty.validation
 UNREADABLE = (OSError, ValueError, KeyError, TypeError)
 
 
-def read_status(status_dir: Path, stage: str) -> dict:
-    path = status_dir / f"{stage}.json"
-    return json.loads(path.read_text()) if path.exists() else {"stage": stage, "status": "not_run"}
-
-
 def not_current(statuses: dict[str, str], stage: str) -> str | None:
     """Name the first stage up to `stage` that is not ok; None when its files are current.
 
@@ -83,12 +78,11 @@ def print_stage_table(records: list[dict]) -> None:
     print("PIPELINE CHECK: debugging report of the run, not a result about any method")
     print("=" * 78)
     width = max(len(record["stage"]) for record in records) + 2
-    print(f"{'stage':<{width}}{'status':<10}{'seconds':>9}{'rss GB':>9}{'gpu GB':>9}  job")
+    print(f"{'stage':<{width}}{'status':<10}{'seconds':>9}{'rss GB':>9}{'gpu GB':>9}")
     for record in records:
         print(
             f"{record['stage']:<{width}}{record['status']:<10}{record.get('seconds', ''):>9}"
             f"{record.get('peak_rss_gb', ''):>9}{record.get('peak_gpu_gb', ''):>9}"
-            f"  {record.get('slurm_job_id') or ''}"
         )
     print("\n--- shapes")
     for record in records:
@@ -103,7 +97,14 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
     required = [r for r in records if r["stage"] != "download_scenes"]
     failed = [r for r in required if r["status"] != "ok"]
     # not_run has no error to print: the first stage that ran and is not ok is the cause.
-    first_failure = next((r for r in required if r["status"] not in ("ok", "not_run")), None)
+    first_failure = next(
+        (
+            r
+            for r in required
+            if r["status"] not in ("ok", garimpo_uncertainty.pipeline.runner.NOT_RUN)
+        ),
+        None,
+    )
     if first_failure is not None:
         print(f"\n--- failing stage: {first_failure['stage']} ({first_failure['status']})")
         print(first_failure.get("error", "no error recorded: the job died inside this stage"))
@@ -257,7 +258,8 @@ def other_layer_records(
         return [{"stage": path.name, "status": "unreadable", "error": cause}], []
     others = [layer for layer in layers if layer != chosen]
     layer_records = [
-        read_status(run.other_layer(layer).layer_status, stage) | {"stage": f"{stage} [{layer}]"}
+        garimpo_uncertainty.pipeline.runner.read_status(run.other_layer(layer).layer_status, stage)
+        | {"stage": f"{stage} [{layer}]"}
         for layer in others
         for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES
     ]
@@ -326,11 +328,15 @@ def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list
     """Return every status the run needs, in order, and the other layers they cover."""
     selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
     records = [
-        read_status(root / "status", "download_scenes"),
-        read_status(root / "status" / selection, "validate_data"),
+        garimpo_uncertainty.pipeline.runner.read_status(root / "status", "download_scenes"),
+        garimpo_uncertainty.pipeline.runner.read_status(
+            root / "status" / selection, "validate_data"
+        ),
     ]
     records += [
-        read_status(garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).status, stage)
+        garimpo_uncertainty.pipeline.runner.read_status(
+            garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).status, stage
+        )
         for stage in garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     ]
     layer_records, others = other_layer_records(args.run_dir, args.layers, records)

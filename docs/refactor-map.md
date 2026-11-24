@@ -56,7 +56,7 @@ Constraints every fix keeps:
   - `pyproject.toml:165` allows `print` only under `scripts/*`; the moved CLI modules need the same exemption, or CI and the pre-push hook fail.
   - The CLI imports only the selected subcommand, so `compute_metrics` stays free of torch (`checkpoints.py:8` imports it).
   - `HELD_OUT_REGIONS` is duplicated at `scripts/split/make_split.py:12` and `src/garimpo_uncertainty/data.py:25`; the split script imports it.
-- [ ] 7. Group the status runner, orchestrator, check and merge in `pipeline/`, with one status reader and no Slurm leftovers. (6 files, after 6)
+- [x] 7. Group the status runner, orchestrator, check and merge in `pipeline/`, with one status reader and no Slurm leftovers. (6 files, after 6)
   - `read_status` is defined twice: `scripts/merge_results.py:43` returns a string, `scripts/pipeline_check.py:25` a dict.
   - `src/garimpo_uncertainty/stages.py:188` records `SLURM_JOB_ID`, printed at `scripts/pipeline_check.py:90` and documented at `docs/data-layout.md:110`; `slurm/` no longer exists.
 - [ ] 8. Move the notebook's run logic into `garimpo status`; the notebook keeps only the Colab adapters. (3 files, after 4, 6, 7)

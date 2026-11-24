@@ -5,7 +5,6 @@ No hyperparameter has a default, so a run states every value it uses.
 
 import argparse
 import datetime as dt
-import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -170,14 +169,13 @@ def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
         return
     if torch.load(last, map_location="cpu", weights_only=True) == DISCARDED:
         return
-    status_path = run.status / "train.json"
-    status = json.loads(status_path.read_text()) if status_path.exists() else {}
+    status = garimpo_uncertainty.pipeline.runner.read_status(run.status, "train")
     # Starting the work drops completed_fingerprint, so only a finished training still has it.
     if "completed_fingerprint" not in status:
         garimpo_uncertainty.pipeline.runner.fail_stage(
             run.status,
             "train",
-            f"{last} holds an unfinished training (status {status.get('status', 'absent')}): "
+            f"{last} holds an unfinished training (status {status['status']}): "
             f"run without --force (--force-from train) to resume it, or delete {last} to start "
             "over",
         )

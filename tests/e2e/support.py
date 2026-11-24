@@ -20,10 +20,10 @@ import shapely
 import torch
 
 import garimpo_uncertainty.artifacts
-import garimpo_uncertainty.commands
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
 import garimpo_uncertainty.models.common
+import garimpo_uncertainty.pipeline.commands
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS = ROOT / "tests" / "artifacts" / "e2e"
@@ -338,7 +338,7 @@ def train_args(
         "SEED": "0",
         "NUM_WORKERS": NUM_WORKERS,
     }
-    arguments = garimpo_uncertainty.commands.arguments("train", values)
+    arguments = garimpo_uncertainty.pipeline.commands.arguments("train", values)
     return [*arguments, "--split", str(split_path), *DEVICE_ARGS]
 
 
@@ -350,7 +350,7 @@ def checkpoint_args(run_dir: Path, batch_size: str = "8") -> list[str]:
         "EVAL_BATCH_SIZE": batch_size,
         "NUM_WORKERS": NUM_WORKERS,
     }
-    return [*garimpo_uncertainty.commands.arguments("infer", values), *DEVICE_ARGS]
+    return [*garimpo_uncertainty.pipeline.commands.arguments("infer", values), *DEVICE_ARGS]
 
 
 def validate(

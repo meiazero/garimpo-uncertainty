@@ -42,15 +42,14 @@ def layer_paths(run_dir: Path) -> dict[str, garimpo_uncertainty.artifacts.RunPat
     return {chosen["layer"]: run} | {layer: run.other_layer(layer) for layer in others}
 
 
-def read_status(status_dir: Path, stage: str) -> str:
-    path = status_dir / f"{stage}.json"
-    return json.loads(path.read_text())["status"] if path.exists() else "not_run"
+def status_of(status_dir: Path, stage: str) -> str:
+    return garimpo_uncertainty.pipeline.runner.read_status(status_dir, stage)["status"]
 
 
 def stage_statuses(run_dir: Path) -> dict[str, str]:
     run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
     statuses = {
-        stage: read_status(run.status, stage)
+        stage: status_of(run.status, stage)
         for stage in garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     }
     # Without a choice there is no list of the other layers to check.
@@ -61,7 +60,7 @@ def stage_statuses(run_dir: Path) -> dict[str, str]:
     except (OSError, ValueError, KeyError, TypeError) as error:
         return statuses | {run.chosen_layer.name: f"unreadable ({type(error).__name__}: {error})"}
     return statuses | {
-        f"{stage} [{name}]": read_status(paths.layer_status, stage)
+        f"{stage} [{name}]": status_of(paths.layer_status, stage)
         for name, paths in others
         for stage in garimpo_uncertainty.pipeline.runner.LAYER_STAGES
     }

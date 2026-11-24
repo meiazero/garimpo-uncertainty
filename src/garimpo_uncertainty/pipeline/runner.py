@@ -34,6 +34,7 @@ IGNORED_ARGUMENTS = {
     "layer_dir",
 }
 MISSING_INPUT = "missing"
+NOT_RUN = "not_run"
 # The stages that depend on the COMPASS-J layer; a job also runs them on each other layer.
 LAYER_STAGES = ("compass_scores", "calibrate", "generate_intervals", "compute_metrics")
 # The order a job runs a model's stages in, after validate_data; --force-from names one.
@@ -49,6 +50,12 @@ STAGE_ORDER = (
     "generate_intervals",
     "compute_metrics",
 )
+
+
+def read_status(status_dir: Path, stage: str) -> dict:
+    """Return a stage's last status record, or one saying it never ran."""
+    path = status_dir / f"{stage}.json"
+    return json.loads(path.read_text()) if path.exists() else {"stage": stage, "status": NOT_RUN}
 
 
 def available_cpus() -> int:
@@ -142,7 +149,6 @@ def _identity(name: str) -> dict:
     return {
         "stage": name,
         "host": socket.gethostname(),
-        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
         **garimpo_uncertainty.files.code_versions(),
     }
 
@@ -152,12 +158,10 @@ def fail_stage(status_dir: Path, name: str, message: str) -> NoReturn:
 
     The last completed fingerprint stays, so fixing the cause lets a finished stage skip again.
     """
-    status_path = status_dir / f"{name}.json"
-    previous = json.loads(status_path.read_text()) if status_path.exists() else {}
-    completed = previous.get("completed_fingerprint")
+    completed = read_status(status_dir, name).get("completed_fingerprint")
     kept = {"completed_fingerprint": completed} if completed else {}
     garimpo_uncertainty.files.write_json(
-        status_path, _identity(name) | kept | {"status": "failed", "error": message}
+        status_dir / f"{name}.json", _identity(name) | kept | {"status": "failed", "error": message}
     )
     raise SystemExit(message)
 
@@ -206,11 +210,11 @@ def _mark_later_stale(status_dir: Path, name: str) -> None:
             (status_dir.parent / garimpo_uncertainty.artifacts.LAYERS_DIR).glob("*/status")
         )
     for directory, stage in ((d, s) for d in status_dirs for s in later):
-        path = directory / f"{stage}.json"
-        record = json.loads(path.read_text()) if path.exists() else {}
-        if record.get("status") == "ok":
+        record = read_status(directory, stage)
+        if record["status"] == "ok":
             garimpo_uncertainty.files.write_json(
-                path, record | {"status": "stale", "error": f"{name} ran again after it"}
+                directory / f"{stage}.json",
+                record | {"status": "stale", "error": f"{name} ran again after it"},
             )
 
 
@@ -265,7 +269,7 @@ def run_stage(
     last completed fingerprint, so it can never turn into a rerun on the next attempt.
     """
     status_path = status_dir / f"{name}.json"
-    previous = json.loads(status_path.read_text()) if status_path.exists() else {}
+    previous = read_status(status_dir, name)
 
     absent = [p for p, value in stage_fingerprint["inputs"].items() if value == MISSING_INPUT]
     if absent:
