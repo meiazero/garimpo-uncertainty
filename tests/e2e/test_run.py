@@ -413,7 +413,7 @@ def test_full_job_with_a_garbled_choice_still_ends_in_a_verdict(passed_job: Pass
 def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
     """--force-from redoes its stage and later ones, --force-validate the validation; none retrains.
 
-    The rerun appends a second attempt to the log, under the first.
+    The rerun appends its attempt to the log, under the first.
     """
     run_dir = passed_job.run_dir
     validation = DATA / "status" / "fraction-1.0-seed-7" / "validate_data.json"
@@ -432,9 +432,9 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         assert validation.stat().st_mtime_ns != validated
         assert (run_dir / "best_model.pt").stat().st_mtime_ns == checkpoint
     log = log_of(passed_job.model).read_text(encoding="utf-8")
-    first, second = log.split(ATTEMPT)[1:3]
-    assert "PIPELINE CHECK: PASS" in first
-    assert "PIPELINE CHECK: PASS" in second
+    attempts = log.split(ATTEMPT)[1:]
+    assert "PIPELINE CHECK: PASS" in attempts[0]
+    assert "PIPELINE CHECK: PASS" in attempts[-1]
 
 
 def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
