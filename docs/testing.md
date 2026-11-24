@@ -20,6 +20,9 @@ uv run ruff format --check . && uv run ruff check .
 - Each process runs with `OMP_NUM_THREADS=1`, because the thread count changes the trained weights.
   `tests/conftest.py` records that the one-tile run of `test_fractions.py` failed
   `garimpo fit_directions` at 2 threads; that run now passes `--direction-temperature 1` to every stage that takes it, as a job would.
+- On a hybrid Intel CPU, every test process runs on the efficiency cores only. oneDNN's dilated
+  convolution, in the ConvNet's encoder, gives other last bits on a performance core, which broke
+  the exact equality between a stage's output and the test recomputing it in another process.
 - `test_run.py` writes configs of its own, whose `CELL_PX` is 32, the synthetic cells' size, where
   the real store's is 512.
 - oneDNN picks its CPU kernels from the core a process starts on. On a hybrid CPU (performance and
