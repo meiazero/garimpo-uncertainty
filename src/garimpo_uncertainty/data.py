@@ -20,6 +20,8 @@ BANDS = ("B02", "B03", "B04", "B08", "B11", "B12")
 RED_INDEX, NIR_INDEX = 2, 3
 TILE_PX = 2048
 CELL_PX = 512
+# The frozen, versioned split (scripts/split/), which every stage reads unless told otherwise.
+SPLIT_PATH = Path("outputs/split.csv")
 PIXEL_M = 10.0
 PIXEL_HA = 0.01  # 10 m x 10 m
 REFLECTANCE_SCALE = 10_000
@@ -67,13 +69,39 @@ def data_root() -> Path:
     return Path(os.environ.get("GARIMPO_DATA_DIR", default)).expanduser()
 
 
+class StartingWeights(NamedTuple):
+    """A file of starting weights under <data root>/weights/, its source, and its hash's start."""
+
+    file: str
+    url: str
+    sha256_prefix: str
+
+
+STARTING_WEIGHTS = {
+    "imagenet": StartingWeights(
+        "resnet18_imagenet-b1d1d36f.safetensors",
+        "https://huggingface.co/smp-hub/resnet18.imagenet/resolve/"
+        "2342da24790e8544df7e13341baea94680e6dee1/model.safetensors",
+        "b1d1d36f",
+    ),
+    "sentinel2_moco": StartingWeights(
+        "resnet18_sentinel2_all_moco-59bfdff9.pth",
+        "https://hf.co/torchgeo/resnet18_sentinel2_all_moco/resolve/"
+        "5b8cddc9a14f3844350b7f40b85bcd32aed75918/resnet18_sentinel2_all_moco-59bfdff9.pth",
+        "59bfdff9",
+    ),
+}
+
+
 def starting_weights_path(root: Path, encoder_weights: str | None) -> Path | None:
     """Return the file holding the chosen starting weights, or None when none are chosen."""
-    names = {
-        "imagenet": "resnet18_imagenet-b1d1d36f.safetensors",
-        "sentinel2_moco": "resnet18_sentinel2_all_moco-59bfdff9.pth",
-    }
-    return root / "weights" / names[encoder_weights] if encoder_weights in names else None
+    weights = STARTING_WEIGHTS.get(encoder_weights)
+    return None if weights is None else root / "weights" / weights.file
+
+
+def tile_slots(tile_index: int, cells_per_tile: int) -> slice:
+    """Return the store rows of one tile's cells, which lie side by side in tile_index order."""
+    return slice(tile_index * cells_per_tile, (tile_index + 1) * cells_per_tile)
 
 
 def open_store(root: Path, mode: str = "r") -> CellStore:

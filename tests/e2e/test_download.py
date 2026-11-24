@@ -828,13 +828,12 @@ def test_present_weights_with_another_hash_are_fetched_again(tmp_path: Path) -> 
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(torch.hub, "download_url_to_file", fake_fetch)
-        patch.setattr(
-            download,
-            "IMAGENET_HASH",
-            hashlib.sha256(b"published weights").hexdigest()[:8],
+        published = garimpo_uncertainty.data.STARTING_WEIGHTS["imagenet"]._replace(
+            sha256_prefix=hashlib.sha256(b"published weights").hexdigest()[:8]
         )
+        patch.setitem(garimpo_uncertainty.data.STARTING_WEIGHTS, "imagenet", published)
         download.download_weights(tmp_path, ["imagenet"])
-        assert fetched == [download.IMAGENET_URL]
+        assert fetched == [published.url]
         download.download_weights(tmp_path, ["imagenet"])
-    assert fetched == [download.IMAGENET_URL]
+    assert fetched == [published.url]
     assert target.read_bytes() == b"published weights"

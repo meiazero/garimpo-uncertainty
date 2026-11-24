@@ -86,6 +86,8 @@ def test_metrics_stage_requires_a_tolerance(
         "compute_metrics",
         "--run-dir",
         str(finished_run.run_dir),
+        "--seed",
+        "0",
         data_root=data_root,
         check=False,
     )
@@ -257,9 +259,7 @@ def test_missing_input_is_recorded(saturated_run: Path, data_root: Path, tmp_pat
     run_dir = Path(shutil.copytree(saturated_run, tmp_path / "saturated"))
     result = support.run(
         "compass_scores",
-        *support.checkpoint_args(run_dir),
-        "--layer",
-        "absent.layer",
+        *support.stage_args("compass_scores", run_dir, LAYER="absent.layer"),
         data_root=data_root,
         check=False,
     )
@@ -492,8 +492,7 @@ def absent_cells(private_convnet: support.FinishedRun, data_root: Path) -> Absen
 
 
 def calibrate_command(run_dir: Path) -> tuple[str, str, list[str]]:
-    args = ["--run-dir", str(run_dir), "--cells", "all", "--score-floor-ha", "0.01", "--force"]
-    return "calibrate", "calibrate", args
+    return "calibrate", "calibrate", [*support.stage_args("calibrate", run_dir), "--force"]
 
 
 def generate_command(run_dir: Path) -> tuple[str, str, list[str]]:
@@ -643,6 +642,8 @@ def test_calibration_requires_a_score_floor(data_root: Path, tmp_path: Path) -> 
         str(tmp_path / "never_read"),
         "--cells",
         "all",
+        "--seed",
+        "0",
         data_root=data_root,
         check=False,
     )
@@ -663,6 +664,8 @@ def test_calibration_refuses_a_floor_that_is_not_positive_and_finite(
         "--cells",
         "all",
         f"--score-floor-ha={floor}",
+        "--seed",
+        "0",
         data_root=data_root,
         check=False,
     )
@@ -700,21 +703,12 @@ def test_local_score_floors_a_confident_model(
 
 
 def fit_directions(
-    run: support.FinishedRun, data_root: Path, *extra: str
+    run: support.FinishedRun, data_root: Path, **changes: object
 ) -> subprocess.CompletedProcess:
     return support.run(
         "fit_directions",
-        *support.checkpoint_args(run.run_dir),
-        "--layers",
-        run.layer,
-        "--svm-c",
-        "1.0",
-        "--svm-class-weight",
-        "balanced",
-        "--svm-pixels-per-cell",
-        "50",
+        *support.stage_args("fit_directions", run.run_dir, LAYERS=[run.layer], **changes),
         "--force",
-        *extra,
         data_root=data_root,
         check=False,
     )
@@ -752,7 +746,7 @@ def test_a_model_with_no_gradient_stops_the_direction_fit(
 
     No direction can then be oriented toward more area, and none may be written.
     """
-    result = fit_directions(private_convnet, data_root, "--direction-temperature", "1e30")
+    result = fit_directions(private_convnet, data_root, DIRECTION_TEMPERATURE="1e30")
     assert result.returncode != 0
     status = private_convnet.run_dir / "status" / "fit_directions.json"
     error = json.loads(status.read_text())["error"]

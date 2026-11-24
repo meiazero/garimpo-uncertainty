@@ -378,7 +378,9 @@ def test_pipeline_check_reads_another_layers_results(passed_job: PassedJob) -> N
     assert f"results contain NaN in PICP or MPIW [{other}]" in verdict
 
 
-@pytest.mark.parametrize(("content", "cause"), [(None, "FileNotFoundError"), ("[]", "KeyError")])
+@pytest.mark.parametrize(
+    ("content", "cause"), [(None, "FileNotFoundError"), ("[]", "TypeError"), ("{}", "KeyError")]
+)
 def test_pipeline_check_fails_without_the_chosen_layer(
     passed_job: PassedJob, content: str | None, cause: str
 ) -> None:
@@ -397,10 +399,21 @@ def test_pipeline_check_fails_without_the_chosen_layer(
     assert "chosen_layer.json" in report.stdout.split("PIPELINE CHECK: FAIL")[1]
 
 
+def test_full_job_with_a_garbled_choice_still_ends_in_a_verdict(passed_job: PassedJob) -> None:
+    """A chosen_layer.json that is JSON but not an object stops the job, never its check."""
+    run_dir = passed_job.run_dir
+    with support.restored_after(run_dir):
+        (run_dir / "chosen_layer.json").write_text("[]")
+        result = run_job(passed_job.model)
+    assert result.returncode == 1, result.stdout[-8000:] + result.stderr[-4000:]
+    assert "Could not read the chosen layer" in result.stdout
+    assert "PIPELINE CHECK: FAIL" in result.stdout
+
+
 def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
     """--force-from redoes its stage and later ones, --force-validate the validation; none retrains.
 
-    The rerun appends a second attempt to the log, under the first.
+    The rerun appends its attempt to the log, under the first.
     """
     run_dir = passed_job.run_dir
     validation = DATA / "status" / "fraction-1.0-seed-7" / "validate_data.json"
@@ -419,9 +432,10 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         assert validation.stat().st_mtime_ns != validated
         assert (run_dir / "best_model.pt").stat().st_mtime_ns == checkpoint
     log = log_of(passed_job.model).read_text(encoding="utf-8")
-    first, second = log.split(ATTEMPT)[1:3]
-    assert "PIPELINE CHECK: PASS" in first
-    assert "PIPELINE CHECK: PASS" in second
+    attempts = log.split(ATTEMPT)[1:]
+    assert len(attempts) >= 2
+    assert "PIPELINE CHECK: PASS" in attempts[0]
+    assert "PIPELINE CHECK: PASS" in attempts[-1]
 
 
 def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(

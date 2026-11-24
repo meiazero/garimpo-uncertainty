@@ -284,8 +284,7 @@ def test_weighted_rows_put_the_test_cell_at_infinity(evaluation: Evaluation) -> 
     assert (test_ratio > 0).all()
 
 
-# support.run_scores_and_intervals passes it to calibrate.py.
-SCORE_FLOOR_HA = 0.01
+SCORE_FLOOR_HA = float(support.STAGE_VALUES["SCORE_FLOOR_HA"])
 
 
 def test_relative_scores_floor_their_denominator(evaluation: Evaluation) -> None:

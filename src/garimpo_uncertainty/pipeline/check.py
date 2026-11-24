@@ -6,7 +6,6 @@ while it and every earlier stage are ok, since a restore from Drive brings back 
 """
 
 import argparse
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,9 +20,6 @@ import garimpo_uncertainty.validation
 PASS, FAIL = "PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL"
 # Each run's log ends with one of these; `garimpo status` reads them back.
 VERDICTS = (PASS, FAIL)
-# What reading chosen_layer.json raises when the file is absent, a directory, or not the object
-# choose_layer writes; the report names it instead of stopping before its verdict.
-UNREADABLE = (OSError, ValueError, KeyError, TypeError)
 
 
 def not_current(statuses: dict[str, str], stage: str) -> str | None:
@@ -56,7 +52,7 @@ def print_table(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
-    parser.add_argument("--split", type=Path, default="outputs/split.csv")
+    parser.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     # Arguments and not run_meta.json: a job that fails before training has no run_meta.json.
     parser.add_argument("--train-fraction", type=float, required=True)
     parser.add_argument("--subset-seed", type=int, required=True)
@@ -153,10 +149,8 @@ def report_store(
 
 
 def read_chosen(path: Path) -> tuple[dict, pd.DataFrame]:
-    """Return chosen_layer.json and its candidates by layer; raise one of UNREADABLE otherwise."""
-    chosen = json.loads(path.read_text(encoding="utf-8"))
-    if absent := {"layer", "min_fraction_ascending", "candidates"} - set(chosen):
-        raise KeyError(f"no {sorted(absent)}")
+    """Return chosen_layer.json and its candidates by layer."""
+    chosen = garimpo_uncertainty.artifacts.read_chosen_layer(path)
     return chosen, pd.DataFrame(chosen["candidates"]).set_index("layer")
 
 
@@ -171,7 +165,7 @@ def print_chosen_layer(path: Path, stale: str | None) -> None:
         return
     try:
         chosen, candidates = read_chosen(path)
-    except UNREADABLE as error:
+    except garimpo_uncertainty.artifacts.UNREADABLE as error:
         print(f"unreadable: {type(error).__name__}: {error}")
         return
     print(f"{chosen['layer']}, ascending on at least {chosen['min_fraction_ascending']}")
@@ -256,7 +250,7 @@ def other_layer_records(
         chosen = read_chosen(path)[0]["layer"]
         if chosen not in layers:
             raise ValueError(f"layer {chosen!r} is not one of LAYERS {layers}")
-    except UNREADABLE as error:
+    except garimpo_uncertainty.artifacts.UNREADABLE as error:
         cause = f"{path}: {type(error).__name__}: {error}"
         return [{"stage": path.name, "status": "unreadable", "error": cause}], []
     others = [layer for layer in layers if layer != chosen]

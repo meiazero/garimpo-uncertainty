@@ -28,7 +28,7 @@ def check_slots(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--split", type=Path, default="outputs/split.csv")
+    parser.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     parser.add_argument(
         "--train-fraction",
         type=float,
@@ -36,7 +36,7 @@ def main() -> None:
         required=True,
     )
     parser.add_argument("--subset-seed", type=int, required=True)
-    parser.add_argument("--cell-px", type=int, default=garimpo_uncertainty.data.CELL_PX)
+    parser.add_argument("--cell-px", type=int, required=True)
     parser.add_argument("--report", type=Path, required=True, help="one per fraction and seed")
     parser.add_argument(
         "--split-summary", type=Path, help="counts to match, with the train role reduced to fit"

@@ -41,16 +41,6 @@ GPKG_MEMBER = "mining_area_data.gpkg"
 STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-2-l2a/items/"
 TOKEN_URL = "https://planetarycomputer.microsoft.com/api/sas/v1/token/sentinel-2-l2a"  # noqa: S105 - a URL, not a password
 TOKEN_REFRESH_S = 20 * 60
-SENTINEL2_MOCO_URL = (
-    "https://hf.co/torchgeo/resnet18_sentinel2_all_moco/resolve/"
-    "5b8cddc9a14f3844350b7f40b85bcd32aed75918/resnet18_sentinel2_all_moco-59bfdff9.pth"
-)
-SENTINEL2_MOCO_HASH = "59bfdff9"
-IMAGENET_URL = (
-    "https://huggingface.co/smp-hub/resnet18.imagenet/resolve/"
-    "2342da24790e8544df7e13341baea94680e6dee1/model.safetensors"
-)
-IMAGENET_HASH = "b1d1d36f"
 ASSETS_10M = {"B02", "B03", "B04", "B08"}
 BASELINE_WITH_OFFSET = 4.0
 BOA_OFFSET_DN = -1000
@@ -79,12 +69,8 @@ def download_weights(root: Path, encoder_weights: list[str]) -> None:
     """Fetch the chosen starting weights under the data root, for offline training."""
     import torch.hub  # noqa: PLC0415 - only this command needs torch; the others run without it
 
-    sources = {
-        "imagenet": (IMAGENET_URL, IMAGENET_HASH),
-        "sentinel2_moco": (SENTINEL2_MOCO_URL, SENTINEL2_MOCO_HASH),
-    }
     for choice in encoder_weights:
-        url, hash_prefix = sources[choice]
+        _, url, hash_prefix = garimpo_uncertainty.data.STARTING_WEIGHTS[choice]
         target = garimpo_uncertainty.data.starting_weights_path(root, choice)
         # Checked when present too: other weights there would train and record their own hash.
         if target.exists() and garimpo_uncertainty.files.file_sha256(target).startswith(
@@ -233,8 +219,8 @@ def write_cells(
     geometry = shapely.make_valid(tile.geometry)
     mask = _rasterized_mask(geometry, tile.transform, (height, width))
     windows = _cell_windows(height, width, cell_px)
-    first_slot = tile_index * len(windows)
-    for slot, window in enumerate(windows, start=first_slot):
+    slots = garimpo_uncertainty.data.tile_slots(tile_index, len(windows))
+    for slot, window in enumerate(windows, start=slots.start):
         rows, cols = window.toslices()
         store.images[slot] = tile.image[:, rows, cols]
         store.masks[slot] = mask[rows, cols]
@@ -249,9 +235,7 @@ def write_cells(
     return {
         "tile_index": tile_index,
         "cells_per_tile": len(windows),
-        "slots_sha256": garimpo_uncertainty.data.slots_sha256(
-            store, slice(first_slot, first_slot + len(windows))
-        ),
+        "slots_sha256": garimpo_uncertainty.data.slots_sha256(store, slots),
     }
 
 

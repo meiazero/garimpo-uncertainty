@@ -6,11 +6,9 @@ and quantile as [A, K, N] arrays, A indexing ALPHAS, K COMBINATIONS and N the te
 
 import argparse
 import itertools
-from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple, Self
 
-import compass2d.compass
 import compass2d.directions
 import compass2d.metrics
 import numpy as np
@@ -20,6 +18,7 @@ import torch
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
+import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
@@ -29,57 +28,6 @@ import garimpo_uncertainty.pipeline.runner
 COMPASS_ROWS = (
     garimpo_uncertainty.intervals.COMPASS_METHODS + garimpo_uncertainty.intervals.ASYMMETRIC_METHODS
 )
-
-
-class SearchSpace(NamedTuple):
-    """What one COMPASS method perturbs: the point, its direction, and how to read an area."""
-
-    decode: Callable[[torch.Tensor], torch.Tensor]
-    metric: Callable[[torch.Tensor], torch.Tensor]
-    z: torch.Tensor
-    delta: torch.Tensor
-
-    def endpoints(self, beta: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return compass2d.compass.endpoints(self.decode, self.metric, self.z, self.delta, beta)
-
-    def shifted(self, beta: torch.Tensor) -> torch.Tensor:
-        return compass2d.compass.shifted(self.decode, self.metric, self.z, self.delta, beta)
-
-
-def search_spaces(
-    model: torch.nn.Module,
-    features: list[torch.Tensor],
-    jacobians: np.ndarray,
-    fitted: compass2d.directions.Directions,
-    args: argparse.Namespace,
-) -> dict[str, SearchSpace]:
-    """Return each COMPASS method's search space on this batch."""
-    pixel_ha = garimpo_uncertainty.data.PIXEL_HA
-
-    def soft(logits: torch.Tensor) -> torch.Tensor:
-        return compass2d.metrics.soft_area(logits, pixel_ha, args.temperature)
-
-    logits, _ = garimpo_uncertainty.models.common.split_at(
-        model, garimpo_uncertainty.models.common.LOGITS, features
-    )
-    z, decode = garimpo_uncertainty.models.common.split_at(model, args.layer, features)
-    spaces = {
-        "compass_l": SearchSpace(
-            lambda zi: zi,
-            lambda output: compass2d.metrics.hard_area(output, pixel_ha),
-            logits,
-            torch.ones_like(logits),
-        )
-    }
-    for direction in ("pca", "svm"):
-        delta = compass2d.directions.cell_deltas(direction, jacobians, fitted)
-        spaces[f"compass_j_{direction}"] = SearchSpace(
-            decode,
-            soft,
-            z,
-            compass2d.compass.channel_delta(torch.from_numpy(delta.copy()).to(z)),
-        )
-    return spaces
 
 
 class Calibrated(NamedTuple):
@@ -99,7 +47,7 @@ class Calibrated(NamedTuple):
 
 
 def row_endpoints(
-    space: SearchSpace, method: str, beta: torch.Tensor, ratio: float
+    space: garimpo_uncertainty.compass_j.Space, method: str, beta: torch.Tensor, ratio: float
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Symmetric endpoints, or [m(z - beta delta), m(z + ratio beta delta)] for an a_ row."""
     if method in garimpo_uncertainty.intervals.ASYMMETRIC_METHODS:
@@ -138,8 +86,12 @@ def compass_endpoints(
     for images, _, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         last = first + len(images)
         features = garimpo_uncertainty.models.common.encode(model, images.to(device))
-        batch_jacobians = jacobians[first:last].astype(np.float64)
-        spaces = search_spaces(model, features, batch_jacobians, fitted, args)
+        spaces = garimpo_uncertainty.compass_j.spaces(
+            garimpo_uncertainty.compass_j.split(model, features, args.layer),
+            jacobians[first:last],
+            fitted,
+            args.temperature,
+        )
         for a, (k, method) in itertools.product(range(len(calibrated.quantile)), rows):
             beta = torch.as_tensor(calibrated.quantile[a, k, first:last], device=device)
             # Censored rows become the whole cell in widen_saturated; 0 keeps inf from the decoder.
@@ -231,7 +183,6 @@ def main() -> None:
     )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    args.layer_dir = args.layer_dir or args.run_dir
     garimpo_uncertainty.pipeline.runner.log_to_stdout()
 
     root = garimpo_uncertainty.data.data_root()

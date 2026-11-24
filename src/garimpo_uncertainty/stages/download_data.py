@@ -118,7 +118,7 @@ def download_all(root: Path) -> None:
     garimpo_uncertainty.download.download_metadata(root)
     scenes = argparse.Namespace(
         command="scenes",
-        split=Path("outputs/split.csv"),
+        split=garimpo_uncertainty.data.SPLIT_PATH,
         tiles=Path("outputs/tiles/tiles_100pct.json"),
         workers=workers,
         resampling_20m="bilinear",
@@ -159,11 +159,11 @@ def download() -> None:
     lists = commands.add_parser(
         "lists", help="regenerate the versioned tile list of each fraction", allow_abbrev=False
     )
-    lists.add_argument("--split", type=Path, default="outputs/split.csv")
+    lists.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     lists.add_argument("--subset-seed", type=int, required=True, help="picks the training tiles")
     lists.add_argument("--out", type=Path, default="outputs/tiles")
     scenes = commands.add_parser("scenes", help="cells from Planetary Computer", allow_abbrev=False)
-    scenes.add_argument("--split", type=Path, default="outputs/split.csv")
+    scenes.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     scenes.add_argument(
         "--tiles", type=Path, required=True, help="a list written by the lists command"
     )

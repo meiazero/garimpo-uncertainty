@@ -12,7 +12,6 @@ check runs last, after a failed or interrupted stage too.
 """
 
 import argparse
-import json
 import os
 import shlex
 import signal
@@ -161,8 +160,8 @@ def run_stages(log: Log, values: dict, force_from: str | None) -> int:
         return code
     run = garimpo_uncertainty.artifacts.RunPaths.of(Path(values["RUN_DIR"]))
     try:
-        layer = json.loads(run.chosen_layer.read_text(encoding="utf-8"))["layer"]
-    except (OSError, ValueError, KeyError) as error:
+        layer = garimpo_uncertainty.artifacts.read_chosen_layer(run.chosen_layer)["layer"]
+    except garimpo_uncertainty.artifacts.UNREADABLE as error:
         log.write(f"Could not read the chosen layer from {run.chosen_layer}: {error!r}")
         return 1
     log.write(f"chosen layer: {layer}")
