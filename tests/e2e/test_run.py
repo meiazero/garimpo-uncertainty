@@ -545,7 +545,9 @@ def refusal(tmp_path: Path, **changes: object) -> str:
     return str(refused.value)
 
 
-@pytest.mark.parametrize("name", garimpo_uncertainty.config.REQUIRED)
+@pytest.mark.parametrize(
+    "name", [*garimpo_uncertainty.config.REQUIRED, garimpo_uncertainty.config.ENCODER_WEIGHTS]
+)
 def test_config_refuses_an_empty_value(tmp_path: Path, name: str) -> None:
     """Every value, left null, refuses the config: the job would otherwise fail after training."""
     assert f"{name}: missing or empty" in refusal(
