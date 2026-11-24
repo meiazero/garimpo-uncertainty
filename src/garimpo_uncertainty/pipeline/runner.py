@@ -35,6 +35,13 @@ IGNORED_ARGUMENTS = {
 }
 MISSING_INPUT = "missing"
 NOT_RUN = "not_run"
+# A job's log lines that `garimpo status` reads back: each attempt starts with ATTEMPT, and the
+# check ends it with one of VERDICTS.
+ATTEMPT = "=== attempt started "
+PASS, FAIL = "PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL"
+VERDICTS = (PASS, FAIL)
+# The one stage every fraction shares, with its status in the data root instead of a run.
+DOWNLOAD_SCENES = "download_scenes"
 # The stages that depend on the COMPASS-J layer; a job also runs them on each other layer.
 LAYER_STAGES = ("compass_scores", "calibrate", "generate_intervals", "compute_metrics")
 # The order a job runs a model's stages in, after validate_data; --force-from names one.

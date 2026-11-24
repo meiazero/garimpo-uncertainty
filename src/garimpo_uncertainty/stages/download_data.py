@@ -96,7 +96,7 @@ def download_scenes_stage(root: Path, args: argparse.Namespace) -> None:
     # No outputs listed: a rerun always checks the sidecars and fetches what is still pending.
     garimpo_uncertainty.pipeline.runner.run_stage(
         root / "status",
-        "download_scenes",
+        garimpo_uncertainty.pipeline.runner.DOWNLOAD_SCENES,
         [],
         garimpo_uncertainty.pipeline.runner.fingerprint(args, []),
         work,

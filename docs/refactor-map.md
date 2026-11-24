@@ -101,7 +101,7 @@ Not worth it:
   - `tiles/<tile_id>.json` is built by hand at `data.py:181`, `:241`, `download.py:149`, `:243`, `:356`, `:413`.
   - `"missing_item"` and `"no_mask_polygon"` are written at `download.py:389`, `:597` and matched at `validation.py:20`.
   - `stages/download_data.py:42` builds `tiles_<pct>pct.json` and `:122` spells `tiles_100pct.json`.
-- [ ] 15. Keep the stage names and log strings the pipeline shares in `pipeline/runner.py`, so the check and the status stop reading other modules' text. (5 files)
+- [x] 15. Keep the stage names and log strings the pipeline shares in `pipeline/runner.py`, so the check and the status stop reading other modules' text. (5 files)
   - `pipeline/check.py:124` tells a missing store by `startswith("store_missing")`, the text `validation.py:145` writes; `data.missing_arrays` answers it directly.
   - `"download_scenes"` at `check.py:96`, `:328`, written by `stages/download_data.py:92`.
   - `pipeline/status.py:15-16` imports `pipeline.check` (and with it sklearn) and `pipeline.run` only for `VERDICTS` and `ATTEMPT`.
