@@ -130,22 +130,6 @@ def restored_after(directory: Path) -> Iterator[Path]:
         backup.rename(directory)
 
 
-@contextmanager
-def one_core() -> Iterator[None]:
-    """Pin this process, and every stage it starts meanwhile, to one CPU.
-
-    oneDNN picks its CPU kernels from the core a process starts on, so on a hybrid CPU two runs
-    with one seed differ in the last bits when one starts on a performance core and the other on an
-    efficiency core. Exact comparisons across processes need every process on one kind of core.
-    """
-    allowed = os.sched_getaffinity(0)
-    os.sched_setaffinity(0, {min(allowed)})
-    try:
-        yield
-    finally:
-        os.sched_setaffinity(0, allowed)
-
-
 def build_once(name: str, build: Callable[[], object]) -> None:
     """Run `build` in the first worker to ask; the others wait here, then share what it wrote.
 

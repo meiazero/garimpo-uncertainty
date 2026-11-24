@@ -11,8 +11,8 @@ import pytest
 os.environ["OMP_NUM_THREADS"] = "1"
 
 # On a hybrid Intel CPU, oneDNN's dilated convolution, in the ConvNet's encoder, gives other last
-# bits on an efficiency core than on a performance core, so a stage and a test recomputing it in
-# another process could disagree. Every process, workers and stages included, inherits this.
+# bits on an efficiency core than on a performance core, so two processes compared to the bit could
+# disagree. Every process, workers and stages included, inherits this; a narrower taskset stays.
 EFFICIENCY_CORES = Path("/sys/devices/cpu_atom/cpus")
 
 
@@ -26,8 +26,8 @@ def cpu_list(text: str) -> set[int]:
 
 
 efficiency_cores = EFFICIENCY_CORES.read_text(encoding="utf-8") if EFFICIENCY_CORES.exists() else ""
-if efficiency_cores.strip():
-    os.sched_setaffinity(0, cpu_list(efficiency_cores))
+if efficiency_cores.strip() and (pinned := cpu_list(efficiency_cores) & os.sched_getaffinity(0)):
+    os.sched_setaffinity(0, pinned)
 
 ARTIFACTS = Path(__file__).parent / "artifacts"
 
