@@ -20,6 +20,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages
@@ -200,7 +201,7 @@ def main() -> None:
         # Validation cells fix the asymmetric rows' side ratio, apart from calibration.
         evaluated = cells[cells.role.isin(["validation", "calibration", "test"])]
         arrays = score_cells(model, evaluated, root, metadata, args, device=device)
-        garimpo_uncertainty.stages.write_arrays(scores_path, **arrays)
+        garimpo_uncertainty.files.write_arrays(scores_path, **arrays)
         return {
             "jacobians": list(arrays["jacobians"].shape),
             "feature_sums": list(arrays["feature_sums"].shape),

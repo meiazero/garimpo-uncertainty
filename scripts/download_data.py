@@ -5,7 +5,6 @@
 """
 
 import argparse
-import hashlib
 import json
 import logging
 import os
@@ -18,6 +17,7 @@ import rasterio.enums
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.download
+import garimpo_uncertainty.files
 import garimpo_uncertainty.stages
 
 # A child of the package's logger, so its lines reach the terminal and the log file.
@@ -25,10 +25,6 @@ logger = logging.getLogger("garimpo_uncertainty.download_data")
 # 18,864 slots of 3,670,016 bytes (docs/data-layout.md), plus 2 GB for Zenodo, weights and sidecars.
 STORE_BYTES = 18864 * 3670016 + 2 * 1000**3
 GB = 1000**3
-
-
-def file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def write_tile_lists(split_path: Path, subset_seed: int, directory: Path) -> None:
@@ -40,18 +36,18 @@ def write_tile_lists(split_path: Path, subset_seed: int, directory: Path) -> Non
         tile_list = {
             "train_fraction": fraction,
             "subset_seed": subset_seed,
-            "split_sha256": file_sha256(split_path),
+            "split_sha256": garimpo_uncertainty.files.file_sha256(split_path),
             "tiles": selected[["tile_id", "role"]].sort_values("tile_id").to_dict("records"),
         }
         path = directory / f"tiles_{round(fraction * 100)}pct.json"
-        garimpo_uncertainty.stages.write_json(path, tile_list)
+        garimpo_uncertainty.files.write_json(path, tile_list)
         print(f"{path}: {len(selected)} tiles, {len(selected) * cells_per_tile} cells")
 
 
 def listed_tiles(list_path: Path, split_path: Path, split: pd.DataFrame) -> pd.DataFrame:
     """Return the split's rows a list names; a list from another split would mean other slots."""
     tile_list = json.loads(list_path.read_text(encoding="utf-8"))
-    current = file_sha256(split_path)
+    current = garimpo_uncertainty.files.file_sha256(split_path)
     if tile_list["split_sha256"] != current:
         raise ValueError(
             f"{list_path} has split_sha256 {tile_list['split_sha256'][:12]}, but {split_path} is "

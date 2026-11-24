@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
+import garimpo_uncertainty.files
 import garimpo_uncertainty.stages
 
 DIRECTIONS = ("pca", "svm")
@@ -62,7 +63,7 @@ def main() -> None:
         output.unlink(missing_ok=True)
         table = candidates(pd.read_csv(diagnostics_path), pd.read_csv(monotonicity_path))
         layer = choose(table, args.min_fraction_ascending)
-        garimpo_uncertainty.stages.write_json(
+        garimpo_uncertainty.files.write_json(
             output,
             {
                 "layer": layer,

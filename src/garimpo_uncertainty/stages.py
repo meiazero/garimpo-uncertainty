@@ -8,17 +8,15 @@ import logging
 import os
 import resource
 import socket
-import subprocess
 import sys
 import time
 import traceback
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import NoReturn
 
-import numpy as np
+import garimpo_uncertainty.files
 
 logger = logging.getLogger(__name__)
 
@@ -134,59 +132,13 @@ def _peak_memory() -> dict:
     return peak
 
 
-@contextmanager
-def atomic(path: Path) -> Iterator[Path]:
-    """Yield a temporary path renamed to `path` on success, so a crash leaves no partial file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    try:
-        yield temporary
-        Path(temporary).replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def write_json(path: Path, content: dict) -> None:
-    with atomic(path) as temporary:
-        temporary.write_text(json.dumps(content, indent=2, default=str) + "\n")
-
-
-def write_arrays(path: Path, **arrays: np.ndarray) -> None:
-    with atomic(path) as temporary, temporary.open("wb") as file:
-        np.savez(file, **arrays)
-
-
-# The checkout this package runs from, so the records do not depend on the working directory.
-ROOT = Path(__file__).resolve().parents[2]
-
-
-def _git(directory: Path, *args: str) -> str:
-    try:
-        command = ["git", "-C", str(directory), *args]
-        return subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip()  # noqa: S603 - literal git arguments only
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-
-
-def code_versions() -> dict[str, str | bool]:
-    """Return the commits of the package and the submodule, as the job actually saw them."""
-    return {
-        "root_commit": _git(ROOT, "rev-parse", "HEAD"),
-        "root_dirty": bool(
-            _git(ROOT, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=dirty")
-        ),
-        "compass_commit": _git(ROOT / "compass", "rev-parse", "HEAD"),
-        "compass_dirty": bool(_git(ROOT / "compass", "status", "--porcelain")),
-    }
-
-
 def _identity(name: str) -> dict:
     # The code each stage ran, since a session may pull between stages of one run.
     return {
         "stage": name,
         "host": socket.gethostname(),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
-        **code_versions(),
+        **garimpo_uncertainty.files.code_versions(),
     }
 
 
@@ -199,7 +151,9 @@ def fail_stage(status_dir: Path, name: str, message: str) -> NoReturn:
     previous = json.loads(status_path.read_text()) if status_path.exists() else {}
     completed = previous.get("completed_fingerprint")
     kept = {"completed_fingerprint": completed} if completed else {}
-    write_json(status_path, _identity(name) | kept | {"status": "failed", "error": message})
+    garimpo_uncertainty.files.write_json(
+        status_path, _identity(name) | kept | {"status": "failed", "error": message}
+    )
     raise SystemExit(message)
 
 
@@ -215,7 +169,7 @@ def _skip_or_refuse(status_path: Path, name: str, previous: dict, stage_fingerpr
     if previous["completed_fingerprint"] == stage_fingerprint:
         if previous["status"] != "ok":
             restored = {k: v for k, v in previous.items() if k != "error"}
-            write_json(status_path, restored | {"status": "ok"})
+            garimpo_uncertainty.files.write_json(status_path, restored | {"status": "ok"})
         logger.info("%s: outputs exist, skipping (use --force to redo)", name)
         return
     # The validation sits outside STAGE_ORDER.
@@ -225,7 +179,9 @@ def _skip_or_refuse(status_path: Path, name: str, previous: dict, stage_fingerpr
         else f"--force-from {name} to redo this stage and those after it"
     )
     message = f"{name}: outputs exist from other inputs or arguments; use --force, or {redo}"
-    write_json(status_path, previous | {"status": "refused", "error": message})
+    garimpo_uncertainty.files.write_json(
+        status_path, previous | {"status": "refused", "error": message}
+    )
     raise SystemExit(message)
 
 
@@ -246,7 +202,9 @@ def _mark_later_stale(status_dir: Path, name: str) -> None:
         path = directory / f"{stage}.json"
         record = json.loads(path.read_text()) if path.exists() else {}
         if record.get("status") == "ok":
-            write_json(path, record | {"status": "stale", "error": f"{name} ran again after it"})
+            garimpo_uncertainty.files.write_json(
+                path, record | {"status": "stale", "error": f"{name} ran again after it"}
+            )
 
 
 def _run_work(
@@ -254,7 +212,7 @@ def _run_work(
 ) -> None:
     identity = _identity(name)
     _mark_later_stale(status_path.parent, name)
-    write_json(status_path, identity | {"status": "running"})
+    garimpo_uncertainty.files.write_json(status_path, identity | {"status": "running"})
     start = time.monotonic()
     try:
         shapes = work()
@@ -266,13 +224,13 @@ def _run_work(
             "traceback": traceback.format_exc(limit=32),
             "seconds": round(time.monotonic() - start, 1),
         }
-        write_json(status_path, record | _peak_memory())
+        garimpo_uncertainty.files.write_json(status_path, record | _peak_memory())
         raise
     except KeyboardInterrupt:
         # Ctrl+C is no failure to debug: the stage stopped where it was and a rerun resumes it.
         seconds = round(time.monotonic() - start, 1)
         stopped = {"status": "interrupted", "error": "Ctrl+C; rerun to resume", "seconds": seconds}
-        write_json(status_path, identity | stopped)
+        garimpo_uncertainty.files.write_json(status_path, identity | stopped)
         raise
     record = identity | {
         "status": "ok",
@@ -280,7 +238,7 @@ def _run_work(
         "shapes": shapes,
         "seconds": round(time.monotonic() - start, 1),
     }
-    write_json(status_path, record | _peak_memory())
+    garimpo_uncertainty.files.write_json(status_path, record | _peak_memory())
     logger.info("%s: ok in %s s, %s", name, record["seconds"], shapes)
 
 

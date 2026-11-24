@@ -21,6 +21,7 @@ import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
+import garimpo_uncertainty.files
 import garimpo_uncertainty.stages
 
 PERSISTED_ROLES = ("validation", "calibration", "test")
@@ -151,7 +152,7 @@ def main() -> None:
             role_seconds[role] = time.monotonic() - role_start
             role_peaks[role] = garimpo_uncertainty.stages.take_gpu_peak_bytes()
             data_wait[role] = round(wait, 3)
-        garimpo_uncertainty.stages.write_arrays(
+        garimpo_uncertainty.files.write_arrays(
             cells_path, cell_index=cells.cell_index.to_numpy(), **columns
         )
         shapes = {role: list(np.load(path, mmap_mode="r").shape) for role, path in arrays.items()}

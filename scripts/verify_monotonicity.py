@@ -18,6 +18,7 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages
 
@@ -169,7 +170,7 @@ def main() -> None:
                 min(args.cells_per_role, len(role_cells)), random_state=args.seed
             )
             rows += sweep_role(model, role, subset, root, metadata, args=args, device=device)
-        with garimpo_uncertainty.stages.atomic(output) as temporary:
+        with garimpo_uncertainty.files.atomic(output) as temporary:
             pd.DataFrame(rows).to_csv(temporary, index=False)
         return {"rows": len(rows), "cells_per_role": args.cells_per_role}
 

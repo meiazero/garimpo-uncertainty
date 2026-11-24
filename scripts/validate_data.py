@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.stages
 import garimpo_uncertainty.validation
 
@@ -75,7 +76,7 @@ def main() -> None:
                 workers=args.workers,
                 slot_problems=slot_problems,
             )
-        garimpo_uncertainty.stages.write_json(args.report, report)
+        garimpo_uncertainty.files.write_json(args.report, report)
         print(json.dumps(report, indent=2))
         if report["problems"]:
             raise ValueError("; ".join(report["problems"]))

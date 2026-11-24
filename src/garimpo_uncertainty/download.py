@@ -31,7 +31,7 @@ import rasterio.windows
 import shapely
 
 import garimpo_uncertainty.data
-import garimpo_uncertainty.stages
+import garimpo_uncertainty.files
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def download_metadata(root: Path) -> None:
     archive = root / "zenodo" / "mining_area_data.zip"
     archive.parent.mkdir(parents=True, exist_ok=True)
     if not (archive.exists() and _md5(archive) == ZENODO_MD5):
-        with garimpo_uncertainty.stages.atomic(archive) as temporary:
+        with garimpo_uncertainty.files.atomic(archive) as temporary:
             with urllib.request.urlopen(ZENODO_URL, timeout=120) as response:
                 temporary.write_bytes(response.read())
             if _md5(temporary) != ZENODO_MD5:
@@ -87,15 +87,12 @@ def download_weights(root: Path, encoder_weights: list[str]) -> None:
         url, hash_prefix = sources[choice]
         target = garimpo_uncertainty.data.starting_weights_path(root, choice)
         # Checked when present too: other weights there would train and record their own hash.
-        if target.exists() and _sha256(target).startswith(hash_prefix):
+        if target.exists() and garimpo_uncertainty.files.file_sha256(target).startswith(
+            hash_prefix
+        ):
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         torch.hub.download_url_to_file(url, str(target), hash_prefix=hash_prefix)
-
-
-def _sha256(path: Path) -> str:
-    with path.open("rb") as file:
-        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 def _md5(path: Path) -> str:
@@ -182,7 +179,7 @@ def create_store(root: Path, n_tiles: int, tile_px: int, cell_px: int) -> None:
     for name, (dtype, shape) in layout.items():
         path = root / f"{name}.npy"
         if not path.exists():
-            with garimpo_uncertainty.stages.atomic(path) as temporary:
+            with garimpo_uncertainty.files.atomic(path) as temporary:
                 np.lib.format.open_memmap(temporary, mode="w+", dtype=dtype, shape=shape).flush()
         elif np.load(path, mmap_mode="r").shape != shape:
             raise ValueError(
@@ -259,7 +256,7 @@ def write_cells(
 
 
 def write_sidecar(root: Path, tile_id: int, record: dict) -> None:
-    garimpo_uncertainty.stages.write_json(root / "tiles" / f"{tile_id}.json", record)
+    garimpo_uncertainty.files.write_json(root / "tiles" / f"{tile_id}.json", record)
 
 
 def _signed(href: str, token: _Token) -> str:
