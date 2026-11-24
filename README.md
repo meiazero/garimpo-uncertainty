@@ -68,7 +68,7 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 | [docs/data-layout.md](docs/data-layout.md) | The store, slot hashes, sparse files, run artifacts, resource measurements |
 | [docs/outputs.md](docs/outputs.md) | Which script produces each number and table in `outputs/`, regenerating the split, metric rules |
 | [docs/testing.md](docs/testing.md) | Running the E2E suite, its modules, what it does not cover |
-| [docs/failure-modes.md](docs/failure-modes.md) | The 68 ways the pipeline can fail and what catches each |
+| [docs/failure-modes.md](docs/failure-modes.md) | The 70 ways the pipeline can fail and what catches each |
 
 ## Development
 
