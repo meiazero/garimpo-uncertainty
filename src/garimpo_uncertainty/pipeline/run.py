@@ -28,8 +28,6 @@ import garimpo_uncertainty.pipeline.commands
 import garimpo_uncertainty.pipeline.runner
 
 STAGE_ORDER = garimpo_uncertainty.pipeline.runner.STAGE_ORDER
-# `garimpo status` splits the log on this marker to read the last attempt only.
-ATTEMPT = "=== attempt started "
 
 
 def parse_args() -> argparse.Namespace:
@@ -206,7 +204,8 @@ def main() -> None:
     log = Log(
         Path("outputs/logs") / f"{garimpo_uncertainty.config.log_name(args.scale, args.model)}.log"
     )
-    log.write(f"{ATTEMPT}{time.strftime('%Y-%m-%d %H:%M', time.gmtime())} UTC ===")
+    started = time.strftime("%Y-%m-%d %H:%M", time.gmtime())
+    log.write(f"{garimpo_uncertainty.pipeline.runner.ATTEMPT}{started} UTC ===")
     log.write(f"config {args.scale} {args.model}; commit {commit()}")
     log.write(
         f"force from {args.force_from or 'nothing'}; force validate {args.force_validate}; "

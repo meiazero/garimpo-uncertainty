@@ -146,7 +146,7 @@ def create_store(root: Path, n_tiles: int, tile_px: int, cell_px: int) -> None:
     (numpy/_core/memmap.py), so unwritten slots stay holes where the filesystem supports them.
     """
     missing = garimpo_uncertainty.data.missing_arrays(root)
-    sidecars = (root / "tiles").glob("*.json")
+    sidecars = (root / garimpo_uncertainty.data.SIDECARS_DIR).glob("*.json")
     if missing and any(json.loads(path.read_text()).get("status") == "ok" for path in sidecars):
         raise ValueError(
             f"{missing} are missing from {root} while tiles/ has sidecars with status ok: "
@@ -240,7 +240,9 @@ def write_cells(
 
 
 def write_sidecar(root: Path, tile_id: int, record: dict) -> None:
-    garimpo_uncertainty.files.write_json(root / "tiles" / f"{tile_id}.json", record)
+    garimpo_uncertainty.files.write_json(
+        garimpo_uncertainty.data.sidecar_path(root, tile_id), record
+    )
 
 
 def _signed(href: str, token: _Token) -> str:
@@ -353,7 +355,7 @@ def _cut_and_store(
         image, scl = _read_bands(item, placement.transform, token, resampling)
     mask_utm = _to_utm(source.mask_geometry, placement.epsg)
     # A forced re-cut overwrites slots in place: a crash midway must leave no `ok` vouching.
-    (root / "tiles" / f"{source.tile_id}.json").unlink(missing_ok=True)
+    garimpo_uncertainty.data.sidecar_path(root, source.tile_id).unlink(missing_ok=True)
     bound = write_cells(
         store,
         source.tile_index,
@@ -386,7 +388,11 @@ def process_tile(
         }
         record |= _cut_and_store(root, store, source, item, token=token, resampling=resampling)
     except urllib.error.HTTPError as error:
-        status = "missing_item" if error.code == http.HTTPStatus.NOT_FOUND else f"http_{error.code}"
+        status = (
+            garimpo_uncertainty.data.MISSING_ITEM
+            if error.code == http.HTTPStatus.NOT_FOUND
+            else f"http_{error.code}"
+        )
         record |= {"status": status, "detail": str(error)}
     # Thread boundary: one bad tile must end in the report, not abort the other tiles.
     except Exception as error:  # noqa: BLE001 - the thread boundary stated above
@@ -410,7 +416,7 @@ def _finished_tiles(root: Path, selected: pd.DataFrame) -> dict[int, dict]:
     """Return the sidecars with status ok of the selected tiles, by tile id."""
     finished = {}
     for tile_id in selected.tile_id.astype(int):
-        sidecar = root / "tiles" / f"{tile_id}.json"
+        sidecar = garimpo_uncertainty.data.sidecar_path(root, tile_id)
         record = json.loads(sidecar.read_text()) if sidecar.exists() else {}
         if record.get("status") == "ok":
             finished[tile_id] = record
@@ -594,8 +600,8 @@ def download_scenes(
 
     def one(tile_id: int) -> tuple[int, str]:
         if tile_id not in masks.index:
-            write_sidecar(root, tile_id, {"status": "no_mask_polygon"})
-            return tile_id, "no_mask_polygon"
+            write_sidecar(root, tile_id, {"status": garimpo_uncertainty.data.NO_MASK_POLYGON})
+            return tile_id, garimpo_uncertainty.data.NO_MASK_POLYGON
         tile = tiles.loc[tile_id]
         source = TileSource(
             tile_id, int(order[tile_id]), tile.s2_tile_id, tile.geometry, masks.loc[tile_id]
