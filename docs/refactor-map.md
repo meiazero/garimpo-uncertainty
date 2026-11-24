@@ -79,7 +79,7 @@ Constraints every fix keeps:
   - The Jacobian metric is written at `stages/fit_directions.py:44`, `verify_monotonicity.py:66`, `compass_scores.py:80`.
   - `for direction in ("pca", "svm")` at `verify_monotonicity.py:75`, `compass_scores.py:88`, `generate_intervals.py:74`; `choose_layer.py:18` names it `DIRECTIONS`.
   - `compass_scores.py:69-99` (`batch_spaces`) and `generate_intervals.py:57-82` (`search_spaces`) build the same three spaces.
-- [ ] 13. Let `data.py` name the store's layout once: the split path, a tile's cell slots and the starting-weights files. (6 files)
+- [x] 13. Let `data.py` name the store's layout once: the split path, a tile's cell slots and the starting-weights files. (6 files)
   - `"outputs/split.csv"` is the default at `stages/validate_data.py:31`, `train.py:525`, `download_data.py:162`, `:166`, `pipeline/check.py:59`, and is copied into a Namespace at `download_data.py:121`.
   - `tile_index * cells_per_tile` at `validation.py:163`, `:185`, `download.py:236`, `data.py:188`; `validation.py:183` infers the count from `len(cells) // len(ok_tiles)` instead of the sidecar's `cells_per_tile`.
   - `resnet18_sentinel2_all_moco-59bfdff9.pth` and its hash are in `data.py:74` and `download.py:46`; the ImageNet file the same way (`data.py:73`, `download.py:49`).

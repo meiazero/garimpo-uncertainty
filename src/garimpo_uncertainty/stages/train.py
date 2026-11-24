@@ -522,7 +522,7 @@ def main() -> None:
         help="starting weights of the encoder; required for unet, invalid for convnet",
     )
     parser.add_argument("--run-dir", type=Path, required=True)
-    parser.add_argument("--split", type=Path, default="outputs/split.csv")
+    parser.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     parser.add_argument(
         "--train-fraction",
         type=float,

@@ -28,7 +28,7 @@ def check_slots(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--split", type=Path, default="outputs/split.csv")
+    parser.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     parser.add_argument(
         "--train-fraction",
         type=float,

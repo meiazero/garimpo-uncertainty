@@ -159,8 +159,7 @@ def slot_mismatches(root: Path, tiles: pd.DataFrame, workers: int) -> list[str]:
     usable = list(tiles[tiles.status == "ok"].itertuples())
 
     def matches(tile: tuple) -> bool:
-        cells = int(tile.cells_per_tile)
-        slots = slice(tile.tile_index * cells, (tile.tile_index + 1) * cells)
+        slots = garimpo_uncertainty.data.tile_slots(tile.tile_index, int(tile.cells_per_tile))
         return garimpo_uncertainty.data.slots_sha256(store, slots) == tile.slots_sha256
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
@@ -180,9 +179,11 @@ def _with_recomputed_values(
     workers: int,
 ) -> pd.DataFrame:
     """Add what the arrays say to each cell, beside what the writer stored; no tile, no column."""
-    n_per_tile = len(cells) // max(len(ok_tiles), 1)
     tile_chunks = [
-        (slice(tile.tile_index * n_per_tile, (tile.tile_index + 1) * n_per_tile), tile.boa_offset)
+        (
+            garimpo_uncertainty.data.tile_slots(tile.tile_index, int(tile.cells_per_tile)),
+            tile.boa_offset,
+        )
         for tile in ok_tiles.itertuples()
     ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:

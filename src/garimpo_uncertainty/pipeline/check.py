@@ -52,7 +52,7 @@ def print_table(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
-    parser.add_argument("--split", type=Path, default="outputs/split.csv")
+    parser.add_argument("--split", type=Path, default=garimpo_uncertainty.data.SPLIT_PATH)
     # Arguments and not run_meta.json: a job that fails before training has no run_meta.json.
     parser.add_argument("--train-fraction", type=float, required=True)
     parser.add_argument("--subset-seed", type=int, required=True)
