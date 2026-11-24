@@ -64,7 +64,7 @@ def available_cpus() -> int:
 
 
 def add_layer_dir(parser: ArgumentParser) -> None:
-    """Add --layer-dir to a stage of LAYER_STAGES; the caller sets it to --run-dir when absent."""
+    """Add --layer-dir to a stage of LAYER_STAGES; RunPaths falls back to --run-dir without it."""
     parser.add_argument(
         "--layer-dir",
         type=Path,

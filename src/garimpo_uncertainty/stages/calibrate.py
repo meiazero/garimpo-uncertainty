@@ -425,7 +425,6 @@ def main() -> None:
     parser.add_argument("--lightgbm-jobs", type=int, default=1)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    args.layer_dir = args.layer_dir or args.run_dir
     # An infinite floor turns every relative margin into NaN.
     if not (math.isfinite(args.score_floor_ha) and args.score_floor_ha > 0):
         parser.error(f"--score-floor-ha must be positive and finite, got {args.score_floor_ha}")
