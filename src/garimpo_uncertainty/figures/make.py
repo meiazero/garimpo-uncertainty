@@ -12,9 +12,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 import garimpo_uncertainty.figures.diagnostics
+import garimpo_uncertainty.figures.latent
 import garimpo_uncertainty.figures.maps
 import garimpo_uncertainty.figures.orx_figstyle as style
 import garimpo_uncertainty.figures.results
+import garimpo_uncertainty.figures.search
 from garimpo_uncertainty.figures.common import Run
 
 Figure = Callable[[list[Run], Path], None]
@@ -22,6 +24,8 @@ FIGURES: dict[str, Figure] = (
     garimpo_uncertainty.figures.results.FIGURES
     | garimpo_uncertainty.figures.diagnostics.FIGURES
     | garimpo_uncertainty.figures.maps.FIGURES
+    | garimpo_uncertainty.figures.latent.FIGURES
+    | garimpo_uncertainty.figures.search.FIGURES
 )
 
 

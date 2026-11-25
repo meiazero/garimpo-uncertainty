@@ -13,6 +13,23 @@ figure and every figure that reads the cell table open the data root. Each figur
 dissertation's text width, 16 cm, so it goes in with `\includegraphics[width=\linewidth]` and is
 not rescaled. The audit line printed after each figure must read `clean`.
 
+Every file a figure reads is written by a stage of `garimpo run`, so the figures draw on a CPU,
+from a copy of the runs, without the checkpoint. `search_convergence` and `threshold_tradeoff`
+read `search_profile.npz`, which the last stage measures on the run's GPU, since the times are that
+GPU's. A run finished before that stage existed gets it by running `garimpo run` again; until then
+it is left out of those two figures, with a warning. `monotonicity_curves` likewise leaves out a
+run whose `layer_monotonicity` predates its curves: a rerun skips that stage, and only
+`--force-from layer_monotonicity`, which redoes every later stage, writes them.
+
+`garimpo data_figures` draws the figures of the data itself, from the cell store and the split
+alone, before any run: `split_composition` (cells per role and region), `area_distribution` (the
+share of empty cells per role and the spread of mining areas) and `example_cells` (per region, the
+evaluation cell at the median mining area, with its reference outlined).
+
+```bash
+uv run --group figures garimpo data_figures --out outputs/figures
+```
+
 The protocol diagram is TikZ, not a plot: `figs/protocolo.tex` in the dissertation's repository,
 compiled with `pdflatex protocolo.tex`.
 
@@ -38,6 +55,14 @@ dissertation's; the source is the run file it reads.
 | `density_ratio` | How far the weighted calibration leans on a few calibration cells, with the effective number of groups | Results, Q3 | `calibration/quantiles.npz`, `status/calibrate.json` |
 | `training_curves` | That each checkpoint is the epoch with the best validation Dice, and whether training stopped while still improving | Experiments, training | `history.csv` |
 | `qualitative_cells` | What a cell, its reference and each model's probability look like, with the intervals of two methods under each | Results, data and segmentation | `images.npy`, `masks.npy`, `predictions/test.npy`, `intervals/intervals.npz` |
+| `coverage_by_latent_distance` | Whether coverage falls on the test cells the calibration represents least, per quintile of the density ratio, and whether weighting recovers it | Results, Q3 | `calibration/quantiles.npz`, `intervals/intervals.npz` |
+| `latent_shift_map` | The geographic shift in the chosen layer's features, and which calibration cells the weighting leans on | Results, Q3 | `scores/scores.npz` (`feature_sums`), `calibration/quantiles.npz` |
+| `jacobian_geometry` | That the Jacobians lie close to one line, the premise of one COMPASS-J direction, and the angle between the PCA and SVM directions | Methods or COMPASS diagnostics | `scores/scores.npz` (`jacobians`), `directions/<layer>.npz` |
+| `sensitivity_and_saturation` | Whether the cells whose search saturates are those where the area barely responds to the direction | COMPASS diagnostics | each layer's `scores/scores.npz`, `directions/<layer>.npz` |
+| `saturation_by_layer` | That the search saturates at the layers the rule rejects, not at the chosen one | COMPASS diagnostics | each layer's `status/compass_scores.json` |
+| `cost_by_layer` | What evaluating each layer costs, the beta search above all | Experiments, runs | each layer's `status/compass_scores.json`, `status/generate_intervals.json` |
+| `search_convergence` | After how many bisection steps the interval stops changing | Appendix | `search_profile.npz` |
+| `threshold_tradeoff` | What a coarser search threshold saves in time and costs in interval precision | Appendix | `search_profile.npz` |
 
 The qualitative figure picks its cells from the reference alone, before any model is read: the
 first empty test cell in cell order, then the mining cells at the quartiles and the maximum of
