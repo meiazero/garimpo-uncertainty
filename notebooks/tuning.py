@@ -53,6 +53,7 @@ SEARCH = {
 }
 NORMALIZATION = {"mean": [0.1] * BANDS, "std": [0.05] * BANDS}
 SCORES = garimpo_uncertainty.stages.compass_scores.BatchScores._fields[:6]
+COMPASS_METHODS = garimpo_uncertainty.intervals.COMPASS_METHODS
 
 
 def require_gpu() -> None:
@@ -273,8 +274,8 @@ def training_run(
 ) -> dict:
     """Run `steps` updates of train's own fit_epoch from a seeded start; return the weights.
 
-    The loop's seconds and its data wait go to `loops`, apart from the outputs compared to the bit:
-    the model's build and the weights' copy are not the loop's time.
+    The loop's seconds, data wait and usage go to `loops`, apart from the outputs compared to the
+    bit: the model's build and the weights' copy are not the loop's.
     """
     torch.manual_seed(CONFIG["SEED"])
     model = garimpo_uncertainty.models.common.build(arch, BANDS).to("cuda")
@@ -295,10 +296,12 @@ def training_run(
         augment=True,
     )
     evict(store)
-    started = time.monotonic()
-    fitted, _ = garimpo_uncertainty.stages.train.fit_epoch(state, batches, "cuda", started)
-    torch.cuda.synchronize()
-    loops.append((time.monotonic() - started, fitted["train_data_wait_seconds"]))
+    with Usage() as usage:
+        started = time.monotonic()
+        fitted, _ = garimpo_uncertainty.stages.train.fit_epoch(state, batches, "cuda", started)
+        torch.cuda.synchronize()
+        seconds = time.monotonic() - started
+    loops.append((seconds, fitted["train_data_wait_seconds"], usage.found))
     weights = [parameter.detach().cpu().numpy().ravel() for parameter in model.parameters()]
     return {"weights": np.concatenate(weights)}
 
@@ -355,11 +358,16 @@ def batch_inputs(bench: Bench, cells: slice) -> BatchInputs:
 
 
 def searched(inputs: BatchInputs, searcher: Callable, counter: DecodeCounter) -> dict:
-    """Every method's six score arrays on one batch, counting the decoder's calls."""
-    rows = [
-        searcher(space._replace(decode=counter.wrap(space.decode)), *limits, inputs.target)
-        for space, *limits in inputs.spaces
-    ]
+    """Every method's six score arrays on one batch, counting the decoder's calls.
+
+    COMPASS-L moves the logits themselves, with no decoder, so only COMPASS-J's calls count.
+    """
+    rows = []
+    for method, (space, *limits) in zip(COMPASS_METHODS, inputs.spaces, strict=True):
+        counted = (
+            space if method == "compass_l" else space._replace(decode=counter.wrap(space.decode))
+        )
+        rows.append(searcher(counted, *limits, inputs.target))
     return {name: np.stack([row[c].cpu().numpy() for row in rows]) for c, name in enumerate(SCORES)}
 
 
