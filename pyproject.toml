@@ -3,7 +3,7 @@ name = "garimpo-uncertainty"
 version = "0.1.0"
 description = "Calibrated prediction intervals for artisanal mining area from Sentinel-2"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "compass",
     "geopandas>=1.0",
@@ -39,7 +39,7 @@ addopts = "-n 4 --dist loadfile --basetemp=tests/artifacts/tmp"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 # A submodule with its own config and repository; these rules reach it in a later, separate change.
 # orx_figstyle.py is vendored from the orx-figures skill and kept byte for byte.
 extend-exclude = ["compass", "src/garimpo_uncertainty/figures/orx_figstyle.py"]

@@ -479,9 +479,10 @@ garimpo_uncertainty.download._process_in_pool(one, list(range(8)), 4)
 
 
 def test_one_ctrl_c_to_the_process_group_still_waits_for_the_tiles_in_progress() -> None:
-    """The terminal signals the whole process group, the pool's workers included.
+    """The terminal signals the whole process group, and a launcher such as `uv run` again.
 
-    Four tiles run, four wait; one press must keep the four running ones and start no other.
+    Four tiles run, four wait; the two signals of one press must keep the four running ones and
+    start no other.
     """
     command = [sys.executable, "-c", SLOW_POOL]
     process = subprocess.Popen(  # noqa: S603 - a fixed command
@@ -494,6 +495,8 @@ def test_one_ctrl_c_to_the_process_group_still_waits_for_the_tiles_in_progress()
     )
     assert process.stdout.readline().strip() == "ready"
     time.sleep(0.5)
+    os.killpg(process.pid, signal.SIGINT)
+    time.sleep(0.05)
     os.killpg(process.pid, signal.SIGINT)
     output, _ = process.communicate(timeout=60)
     assert process.returncode != 0, output
