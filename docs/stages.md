@@ -23,15 +23,17 @@ Paths without a prefix are inside the run directory.
 | `garimpo calibrate` | CPU | `predictions/cells.npz`, `scores/scores.npz` | `calibration/quantiles.npz` (`quantile`, `lower_term`, `upper_term` and `scale` of each row and cell; every array in [data-layout.md](data-layout.md#run-artifacts)) |
 | `garimpo generate_intervals` | GPU | checkpoint, `calibration/quantiles.npz`, directions, `scores/scores.npz`, test slots; one pass, one encoder pass per batch | `intervals/intervals.npz` |
 | `garimpo compute_metrics` | CPU | `intervals/intervals.npz`, `predictions/`, `masks.npy`, `calibration/quantiles.npz`, `scores/scores.npz` | `metrics/cell_metrics.npz`, `metrics/results.csv`, `metrics/width_comparisons.csv`, `metrics/coverage_comparisons.csv`, `metrics/q1_spearman.csv`, `metrics/coverage_by_stratum.csv`, `metrics/score_relation.csv` |
+| `garimpo search_profile` | GPU | checkpoint, `scores/scores.npz` (the run's search settings), every layer's direction, 64 seeded calibration slots | `search_profile.npz` (the interval after each bisection step, and the time and interval at each search threshold, per layer and direction), read only by `garimpo figures` |
 | `garimpo merge` | any | small tables of each run, every stage `ok`, the other layers' included | `outputs/results.csv`, `outputs/width_comparisons.csv`, `outputs/coverage_comparisons.csv`, `outputs/q1_spearman.csv`, `outputs/coverage_by_stratum.csv`, `outputs/score_relation.csv`, `outputs/layer_diagnostics.csv`, `outputs/monotonicity_layer.csv`, `outputs/monotonicity_endpoint.csv`, `outputs/chosen_layers.csv`, `outputs/layer_results.csv` |
 | `garimpo check` | any | status files and tables | prints the debugging report |
 | `garimpo status` | any | `configs/`, each run's `last.pt`, `outputs/logs/` | prints the scale `auto` picks, each run's values and the verdict of its last attempt |
 
-`garimpo run` runs the stages from `train` to `compute_metrics` in `STAGE_ORDER`
+`garimpo run` runs the stages from `train` to `search_profile` in `STAGE_ORDER`
 (`garimpo_uncertainty/pipeline/runner.py`): `train`,
 `infer`, `fit_directions`, `layer_monotonicity`, `choose_layer`, `endpoint_monotonicity`,
-`compass_scores`, `calibrate`, `generate_intervals`, `compute_metrics`. These are also the names of
-their status files.
+`compass_scores`, `calibrate`, `generate_intervals`, `compute_metrics`, `search_profile`. These are
+also the names of their status files. `search_profile` runs last, after the other layers, since it
+searches every layer with a direction.
 
 ## The other layers
 

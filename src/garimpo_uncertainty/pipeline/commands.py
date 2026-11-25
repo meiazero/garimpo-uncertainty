@@ -129,6 +129,7 @@ STAGES = {
             *LAYER_DIR_FLAGS,
         ),
     ),
+    "search_profile": Stage("search_profile", (*CHECKPOINT_FLAGS, ("--seed", "SEED"))),
     "pipeline_check": Stage(
         "check",
         (

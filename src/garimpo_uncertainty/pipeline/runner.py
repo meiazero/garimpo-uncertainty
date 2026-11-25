@@ -62,6 +62,7 @@ STAGE_ORDER = (
     "calibrate",
     "generate_intervals",
     "compute_metrics",
+    "search_profile",
 )
 
 

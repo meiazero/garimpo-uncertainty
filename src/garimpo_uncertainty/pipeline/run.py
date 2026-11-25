@@ -188,7 +188,7 @@ def run_in_order(log: Log, stages: tuple[str, ...], values: dict, force_from: st
 
 def stage_count(layers: int) -> int:
     """Return how many stages a job runs, the data check and the pipeline check included."""
-    return 1 + len(DIAGNOSTICS) + len(CALIBRATED) + len(LAYER_STAGES) * (layers - 1) + 1
+    return 1 + len(DIAGNOSTICS) + len(CALIBRATED) + len(LAYER_STAGES) * (layers - 1) + 2
 
 
 def write_heading(log: Log, args: argparse.Namespace, config: dict) -> None:
@@ -204,7 +204,7 @@ def write_heading(log: Log, args: argparse.Namespace, config: dict) -> None:
 
 
 def run_stages(log: Log, values: dict, force_from: str | None) -> int:
-    """Run the stages up to the layer choice, the others on the chosen layer, then other layers.
+    """Run the stages up to the layer choice, the chosen layer's, the other layers', the profile.
 
     The chosen layer's results come first, so a session lost during the other layers keeps them.
     Cheung et al. (2026), Table 4, compare the interval width across layers; the chosen layer's
@@ -219,8 +219,10 @@ def run_stages(log: Log, values: dict, force_from: str | None) -> int:
         log.write(f"Could not read the chosen layer from {run.chosen_layer}: {error!r}")
         return 1
     log.write(f"── chosen layer: {layer} ──")
-    return run_in_order(log, CALIBRATED, values | {"LAYER": layer}, force_from) or (
-        run_other_layers(log, values, layer, force_from)
+    return (
+        run_in_order(log, CALIBRATED, values | {"LAYER": layer}, force_from)
+        or run_other_layers(log, values, layer, force_from)
+        or run_in_order(log, ("search_profile",), values, force_from)
     )
 
 

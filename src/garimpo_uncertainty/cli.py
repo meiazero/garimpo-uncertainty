@@ -19,6 +19,7 @@ STAGES = (
     "calibrate",
     "generate_intervals",
     "compute_metrics",
+    "search_profile",
 )
 COMMANDS = {stage: f"garimpo_uncertainty.stages.{stage}" for stage in STAGES} | {
     "run": "garimpo_uncertainty.pipeline.run",

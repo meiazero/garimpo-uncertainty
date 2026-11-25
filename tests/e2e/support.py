@@ -163,6 +163,7 @@ def finish_run(arch: str, run_dir: Path, data_root: Path) -> FinishedRun:
     layer = run_stages_after_training(run_dir, layers, data_root)
     compute_metrics(run_dir, BOUNDARY_TOLERANCE, data_root)
     run_other_layers(run_dir, layers, data_root)
+    run("search_profile", *stage_args("search_profile", run_dir), data_root=data_root)
     return FinishedRun(arch, run_dir, layer)
 
 
