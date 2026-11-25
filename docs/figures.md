@@ -13,6 +13,10 @@ figure and every figure that reads the cell table open the data root. Each figur
 dissertation's text width, 16 cm, so it goes in with `\includegraphics[width=\linewidth]` and is
 not rescaled. The audit line printed after each figure must read `clean`.
 
+On Colab, `notebooks/02_compare_segmentation.ipynb` draws `qualitative_cells` from the runs in
+Drive, on the real cells of the unpacked store in `MyDrive/garimpo/garimpo-dataset/`, read in
+place, shows it, and copies it to `MyDrive/garimpo/figures/`.
+
 Every file a figure reads is written by a stage of `garimpo run`, so the figures draw on a CPU,
 from a copy of the runs, without the checkpoint. `search_convergence` and `threshold_tradeoff`
 read `search_profile.npz`, which the last stage measures on the run's GPU, since the times are that
