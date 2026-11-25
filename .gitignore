@@ -11,4 +11,6 @@ runs/**/*.pt
 runs/**/*.npy
 runs/**/*.npz
 outputs/logs/
+# The synthetic store of notebooks/03_tune_hardware.ipynb.
+outputs/tuning/
 *.tmp
