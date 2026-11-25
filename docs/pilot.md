@@ -28,7 +28,7 @@ The models checked in section 3 run one after another on the one GPU. Each write
 `runs/pilot/<model>-f0.01/`, and section 6 merges their tables into `runs/pilot/tables/`. The runs
 and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
 
-Outside Colab, `uv run --no-sync garimpo run pilot <model>` runs one model's pilot.
+Outside Colab, `garimpo run pilot <model>` runs one model's pilot.
 
 ## The check report
 

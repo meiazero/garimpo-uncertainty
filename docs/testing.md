@@ -3,8 +3,8 @@
 Read before changing the pipeline or adding a test.
 
 ```bash
-uv run pytest -q
-uv run ruff format --check . && uv run ruff check .
+pytest -q
+ruff format --check . && ruff check .
 ```
 
 ## How the suite runs
@@ -26,7 +26,8 @@ uv run ruff format --check . && uv run ruff check .
   dilated convolution gives other last bits on a performance core than on an efficiency core. So
   `tests/conftest.py` keeps every test process, workers and stages included, on the efficiency
   cores, and any comparison across processes is exact.
-- CI runs the same `uv run --no-sync pytest -q` after `uv sync --locked`, with a 45-minute limit.
+- CI runs the same `pytest -q` on Python 3.13, Colab's, after `pip install -r requirements.txt`,
+  with a 45-minute limit.
 
 ## Modules
 
@@ -56,7 +57,7 @@ Run the suite on a Colab GPU runtime before the first paid run: check `RUN_TESTS
 of `notebooks/01_run_experiment.ipynb`, and section 4 runs:
 
 ```python
-!GARIMPO_TEST_DEVICE=cuda uv run --no-sync pytest -q
+!GARIMPO_TEST_DEVICE=cuda pytest -q
 ```
 
 The stages then get no `--device`, so they choose the GPU through `checkpoints.default_device` as a

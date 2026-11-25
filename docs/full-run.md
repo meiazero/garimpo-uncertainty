@@ -21,7 +21,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
    machine, copy `runs/` from Drive first.
 
    ```bash
-   uv run --no-sync garimpo merge --out outputs --scale full
+   garimpo merge --out outputs --scale full
    ```
 
 6. On Colab, section 6 copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit it
@@ -48,7 +48,7 @@ from those paths. The `pilot` scale runs the same four models at 1% ([pilot.md](
 On your own machine:
 
 ```bash
-GARIMPO_DATA_DIR=<DIR> uv run --no-sync garimpo download_data all
+GARIMPO_DATA_DIR=<DIR> garimpo download_data all
 tar --format=posix -I 'zstd -19 -T0' -cf <DIR>.tar.zst -C <DIR> .
 ```
 
@@ -77,7 +77,7 @@ About the download:
 Section 5 of the notebook is one cell, "Run the chosen models":
 
 1. For each model checked in section 3, in order, it runs
-   `uv run --no-sync garimpo run <scale> <model>`,
+   `garimpo run <scale> <model>`,
    with `<scale>` `full` for the full runs. `--num-workers` defaults to the runtime's CPUs. The
    cell shows one line per stage with its duration and key numbers, such as
    `[ 3/28] infer  ok  39.7 s · test area error 0.042 ha/cell, bias -0.004 ha`; while a stage
@@ -97,13 +97,13 @@ With the copy every 30 minutes, a session that ends mid-run keeps the finished s
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
 its first epoch and requires the rerun to end where an uninterrupted run ends: exactly on CPU, and
 on a GPU, whose kernels are not deterministic, within a tolerance, the generators still exactly. Rerun without
-`--force-from train` to resume: with it, `garimpo train` refuses to discard an unfinished training and says so. Every `garimpo`
-command runs with `uv run --no-sync`, so a run never changes the environment under itself.
+`--force-from train` to resume: with it, `garimpo train` refuses to discard an unfinished training and says so. No `garimpo`
+command installs anything, so a run never changes the environment under itself.
 
 Outside Colab, one run is one job:
 
 ```bash
-uv run --no-sync garimpo run full unet_scratch
+garimpo run full unet_scratch
 ```
 
 ## Regenerate the tile lists
@@ -112,7 +112,7 @@ The versioned lists use subset seed 0, the decided `SUBSET_SEED`. `lists` regene
 it only after `outputs/split.csv` changes, or to use another seed:
 
 ```bash
-uv run --no-sync garimpo download_data lists --subset-seed <SUBSET_SEED>
+garimpo download_data lists --subset-seed <SUBSET_SEED>
 ```
 
 The E2E suite fails if regenerating with the recorded seed does not reproduce the versioned files
@@ -121,10 +121,10 @@ byte for byte, so commit the regenerated files together with whatever changed th
 ## Rerun one stage
 
 A stage reruns on its own, without the earlier stages:
-`uv run --no-sync garimpo <stage> ...`. Use a GPU runtime for the stages that
+`garimpo <stage> ...`. Use a GPU runtime for the stages that
 [stages.md](stages.md#stage-table) marks GPU. For example, a new metric or another boundary F1
 tolerance, passing the run's `SEED` because the seed is part of the fingerprint:
 
 ```bash
-uv run --no-sync garimpo compute_metrics --run-dir runs/unet_scratch-f1.0 --boundary-tolerance-px <PX> --seed <SEED> --force
+garimpo compute_metrics --run-dir runs/unet_scratch-f1.0 --boundary-tolerance-px <PX> --seed <SEED> --force
 ```

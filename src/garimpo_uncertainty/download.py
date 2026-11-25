@@ -438,7 +438,7 @@ def _refuse_other_resampling(
         )
 
 
-# `uv run` forwards the terminal's SIGINT to its child, so one key press can arrive twice.
+# A launcher such as `uv run` forwards the terminal's SIGINT to its child: one press, two signals.
 SAME_PRESS_S = 1.0
 POLL_S = 0.5
 QUIET_S = 15.0

@@ -4,8 +4,8 @@
 Every number comes from the runs' files, so a figure is redrawn, never edited.
 
 ```bash
-uv run --group figures garimpo figures runs/full/*-f1.0 --out outputs/figures
-uv run --group figures garimpo figures runs/full/*-f1.0 --out outputs/figures --only q2_coverage_and_width
+garimpo figures runs/full/*-f1.0 --out outputs/figures
+garimpo figures runs/full/*-f1.0 --out outputs/figures --only q2_coverage_and_width
 ```
 
 Run it from the repository root, with `GARIMPO_DATA_DIR` set as for the stages: the qualitative
@@ -31,7 +31,7 @@ share of empty cells per role and the spread of mining areas) and `example_cells
 evaluation cell at the median mining area, with its reference outlined).
 
 ```bash
-uv run --group figures garimpo data_figures --out outputs/figures
+garimpo data_figures --out outputs/figures
 ```
 
 The protocol diagram is TikZ, not a plot: `figs/protocolo.tex` in the dissertation's repository,

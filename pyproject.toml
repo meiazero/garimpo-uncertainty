@@ -3,10 +3,11 @@ name = "garimpo-uncertainty"
 version = "0.1.0"
 description = "Calibrated prediction intervals for artisanal mining area from Sentinel-2"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
-    "compass",
+    "compass==0.1.0",  # the submodule; PyPI's compass is another package
     "geopandas>=1.0",
+    "matplotlib>=3.9",
     "numpy>=2.0",
     "pandas>=2.0",
     "pyogrio>=0.9",
@@ -18,32 +19,10 @@ dependencies = [
     "segmentation-models-pytorch==0.6.0",
     "shapely>=2.0",
     "torch>=2.14.0",
-    "torchvision>=0.29.0",  # required by segmentation-models-pytorch; here so the cu126 index applies
 ]
 
 [project.scripts]
 garimpo = "garimpo_uncertainty.cli:main"
-
-[dependency-groups]
-dev = [
-    "pytest>=9.1.1",
-    "pytest-xdist>=3.8",
-    "ruff>=0.16.9",
-]
-figures = [
-    "matplotlib>=3.9",
-]
-
-# The PyPI torch wheel targets CUDA 13; the cu126 build also runs on hosts with a CUDA 12 driver.
-[[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
-
-[tool.uv.sources]
-compass = { path = "compass", editable = true }
-torch = { index = "pytorch-cu126" }
-torchvision = { index = "pytorch-cu126" }
 
 [build-system]
 requires = ["hatchling"]
@@ -55,12 +34,12 @@ packages = ["src/garimpo_uncertainty"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # loadfile keeps each module on one worker, so its fixtures and fixed paths need no marks; `-n 0`
-# runs serially. xdist 3.8 ignores xdist_group under pytest 9.2, so loadgroup is no alternative.
+# runs serially.
 addopts = "-n 4 --dist loadfile --basetemp=tests/artifacts/tmp"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 # A submodule with its own config and repository; these rules reach it in a later, separate change.
 # orx_figstyle.py is vendored from the orx-figures skill and kept byte for byte.
 extend-exclude = ["compass", "src/garimpo_uncertainty/figures/orx_figstyle.py"]

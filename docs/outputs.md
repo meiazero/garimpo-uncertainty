@@ -10,8 +10,8 @@ Run from the repository root. The split scripts read `data/zenodo`, so after
 
 ```bash
 scripts/split/get_biomes.sh                 # IBGE biomes into data/biomes, sha256 checked
-uv run python -I scripts/split/frame.py
-uv run python -I scripts/split/make_split.py   # writes outputs/split.csv; a changed tile order or set then refuses the store
+python -I scripts/split/frame.py
+python -I scripts/split/make_split.py   # writes outputs/split.csv; a changed tile order or set then refuses the store
 ```
 
 Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Amazon groups).

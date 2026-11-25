@@ -1,6 +1,6 @@
 """`garimpo figures`: the dissertation's figures, drawn from finished runs.
 
-    uv run --group figures garimpo figures runs/full/*-f1.0 --out outputs/figures
+    garimpo figures runs/full/*-f1.0 --out outputs/figures
 
 Each figure is a function of FIGURES, whose docstring says what claim it makes and which section of
 the dissertation it serves; docs/figures.md lists them. Every number comes from the runs' files,
