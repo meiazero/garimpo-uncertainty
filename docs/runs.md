@@ -81,18 +81,18 @@ ask for a tile the download did not fetch, and the E2E suite asserts that each v
 | `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/unet_sentinel2-f1.0` | reflectance / 10000, stored as mean 0 and std 1 |
 | `convnet` (smp's DeepLabV3) | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
 
-The experiment is these four runs, all at 100%, each a model of `configs/models/` at the `full` scale. Each run has 55 method and
+The experiment is these four runs, all at 100%, each a model of `configs/models/` at the `full` scale. Each run has 57 method and
 calibration rows (`intervals.COMBINATIONS`) at each of the three levels alpha = 0.05, 0.10 and 0.15:
 
 | Rows | Per run and alpha |
 |---|---|
-| Base rows: `tab:combinacoes` plus the SVM direction | 17 |
+| Base rows: `tab:combinacoes` plus the SVM direction | 19 |
 | Mondrian rows, `*_mondrian` | 12 |
 | Asymmetric COMPASS rows, `a_*` | 6 |
 | Repeated subsampling rows, `*_subsampled` ([design.md](design.md#quantile-rule-and-its-sensitivity-analysis)) | 20 |
-| Total | 55 |
+| Total | 57 |
 
-Over 4 runs and 3 levels that is 660 rows. `garimpo merge` identifies a run by
+Over 4 runs and 3 levels that is 684 rows. `garimpo merge` identifies a run by
 `(model, train_fraction)` and refuses a repeated pair, or a run with any stage not `ok`; each
 run's paired comparisons stay inside that run. What the comparison between variants can show is in
 [design.md](design.md#what-the-model-comparison-varies).

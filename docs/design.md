@@ -52,7 +52,7 @@ flowchart TD
         LM --> CL["choose_layer"]
         CL --> EM["endpoint_monotonicity"]
         EM --> CS["compass_scores<br/>beta search per cell"]
-        CS --> CAL["calibrate<br/>55 combinations × alpha 0.05 · 0.10 · 0.15"]
+        CS --> CAL["calibrate<br/>57 combinations × alpha 0.05 · 0.10 · 0.15"]
         CAL --> GI["generate_intervals<br/>(test)"]
         GI --> CM["compute_metrics<br/>PICP, MPIW, bootstrap over groups"]
         CM --> OL["compass_scores → compute_metrics again<br/>on each other layer, into layers/"]

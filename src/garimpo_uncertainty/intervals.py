@@ -28,8 +28,10 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("compass_l", "external_weighted"),
     ("compass_l", "own_region"),
     ("compass_j_pca", "external"),
+    ("compass_j_pca", "external_weighted"),
     ("compass_j_pca", "own_region"),
     ("compass_j_svm", "external"),
+    ("compass_j_svm", "external_weighted"),
     ("compass_j_svm", "own_region"),
 )
 # Mondrian calibration by predicted mining, the stratum known when an interval is used: one quantile

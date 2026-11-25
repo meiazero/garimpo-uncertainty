@@ -56,8 +56,10 @@ EXPECTED_ROWS = {
     ("compass_l", "external_weighted"),
     ("compass_l", "own_region"),
     ("compass_j_pca", "external"),
+    ("compass_j_pca", "external_weighted"),
     ("compass_j_pca", "own_region"),
     ("compass_j_svm", "external"),
+    ("compass_j_svm", "external_weighted"),
     ("compass_j_svm", "own_region"),
 }
 # Mondrian by predicted mining, one literal row per method and situation.

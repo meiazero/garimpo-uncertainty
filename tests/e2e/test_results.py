@@ -741,7 +741,7 @@ def test_each_compass_row_alone_matches_the_one_pass(
     pixel_ha = garimpo_uncertainty.data.PIXEL_HA
     model, test = compass_inputs.model, compass_inputs.test
     compass_rows = compass_inputs.compass_rows
-    assert len(compass_rows) == 31
+    assert len(compass_rows) == 33
     level = ALPHAS.index(alpha)
 
     def soft(logits: torch.Tensor) -> torch.Tensor:
