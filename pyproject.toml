@@ -30,6 +30,9 @@ dev = [
     "pytest-xdist>=3.8",
     "ruff>=0.16.9",
 ]
+figures = [
+    "matplotlib>=3.9",
+]
 
 # The PyPI torch wheel targets CUDA 13; the cu126 build also runs on hosts with a CUDA 12 driver.
 [[tool.uv.index]]
@@ -59,7 +62,8 @@ addopts = "-n 4 --dist loadfile --basetemp=tests/artifacts/tmp"
 line-length = 100
 target-version = "py312"
 # A submodule with its own config and repository; these rules reach it in a later, separate change.
-extend-exclude = ["compass"]
+# orx_figstyle.py is vendored from the orx-figures skill and kept byte for byte.
+extend-exclude = ["compass", "src/garimpo_uncertainty/figures/orx_figstyle.py"]
 
 [tool.ruff.lint]
 # Each family below catches something that nobody decided to write.

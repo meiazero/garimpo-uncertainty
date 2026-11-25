@@ -67,6 +67,7 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 | [docs/stages.md](docs/stages.md) | Every stage's node, inputs and outputs; statuses, skips, refusals, run identity, the data validation |
 | [docs/data-layout.md](docs/data-layout.md) | The store, slot hashes, sparse files, run artifacts, resource measurements |
 | [docs/outputs.md](docs/outputs.md) | Which script produces each number and table in `outputs/`, regenerating the split, metric rules |
+| [docs/figures.md](docs/figures.md) | The dissertation's figures: drawing them from finished runs, why each exists, what its caption must say |
 | [docs/testing.md](docs/testing.md) | Running the E2E suite, its modules, what it does not cover |
 | [docs/failure-modes.md](docs/failure-modes.md) | The 70 ways the pipeline can fail and what catches each |
 

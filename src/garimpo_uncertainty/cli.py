@@ -25,6 +25,7 @@ COMMANDS = {stage: f"garimpo_uncertainty.stages.{stage}" for stage in STAGES} | 
     "check": "garimpo_uncertainty.pipeline.check",
     "merge": "garimpo_uncertainty.pipeline.merge",
     "status": "garimpo_uncertainty.pipeline.status",
+    "figures": "garimpo_uncertainty.figures.make",
 }
 USAGE = f"usage: garimpo {{{','.join(COMMANDS)}}} [arguments]; garimpo <command> --help for each"
 
