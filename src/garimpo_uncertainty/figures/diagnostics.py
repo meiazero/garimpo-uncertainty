@@ -4,6 +4,7 @@ The results figures say what each method achieves; these say why, so a wide inte
 search or a layer that behaves apart can be traced to the stage that produced it.
 """
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,7 @@ from garimpo_uncertainty.figures.results import (
     model_grid,
 )
 
+logger = logging.getLogger(__name__)
 MODEL_MARKERS = ("o", "s", "^", "D", "v", "P")
 
 
@@ -278,6 +280,9 @@ def monotonicity_curves(runs: list[Run], stem: Path) -> None:
     draws; the curves show where the area saturates and how many cells never move, which a share
     alone hides.
     """
+    runs = with_curves(runs)
+    if not runs:
+        return
     # A row holds the same cells, so one area axis serves its three sweeps.
     fig, axes = rows_by_models(runs, len(SWEEPS), 0.3, sharex="col", sharey="row")
     for row, run in zip(axes, runs, strict=True):
@@ -294,6 +299,14 @@ def monotonicity_curves(runs: list[Run], stem: Path) -> None:
         ax.set_xlabel("β nos logits" if grid == "logits" else "β nas características")
     name_rows(axes, runs, [title for _, _, title in SWEEPS])
     common.save(fig, stem)
+
+
+def with_curves(runs: list[Run]) -> list[Run]:
+    """Keep the runs with curves: one finished before the stage kept them has none."""
+    missing = [run.name for run in runs if not run.paths.monotonicity_curves("layer").exists()]
+    if missing:
+        logger.warning("monotonicity_curves: no curves for %s", ", ".join(missing))
+    return [run for run in runs if run.name not in missing]
 
 
 def draw_curves(ax: object, beta: np.ndarray, curves: np.ndarray) -> None:

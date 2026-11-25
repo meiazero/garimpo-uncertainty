@@ -251,8 +251,8 @@ def coverage_by_area_band(runs: list[Run], stem: Path) -> None:
                 linestyle="--" if look.hollow else "-",
                 **look.marker_style(),
             )
-        ticks = area_band_ticks(table)
-        ax.set_xticks(range(len(ticks)), ticks)
+        # Tied areas can leave a band empty, so the ticks go at the strata present, not 0 to n - 1.
+        ax.set_xticks(sorted(table.stratum.unique()), area_band_ticks(table))
         ax.set_xlabel("Área de referência da faixa (ha)")
     for ax in axes[::2]:
         ax.set_ylabel("PICP (%)")

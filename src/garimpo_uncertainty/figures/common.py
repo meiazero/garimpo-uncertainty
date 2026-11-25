@@ -169,7 +169,8 @@ class Run:
             (self.paths.root / garimpo_uncertainty.artifacts.LAYERS_DIR).glob("*")
         ):
             other = self.paths.other_layer(directory.name)
-            if other.results.exists():
+            # layers/<chosen> can only hold results of an attempt that chose another layer.
+            if directory.name != self.chosen_layer and other.results.exists():
                 layers[directory.name] = other
         return layers
 
