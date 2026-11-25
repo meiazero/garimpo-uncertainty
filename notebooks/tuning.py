@@ -72,7 +72,8 @@ def ram_gb() -> float:
 def cpu_ticks() -> tuple[int, int, int]:
     """Busy, I/O-wait and total ticks of every CPU since boot, from /proc/stat."""
     first_line = Path("/proc/stat").read_text(encoding="utf-8").split("\n", 1)[0]
-    ticks = [int(value) for value in first_line.split()[1:]]
+    # guest and guest_nice, the last two, are already counted in user and nice.
+    ticks = [int(value) for value in first_line.split()[1:9]]
     idle, iowait = ticks[3], ticks[4]
     return sum(ticks) - idle - iowait, iowait, sum(ticks)
 
@@ -85,6 +86,7 @@ class Usage:
 
     def __enter__(self) -> Self:
         torch.cuda.synchronize()
+        torch.cuda.empty_cache()  # else the peak starts at what earlier candidates left cached
         torch.cuda.reset_peak_memory_stats()
         self.ticks = cpu_ticks()
         query = ["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits", "-lms", "100"]
@@ -267,11 +269,12 @@ def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool
 
 
 def training_run(
-    arch: str, store: Path, cells: pd.DataFrame, workers: int, steps: int, *, waits: list[float]
+    arch: str, store: Path, cells: pd.DataFrame, workers: int, steps: int, *, loops: list
 ) -> dict:
     """Run `steps` updates of train's own fit_epoch from a seeded start; return the weights.
 
-    The data wait in seconds goes to `waits`, apart from the outputs compared to the bit.
+    The loop's seconds and its data wait go to `loops`, apart from the outputs compared to the bit:
+    the model's build and the weights' copy are not the loop's time.
     """
     torch.manual_seed(CONFIG["SEED"])
     model = garimpo_uncertainty.models.common.build(arch, BANDS).to("cuda")
@@ -292,8 +295,10 @@ def training_run(
         augment=True,
     )
     evict(store)
-    fitted, _ = garimpo_uncertainty.stages.train.fit_epoch(state, batches, "cuda", time.monotonic())
-    waits.append(fitted["train_data_wait_seconds"])
+    started = time.monotonic()
+    fitted, _ = garimpo_uncertainty.stages.train.fit_epoch(state, batches, "cuda", started)
+    torch.cuda.synchronize()
+    loops.append((time.monotonic() - started, fitted["train_data_wait_seconds"]))
     weights = [parameter.detach().cpu().numpy().ravel() for parameter in model.parameters()]
     return {"weights": np.concatenate(weights)}
 
