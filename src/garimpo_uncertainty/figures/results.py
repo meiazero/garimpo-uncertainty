@@ -58,7 +58,9 @@ def interval(row: pd.Series, column: str) -> np.ndarray | None:
     low, high = f"{column}_ci_low", f"{column}_ci_high"
     if low not in row or pd.isna(row[low]):
         return None
-    return np.array([[row[column] - row[low]], [row[high] - row[column]]])
+    # A bound equal to the estimate, as when every resample covers the whole cell, can land one
+    # rounding step past it, and matplotlib refuses a negative error.
+    return np.maximum(np.array([[row[column] - row[low]], [row[high] - row[column]]]), 0)
 
 
 def method_legend(fig: object, methods: list[str], looks: dict[str, common.Look]) -> None:
@@ -221,7 +223,7 @@ def area_band_ticks(table: pd.DataFrame) -> list[str]:
         labels.append(
             "0"
             if row.high_ha == 0
-            else f"{common.number(row.low_ha)}\u2013{common.number(row.high_ha)}"
+            else f"{common.number(row.low_ha)}\u2013\n{common.number(row.high_ha)}"
         )
     return labels
 

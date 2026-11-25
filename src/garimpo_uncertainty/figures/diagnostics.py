@@ -121,8 +121,9 @@ def intervals_by_cell(runs: list[Run], stem: Path) -> None:
             ax.plot(rank[missed], cells.v[missed], "x", color=style.PALETTE["red"], markersize=2.5)
             # Empty cells have no logarithm; symlog keeps them on the axis, linear below 0.1 ha.
             ax.set_yscale("symlog", linthresh=0.1)
-    for ax in axes[-1]:
-        ax.set_xlabel("Célula de teste, por área de referência")
+    fig.supxlabel(
+        "Célula de teste, por área de referência", fontsize=style.mpl.rcParams["axes.labelsize"]
+    )
     for ax in axes[:, 0]:
         ax.set_ylabel("Área (ha)")
     name_rows(axes, runs, titles)
@@ -178,9 +179,11 @@ def draw_scores(
         ax.annotate(
             f"inclinação {common.number(fit.slope)}\nn = {kept.sum()}, zeros = "
             f"{((split == 0) | (score == 0)).sum()}, censuradas = {saturated.sum()}",
-            xy=(0.03, 0.95),
+            # Lower right: a large conformal score with a small COMPASS one is the rare case, and
+            # censored scores fill the top.
+            xy=(0.97, 0.04),
             xycoords="axes fraction",
-            va="top",
+            ha="right",
             fontsize=6,
         )
     ax.set_xscale("log")
@@ -247,8 +250,12 @@ def draw_ascending(ax: object, x: np.ndarray, table: pd.DataFrame) -> None:
 def draw_layer_widths(ax: object, x: np.ndarray, table: pd.DataFrame) -> None:
     for method, look in common.looks(["compass_j_pca", "compass_j_svm"]).items():
         width = table[f"{method}_mpiw"]
-        errors = [width - table[f"{method}_mpiw_ci_low"], table[f"{method}_mpiw_ci_high"] - width]
+        errors = np.maximum(
+            [width - table[f"{method}_mpiw_ci_low"], table[f"{method}_mpiw_ci_high"] - width], 0
+        )
         ax.errorbar(x, width, yerr=errors, linestyle="none", **look.marker_style())
+    # A saturating layer gives whole-cell intervals, decades above the chosen layer's.
+    ax.set_yscale("log")
 
 
 def layer_name(layer: str) -> str:
@@ -258,8 +265,8 @@ def layer_name(layer: str) -> str:
 
 
 def mark_chosen(ax: object, x: np.ndarray, layers: pd.Index, chosen: str) -> None:
-    """Name each layer without the shared prefix, the chosen one in bold."""
-    ax.set_xticks(x, [layer_name(layer) for layer in layers])
+    """Name each layer without the shared prefix, the chosen one in bold, on two lines to fit."""
+    ax.set_xticks(x, [layer_name(layer).replace(" ", "\n") for layer in layers])
     for tick, layer in zip(ax.get_xticklabels(), layers, strict=True):
         tick.set_fontweight("bold" if layer == chosen else "normal")
 
@@ -346,17 +353,17 @@ def density_ratio(runs: list[Run], stem: Path) -> None:
             ax.hist(values[values > 0], bins=bins, histtype="step", color=color, label=label)
         ess = common.stage_shapes(run.paths.layer_status, "calibrate")["weighted_group_ess"]
         ax.annotate(
+            # Top left: the test cells sit right of the calibration ones, where weighting looks.
             f"grupos efetivos: {common.number(ess, 1)}",
-            xy=(0.97, 0.95),
+            xy=(0.03, 0.95),
             xycoords="axes fraction",
-            ha="right",
             va="top",
             fontsize=7,
         )
         ax.set_xscale("log")
         ax.set_xlabel("Razão de densidade (escala log)")
         ax.set_ylabel("Células")
-    axes[0].legend(loc="center right")
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="outside lower center", ncol=2)
     label_models(axes, runs)
     common.save(fig, stem)
 
