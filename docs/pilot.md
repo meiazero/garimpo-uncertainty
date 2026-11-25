@@ -24,7 +24,7 @@ tables go to `runs/pilot/`, never to `outputs/`.
 3. Read the verdicts section 5 prints, then the pipeline check at the end of each model's log,
    `outputs/logs/pilot-<model>.log`, also copied to `logs/` in Drive.
 
-Each model has its own cell, and they run one after another on the one GPU. Each writes to
+The models checked in section 3 run one after another on the one GPU. Each writes to
 `runs/pilot/<model>-f0.01/`, and section 6 merges their tables into `runs/pilot/tables/`. The runs
 and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
 
@@ -55,17 +55,17 @@ fail the check: [stages.md](stages.md#statuses).
 
 1. Commit and push the fix from your machine. The session's clone cannot push, and the next
    session's clone picks the fix up.
-2. In a new session, check the `RUN` box of each "Rerun ... - (in a reexecution)" cell and choose
-   the first stage the fix affects in its `FORCE_FROM` option, then run Runtime > Run all. The options apply to their own cell only. They stay set in the open tab, so
-   clear `RUN` once the rerun passes; reopening the notebook from its link also clears it.
+2. In a new session, set section 3's `FORCE_FROM` to the first stage the fix affects, check only
+   the models to redo, then run Runtime > Run all. The form stays set in the open tab, so clear
+   `FORCE_FROM` once the rerun passes; reopening the notebook from its link also clears it.
 
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
-invalidates nothing; that is why the stage has to be named. The cell passes `FORCE_FROM` to
+invalidates nothing; that is why the stage has to be named. The run cell passes `FORCE_FROM` to
 `garimpo run` as `--force-from`, which takes a name from `STAGE_ORDER` and redoes that stage and
 every stage after it. Earlier stages skip, and `train` runs again only with `--force-from train`,
 which refuses while `last.pt` holds an
 unfinished training: drop it to resume, or delete `last.pt` to start over. The data validation is
-outside that order: redo it with `--force-validate`, the cell's `FORCE_VALIDATE`. Both options work
+outside that order: redo it with `--force-validate`, the form's `FORCE_VALIDATE`. Both options work
 the same way for the full runs.
 
 A stage whose inputs or arguments changed without being forced stops with status `refused`, which

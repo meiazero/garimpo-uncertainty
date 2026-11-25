@@ -6,8 +6,9 @@ unexpectedly.
 ## The store is an archive in Drive
 
 The runtime's disk is erased when the session ends. The store therefore lives in Drive as one
-archive, `data.tar.zst`, which section 2 of the notebook unpacks to the local disk every time:
-reading the store's memmaps through Drive would make every cell a remote read.
+archive, `data.tar.zst`, which section 2 of the notebook unpacks to the local disk once per
+session, skipping it once `.unpacked` is there, a marker written only after tar succeeds, so a cut
+unpack is redone: reading the store's memmaps through Drive would make every cell a remote read.
 
 `runs/` and the logs are copied back from Drive with `rsync -a --ignore-existing`, which copies
 only the files the local disk lacks. A new session gets everything; Run all again in the same
@@ -24,11 +25,13 @@ restored under another path refuses ([stages.md](stages.md#run-identity)).
 Each session clones the repository again without credentials, so code changes are committed and
 pushed from your own machine, never from the session.
 
-## One command per cell
+## Every cell runs again safely
 
-Each cell holds at most one shell command, so a cell that failed can run again on its own,
-without repeating the commands before it. Shell lines use Python names and expressions only
-(`{DRIVE}`, `{os.cpu_count()}`), never shell variables, loops or `;`, `&&` and `||` chains:
+One cell per section, and each can run again, alone or through Run all, in the same session or a
+new one: the setup clones only when the clone is missing, the data unpacks only when it is not
+there yet, and finished stages skip. Shell lines use Python names and expressions only
+(`{DRIVE}`, `{model}`), never shell variables or `;`, `&&` and `||` chains; loops are Python
+loops around `!` lines:
 
 - IPython expands every `{...}` and every `$name` of a `!` line as Python, and `$$` is the escape
   for a shell `$`.
@@ -57,14 +60,16 @@ cell before the release raises:
 If you interrupt a run cell once, `garimpo run` stops the stage, keeps the lines it prints as it
 stops, runs the pipeline check and exits 130. Colab turns a second interrupt into SIGTERM and then
 SIGKILL: the runner kills the stage at once, then still runs the check, whose verdict reaches the
-cell and the log. Then run the cells of
-section 7 by hand.
+cell and the log, and the run cell starts no later model. Then run the cell of section 7 by
+hand.
 
-## Optional and reexecution cells
+## The form
 
-A cell titled "- (optional)" runs only while its `RUN` box is checked, which it is by default. A
-cell titled "- (in a reexecution)" runs only once its `RUN` box is checked, so Runtime > Run all
-never forces a stage by accident. Both write their command in full, so the cell shows what runs.
+Section 3 holds every choice a session makes: the scale, the models to run, `FORCE_FROM`,
+`FORCE_VALIDATE` and `RUN_TESTS`. `FORCE_FROM` applies to every model checked, so uncheck the
+others to redo one. Its defaults force nothing and skip the tests, so Runtime > Run all never
+redoes a stage by accident. The values stay set in the open tab; reopening the notebook from its
+link restores the defaults.
 
 ## Job verdicts
 
@@ -73,18 +78,18 @@ full-run job ends with the `PIPELINE CHECK: PASS` or `PIPELINE CHECK: FAIL` line
 `garimpo check`, failed or not. `garimpo run` appends every line to the model's log with the
 UTC time, so the log keeps earlier attempts, including one cut short by a session that ended. It
 writes an `=== attempt started` line before each attempt, with the config, the commit and the
-options, and `garimpo status <scale> --since <session start>`, which the "Print the verdicts" cell
-runs, prints the verdict of the last attempt only:
+options, and `garimpo status <scale> --since <session start>`, which ends the run cell, prints the
+verdict of the last attempt only:
 
 - `NO VERDICT`: the job or its check died before the verdict; the log says where.
 - `NO LOG`: the log does not exist yet or could not be read.
 - `NOT RUN`: this session wrote nothing to the log, which still has the time it had in Drive. The
   run died before its first line (an `argparse` or import error, or no environment), as the cell's
-  output shows, or its cell did not run.
+  output shows, or the model was not checked in the form.
 
 ## The copy every 30 minutes
 
 During a full run, a Python thread copies `runs/` (without `*.tmp` files, as the final copy and the
 restore do) and the logs to Drive every 30 minutes, so a session that ends mid-run keeps the
-finished stages and the last checkpoint. The stop cell waits for a copy in progress to finish, so it
+finished stages and the last checkpoint. Section 7 waits for a copy in progress to finish, so it
 never writes to Drive at the same time as the final copy.
