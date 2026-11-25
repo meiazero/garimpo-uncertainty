@@ -42,7 +42,7 @@ def test_training_with_workers_is_fixed_by_the_seed(
         metadata = garimpo_uncertainty.data.read_run_metadata(run_dir)
         assert metadata["normalization"] == expected
         weights.append(torch.load(run_dir / "last.pt", weights_only=True)["model"])
-    torch.testing.assert_close(*weights, **support.TRAINING_TOLERANCE)
+    support.assert_same_training_state(*weights)
 
 
 def test_inference_with_workers_matches_inference_without(

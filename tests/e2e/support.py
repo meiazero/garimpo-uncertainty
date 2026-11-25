@@ -100,9 +100,10 @@ if DEVICE == "cuda" and not torch.cuda.is_available():
     raise RuntimeError("GARIMPO_TEST_DEVICE=cuda, but torch sees no GPU")
 DEVICE_ARGS = ["--device", "cpu"] if DEVICE == "cpu" else []
 NUM_WORKERS = "0" if DEVICE == "cpu" else "2"
-# GPU kernels sum in no fixed order, so a training repeated in another process differs in its last
-# bits; a lost state or another batch moves the weights by about a learning-rate step, 1e-3.
-TRAINING_TOLERANCE = {"rtol": 0.0, "atol": 0.0} if DEVICE == "cpu" else {"rtol": 1e-5, "atol": 1e-6}
+# GPU kernels sum in no fixed order, and Adam's first steps move a weight by about lr times the sign
+# of its gradient, so one whose gradient is rounding noise may move the other way. A lost state or
+# another batch moves every weight, so on a GPU the norm of the whole difference is compared.
+GPU_RELATIVE_DIFFERENCE = 1e-3
 # The `garimpo` command itself, then a check that it never imported torch.
 TORCH_FREE = (
     "import runpy, sys; sys.argv = ['garimpo', *sys.argv[1:]]; "
@@ -296,6 +297,24 @@ def run(
     if check and result.returncode != 0:
         raise AssertionError(f"{script} exited {result.returncode}:\n{result.stderr[-4000:]}")
     return result
+
+
+def assert_same_training_state(
+    actual: dict[object, torch.Tensor], expected: dict[object, torch.Tensor]
+) -> None:
+    """Compare named tensors exactly on CPU; on a GPU, integers exactly and floats as one vector."""
+    assert actual.keys() == expected.keys()
+    if DEVICE == "cpu":
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        return
+    floats = [name for name, tensor in expected.items() if tensor.is_floating_point()]
+    for name in expected.keys() - set(floats):
+        assert torch.equal(actual[name], expected[name]), name
+    vectors = [
+        torch.cat([d[name].double().flatten() for name in floats]) for d in (actual, expected)
+    ]
+    difference = float(torch.linalg.vector_norm(vectors[0] - vectors[1]) / vectors[1].norm())
+    assert difference <= GPU_RELATIVE_DIFFERENCE, f"relative difference {difference:.2e}"
 
 
 def train_args(

@@ -17,8 +17,10 @@ import torch
 
 from tests.e2e import support
 
-# What the clock changes; every other column must match the uninterrupted run.
-TIMINGS = [
+# What the clock and the GPU allocator change; every other column must match the uninterrupted run.
+MEASURED = [
+    "train_peak_gpu_bytes",
+    "validation_peak_gpu_bytes",
     "seconds",
     "train_seconds",
     "validation_seconds",
@@ -27,6 +29,10 @@ TIMINGS = [
     "train_cells_per_second",
 ]
 LAST_PT_TIMEOUT_SECONDS = 300
+# On a GPU the weights differ in their last bits, which can flip a pixel of the thresholded scores.
+HISTORY_TOLERANCE = (
+    {"rtol": 0.0, "atol": 0.0} if support.DEVICE == "cpu" else {"rtol": 1e-2, "atol": 1e-6}
+)
 # One epoch before the kill, one after it.
 EPOCHS = "2"
 
@@ -60,28 +66,33 @@ def stop_after_first_epoch(process: subprocess.Popen, run_dir: Path, signal_numb
 
 
 def assert_same_training(run_dir: Path, reference_dir: Path) -> None:
-    """Compare with the uninterrupted run: past TRAINING_TOLERANCE, the resume lost state."""
-    tolerance = support.TRAINING_TOLERANCE
-    history = pd.read_csv(run_dir / "history.csv").drop(columns=TIMINGS)
-    expected = pd.read_csv(reference_dir / "history.csv").drop(columns=TIMINGS)
-    pd.testing.assert_frame_equal(history, expected, check_exact=False, **tolerance)
+    """Compare with the uninterrupted run: past the tolerances, the resume lost state."""
+    history = pd.read_csv(run_dir / "history.csv").drop(columns=MEASURED)
+    expected = pd.read_csv(reference_dir / "history.csv").drop(columns=MEASURED)
+    pd.testing.assert_frame_equal(history, expected, check_exact=False, **HISTORY_TOLERANCE)
     last, expected_last = (
         torch.load(d / "last.pt", weights_only=True) for d in (run_dir, reference_dir)
     )
     # Without the optimizer's moments or the generators, epoch 1 would differ.
-    torch.testing.assert_close(last["model"], expected_last["model"], **tolerance)
+    support.assert_same_training_state(last["model"], expected_last["model"])
     # The generators draw the batches, flips and dropout, which no kernel's sum order changes.
     for key in ("rng", "cuda_rng"):
         torch.testing.assert_close(last[key], expected_last[key], rtol=0, atol=0)
     optimizer, expected_optimizer = last["optimizer"]["state"], expected_last["optimizer"]["state"]
-    torch.testing.assert_close(optimizer, expected_optimizer, **tolerance)
+    assert optimizer.keys() == expected_optimizer.keys()
+    # One vector per moment: the squared gradients are too small to show beside the gradients.
+    for moment in expected_optimizer[next(iter(expected_optimizer))]:
+        support.assert_same_training_state(
+            {p: state[moment] for p, state in optimizer.items()},
+            {p: state[moment] for p, state in expected_optimizer.items()},
+        )
     best, expected_best = (
         torch.load(d / "best_model.pt", weights_only=True) for d in (run_dir, reference_dir)
     )
-    torch.testing.assert_close(best["model"], expected_best["model"], **tolerance)
+    support.assert_same_training_state(best["model"], expected_best["model"])
     assert best["epoch"] == expected_best["epoch"]
     assert best["val_dice"] == pytest.approx(
-        expected_best["val_dice"], rel=tolerance["rtol"], abs=tolerance["atol"]
+        expected_best["val_dice"], rel=HISTORY_TOLERANCE["rtol"], abs=HISTORY_TOLERANCE["atol"]
     )
 
 
