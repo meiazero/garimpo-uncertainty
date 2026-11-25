@@ -45,6 +45,8 @@ def bisection_path(
     """Run the symmetric search of compass2d, keeping the interval's areas after every step."""
     low = torch.zeros_like(target, dtype=torch.float64)
     high = torch.full_like(target, beta_range, dtype=torch.float64)
+    # high only ever takes middle, so its interval is middle's or the one it already had.
+    high_lower, high_upper = space.endpoints(high)
     lowers, uppers = [], []
     for _ in range(steps):
         middle = (low + high) / 2
@@ -52,9 +54,10 @@ def bisection_path(
         covered = (lower <= target) & (target <= upper)
         high = torch.where(covered, middle, high)
         low = torch.where(covered, low, middle)
-        lower, upper = space.endpoints(high)
-        lowers.append(lower.cpu().numpy())
-        uppers.append(upper.cpu().numpy())
+        high_lower = torch.where(covered, lower, high_lower)
+        high_upper = torch.where(covered, upper, high_upper)
+        lowers.append(high_lower.cpu().numpy())
+        uppers.append(high_upper.cpu().numpy())
     return np.stack(lowers), np.stack(uppers)
 
 

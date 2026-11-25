@@ -9,7 +9,6 @@ import argparse
 from pathlib import Path
 from typing import NamedTuple
 
-import compass2d.compass
 import compass2d.directions
 import compass2d.metrics
 import numpy as np
@@ -73,10 +72,8 @@ def search_space(
     target: torch.Tensor,
 ) -> list[torch.Tensor]:
     """Symmetric score and flag, then lower score and flag, then upper score and flag."""
-    searched = (space.decode, space.metric, space.z, space.delta, target)
-    limits = (beta_range, threshold)
-    lower, upper = compass2d.compass.asymmetric_binary_search_scores(*searched, *limits)
-    return [*compass2d.compass.binary_search_scores(*searched, *limits), *lower, *upper]
+    found = garimpo_uncertainty.compass_j.search(space, target, beta_range, threshold)
+    return [array for pair in found for array in pair]
 
 
 def score_batch(

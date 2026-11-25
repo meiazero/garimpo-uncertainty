@@ -46,13 +46,50 @@ class Calibrated(NamedTuple):
             return cls(stored["quantile"], stored["censor_at"], stored["side_ratio"])
 
 
-def row_endpoints(
-    space: garimpo_uncertainty.compass_j.Space, method: str, beta: torch.Tensor, ratio: float
-) -> tuple[torch.Tensor, torch.Tensor]:
+def row_betas(method: str, beta: torch.Tensor, ratio: float) -> torch.Tensor:
+    """Return a row's two signed betas per cell: -beta and beta, or ratio * beta for an a_ row."""
+    up = ratio * beta if method in garimpo_uncertainty.intervals.ASYMMETRIC_METHODS else beta
+    return torch.stack([-beta, up], 1)
+
+
+def row_endpoints(method: str, areas: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Symmetric endpoints, or [m(z - beta delta), m(z + ratio beta delta)] for an a_ row."""
+    down, up = areas.unbind(1)
     if method in garimpo_uncertainty.intervals.ASYMMETRIC_METHODS:
-        return space.shifted(-beta), space.shifted(ratio * beta)
-    return space.endpoints(beta)
+        return down, up
+    return torch.minimum(down, up), torch.maximum(down, up)
+
+
+def batch_betas(
+    calibrated: Calibrated, rows: list[tuple[int, str]], cells: slice, device: str
+) -> dict[str, list[tuple[int, int, str, torch.Tensor]]]:
+    """Return each space's rows at every level, with the signed betas each row needs per cell."""
+    wanted: dict[str, list] = {
+        method: [] for method in garimpo_uncertainty.intervals.COMPASS_METHODS
+    }
+    for a, (k, method) in itertools.product(range(len(calibrated.quantile)), rows):
+        beta = torch.as_tensor(calibrated.quantile[a, k, cells], device=device)
+        # Censored rows become the whole cell in widen_saturated; 0 keeps inf from the decoder.
+        beta = torch.where(beta >= float(calibrated.censor_at[a, k]), 0.0, beta)
+        betas = row_betas(method, beta, float(calibrated.side_ratio[a, k]))
+        wanted[method.removeprefix("a_")].append((a, k, method, betas))
+    return wanted
+
+
+def fill_rows(
+    space: garimpo_uncertainty.compass_j.Space,
+    space_rows: list[tuple[int, int, str, torch.Tensor]],
+    cells: slice,
+    lower: np.ndarray,
+    upper: np.ndarray,
+) -> None:
+    """Fill one space's rows on a batch; a beta that several rows or levels reach decodes once."""
+    betas = torch.cat([betas for *_, betas in space_rows], 1)
+    areas = garimpo_uncertainty.compass_j.Memo(space)(betas).cpu()
+    for row, (a, k, method, _) in enumerate(space_rows):
+        low, high = row_endpoints(method, areas[:, 2 * row : 2 * row + 2])
+        lower[a, k, cells] = low.numpy()
+        upper[a, k, cells] = high.numpy()
 
 
 @torch.no_grad()
@@ -94,15 +131,8 @@ def compass_endpoints(
             fitted,
             args.temperature,
         )
-        for a, (k, method) in itertools.product(range(len(calibrated.quantile)), rows):
-            beta = torch.as_tensor(calibrated.quantile[a, k, first:last], device=device)
-            # Censored rows become the whole cell in widen_saturated; 0 keeps inf from the decoder.
-            beta = torch.where(beta >= float(calibrated.censor_at[a, k]), 0.0, beta)
-            low, high = row_endpoints(
-                spaces[method.removeprefix("a_")], method, beta, float(calibrated.side_ratio[a, k])
-            )
-            lower[a, k, first:last] = low.cpu().numpy()
-            upper[a, k, first:last] = high.cpu().numpy()
+        for name, space_rows in batch_betas(calibrated, rows, slice(first, last), device).items():
+            fill_rows(spaces[name], space_rows, slice(first, last), lower, upper)
         first = last
 
 

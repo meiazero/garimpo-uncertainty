@@ -63,6 +63,17 @@ runs and result tables go to `runs/pilot/`, never to `outputs/`.
 Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot.md). The full run:
 [docs/full-run.md](docs/full-run.md).
 
+## Sizing the runtime
+
+`notebooks/03_tune_hardware.ipynb` measures, on synthetic cells and without Drive, what limits each
+hot path of the pipeline on the session's GPU, CPUs and disk. It times data loading, training, the
+COMPASS searches, the eval batch size, the float32 precision and LightGBM's threads. Its verdict
+names the smallest setting that is enough and the full run's hours on that machine. A `Memo` score
+or a strict float32 result that loses a bit fails it; another candidate that moves a bit is
+reported for a decision. Open it at
+<https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/notebooks/03_tune_hardware.ipynb>
+on an L4 or A100 runtime, then run Runtime > Run all.
+
 ## Documentation
 
 | Document | Covers |
