@@ -1,7 +1,7 @@
 # Colab sessions
 
 Read before changing a cell of `notebooks/01_run_experiment.ipynb`, or when a cell behaves
-unexpectedly.
+unexpectedly. The last section covers what `notebooks/03_tune_hardware.ipynb` does differently.
 
 ## The store is an archive in Drive
 
@@ -93,3 +93,23 @@ During a full run, a Python thread copies `runs/` (without `*.tmp` files, as the
 restore do) and the logs to Drive every 30 minutes, so a session that ends mid-run keeps the
 finished stages and the last checkpoint. Section 7 waits for a copy in progress to finish, so it
 never writes to Drive at the same time as the final copy.
+
+## The sizing notebook
+
+`notebooks/03_tune_hardware.ipynb` follows the rules above with three differences, because it
+measures the machine instead of running the pipeline:
+
+- It touches neither Drive nor the real store. Its cells are synthetic, written to
+  `outputs/tuning/store/` on the local disk, and its results stay in the kernel's memory, so the
+  release at the end, when `RELEASE` is checked, erases them: copy the verdict first.
+- Its measurements run in the kernel's own Python, the one the pipeline's commands run on. The
+  setup installs `requirements.txt` there, which replaces none of Colab's packages, and then reads
+  the `.pth` files of the editable installs, which Python only reads at startup, so `import
+  garimpo_uncertainty` works without restarting the session.
+- Each measuring cell starts with `%%section <name>`, a cell magic defined in the setup. It runs the
+  cell, and when the cell raises it prints the traceback and records the failure for the verdict
+  instead of raising, so Colab cancels no later cell and the release still runs. A failed setup
+  skips every section the same way.
+
+Its form's `BRANCH` names the code it measures; set it to a branch that is not merged yet to size
+that branch's code.
