@@ -487,8 +487,9 @@ def train(
     loaders = build_loaders(args, root, metadata["normalization"], train_cells, validation_cells)
     garimpo_uncertainty.pipeline.runner.show(start_line(args, state, device, loaders))
     batch_shape = run_epochs(args, state, loaders, device)
-    if state.best_dice != NO_BEST_DICE:
-        best = next(r["epoch"] for r in state.history if r["val_dice"] == state.best_dice)
+    # A resumed best Dice may come from no epoch of the history, as when last.pt was edited.
+    best = next((r["epoch"] for r in state.history if r["val_dice"] == state.best_dice), None)
+    if state.best_dice != NO_BEST_DICE and best is not None:
         garimpo_uncertainty.pipeline.runner.result(
             f"best val_dice {state.best_dice:.4f} at epoch {best + 1} (* marks a new best)"
         )
