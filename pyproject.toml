@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "compass",
     "geopandas>=1.0",
+    "matplotlib>=3.9",
     "numpy>=2.0",
     "pandas>=2.0",
     "pyogrio>=0.9",
@@ -18,32 +19,10 @@ dependencies = [
     "segmentation-models-pytorch==0.6.0",
     "shapely>=2.0",
     "torch>=2.14.0",
-    "torchvision>=0.29.0",  # required by segmentation-models-pytorch; here so the cu126 index applies
 ]
 
 [project.scripts]
 garimpo = "garimpo_uncertainty.cli:main"
-
-[dependency-groups]
-dev = [
-    "pytest>=9.1.1",
-    "pytest-xdist>=3.8",
-    "ruff>=0.16.9",
-]
-figures = [
-    "matplotlib>=3.9",
-]
-
-# The PyPI torch wheel targets CUDA 13; the cu126 build also runs on hosts with a CUDA 12 driver.
-[[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
-explicit = true
-
-[tool.uv.sources]
-compass = { path = "compass", editable = true }
-torch = { index = "pytorch-cu126" }
-torchvision = { index = "pytorch-cu126" }
 
 [build-system]
 requires = ["hatchling"]
