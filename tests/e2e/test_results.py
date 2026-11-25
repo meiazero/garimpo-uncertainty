@@ -1,6 +1,7 @@
 """The numbers of a finished run, recomputed apart from the pipeline."""
 
 import argparse
+import copy
 import json
 from dataclasses import dataclass
 from itertools import combinations
@@ -695,7 +696,7 @@ def compass_inputs(evaluation: Evaluation) -> CompassInputs:
     predictions = evaluation.cells
     run_dir = evaluation.run_dir
     model, metadata = garimpo_uncertainty.checkpoints.load_model(
-        run_dir / "best_model.pt", predictions, "cpu"
+        run_dir / "best_model.pt", predictions, support.DEVICE
     )
     test = predictions.iloc[
         np.searchsorted(predictions.cell_index.to_numpy(), evaluation.interval_index)
@@ -715,20 +716,13 @@ def compass_inputs(evaluation: Evaluation) -> CompassInputs:
     return CompassInputs(model, metadata, test, jacobians, fitted, compass_rows)
 
 
-# These recompute the stage in this process, on CPU; exact equality holds only on one device.
-same_device_as_the_stage = pytest.mark.skipif(
-    support.DEVICE != "cpu", reason="the stage ran on the GPU, this process recomputes on CPU"
-)
-
-
-@same_device_as_the_stage
 @pytest.mark.parametrize("alpha", support.ALPHAS)
 def test_each_compass_row_alone_matches_the_one_pass(
     evaluation: Evaluation, compass_inputs: CompassInputs, alpha: float
 ) -> None:
     """Evaluate each COMPASS row with its own loader against the stage's one pass.
 
-    Exact equality, no tolerance: same weights, same batches, same CPU code, so any difference is a
+    Exact equality, no tolerance: same weights, same batches, same device, so any difference is a
     change in what is computed, and the rewrite promised none.
     """
     intervals = garimpo_uncertainty.intervals
@@ -758,7 +752,9 @@ def test_each_compass_row_alone_matches_the_one_pass(
                 evaluation.data_root, test, compass_inputs.metadata["normalization"], 8, 0
             ):
                 last = first + len(images)
-                features = garimpo_uncertainty.models.common.encode(model, images)
+                features = garimpo_uncertainty.models.common.encode(
+                    model, images.to(support.DEVICE)
+                )
                 quantile = evaluation.all_quantile[level, k, first:last]
                 base = method.removeprefix("a_")
                 asymmetric = base != method
@@ -767,7 +763,9 @@ def test_each_compass_row_alone_matches_the_one_pass(
                 # side is censored at beta_range / ratio.
                 censor = min(beta_range[base], beta_range[base] / ratio) if asymmetric else None
                 whole_cell[row, first:last] = quantile >= (censor or beta_range[base])
-                beta = torch.as_tensor(np.where(whole_cell[row, first:last], 0.0, quantile))
+                beta = torch.as_tensor(
+                    np.where(whole_cell[row, first:last], 0.0, quantile), device=support.DEVICE
+                )
                 if base == "compass_l":
                     logits, _ = garimpo_uncertainty.models.common.split_at(
                         model, garimpo_uncertainty.models.common.LOGITS, features
@@ -790,8 +788,8 @@ def test_each_compass_row_alone_matches_the_one_pass(
                     high = compass2d.compass.shifted(*space, ratio * beta)
                 else:
                     low, high = compass2d.compass.endpoints(*space, beta)
-                alone_lower[row, first:last] = low.numpy()
-                alone_upper[row, first:last] = high.numpy()
+                alone_lower[row, first:last] = low.cpu().numpy()
+                alone_upper[row, first:last] = high.cpu().numpy()
                 first = last
     cell_ha = np.broadcast_to(test.cell_ha.to_numpy(), whole_cell.shape)
     alone_lower[whole_cell], alone_upper[whole_cell] = 0.0, cell_ha[whole_cell]
@@ -810,7 +808,8 @@ def test_loaded_model_scores_each_cell_independently_of_its_batch(
     That holds only if no cell's output depends on another's, which batch norm in train mode
     breaks; the stages get their model from load_model alone, so it must leave eval mode on.
     """
-    model = compass_inputs.model
+    # On CPU: cuDNN may pick another kernel for another batch size, which moves the last bits.
+    model = copy.deepcopy(compass_inputs.model).cpu()
     assert not any(module.training for module in model.modules())
     assert not any(parameter.requires_grad for parameter in model.parameters())
     torch.manual_seed(0)
@@ -843,7 +842,6 @@ def test_empty_cell_gets_the_scaled_mean_direction(compass_inputs: CompassInputs
         compass2d.directions.cell_deltas("pca", jacobians, no_mean)
 
 
-@same_device_as_the_stage
 def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
     evaluation: Evaluation, compass_inputs: CompassInputs
 ) -> None:
@@ -880,7 +878,7 @@ def test_stage_reads_each_cell_once_and_encodes_each_batch_once(
             root=evaluation.data_root,
             metadata=compass_inputs.metadata,
             args=args,
-            device="cpu",
+            device=support.DEVICE,
             lower=lower,
             upper=upper,
         )

@@ -100,6 +100,9 @@ if DEVICE == "cuda" and not torch.cuda.is_available():
     raise RuntimeError("GARIMPO_TEST_DEVICE=cuda, but torch sees no GPU")
 DEVICE_ARGS = ["--device", "cpu"] if DEVICE == "cpu" else []
 NUM_WORKERS = "0" if DEVICE == "cpu" else "2"
+# GPU kernels sum in no fixed order, so a training repeated in another process differs in its last
+# bits; a lost state or another batch moves the weights by about a learning-rate step, 1e-3.
+TRAINING_TOLERANCE = {"rtol": 0.0, "atol": 0.0} if DEVICE == "cpu" else {"rtol": 1e-5, "atol": 1e-6}
 # The `garimpo` command itself, then a check that it never imported torch.
 TORCH_FREE = (
     "import runpy, sys; sys.argv = ['garimpo', *sys.argv[1:]]; "

@@ -1,4 +1,4 @@
-"""DataLoader worker processes, which the rest of the suite leaves at 0 and Colab runs at its CPUs.
+"""DataLoader worker processes, which the CPU suite leaves at 0 and Colab runs at its CPUs.
 
 Each worker pickles the dataset, opens the memmaps itself and draws its seed from the run's
 generator.
@@ -7,20 +7,15 @@ generator.
 from pathlib import Path
 
 import numpy as np
-import pytest
 import torch
 
 import garimpo_uncertainty.data
 from tests.e2e import support
 
-pytestmark = pytest.mark.skipif(
-    support.NUM_WORKERS != "0", reason="GARIMPO_TEST_DEVICE=cuda runs every stage with workers"
-)
 
-
-def with_workers(args: list[str]) -> list[str]:
+def with_workers(args: list[str], count: str) -> list[str]:
     position = args.index("--num-workers") + 1
-    return [*args[:position], "2", *args[position + 1 :]]
+    return [*args[:position], count, *args[position + 1 :]]
 
 
 def predictions(run_dir: Path) -> dict[str, np.ndarray]:
@@ -42,12 +37,12 @@ def test_training_with_workers_is_fixed_by_the_seed(
     weights = []
     for name in ("first", "second"):
         run_dir = tmp_path / name
-        args = with_workers(support.train_args("convnet", run_dir, epochs="1"))
+        args = with_workers(support.train_args("convnet", run_dir, epochs="1"), "2")
         support.run("train", *args, data_root=data_root)
         metadata = garimpo_uncertainty.data.read_run_metadata(run_dir)
         assert metadata["normalization"] == expected
         weights.append(torch.load(run_dir / "last.pt", weights_only=True)["model"])
-    torch.testing.assert_close(*weights, rtol=0, atol=0)
+    torch.testing.assert_close(*weights, **support.TRAINING_TOLERANCE)
 
 
 def test_inference_with_workers_matches_inference_without(
@@ -56,7 +51,7 @@ def test_inference_with_workers_matches_inference_without(
     """Out-of-order batches would put one cell's prediction at another's position."""
     args = [*support.checkpoint_args(private_convnet.run_dir), "--force"]
     results = []
-    for stage_args in (args, with_workers(args)):
+    for stage_args in (with_workers(args, "0"), with_workers(args, "2")):
         support.run("infer", *stage_args, data_root=data_root)
         results.append(predictions(private_convnet.run_dir))
     without, with_two = results

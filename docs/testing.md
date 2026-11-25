@@ -46,8 +46,8 @@ uv run ruff format --check . && uv run ruff check .
 | `test_stages.py` | Reruns, refusals, saturation, an asymmetric quantile past its upper censoring, absent and misaligned cells, another data root, the score floors, the SVM orientation and a direction fit with no gradient, merge, peak memory records, the commit each stage records, and `garimpo check`, including an incomplete results table |
 | `test_fractions.py` | Two fractions on one data root, the larger fraction's data arriving after the smaller run finished |
 | `test_run.py` | `garimpo run` run as Colab runs it, from a root holding configs of its own: a full job to PASS, its log holding every line it printed and every stage's end, each flag that takes a value receiving, in the command the runner logs, the config value its name gives (or a short table of exceptions gives), every config value distinct from the others and each one reaching a stage, the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `--force-from` and `--force-validate` with a second attempt appended to the log, an unknown `--force-from`, a failed stage stopping the job, the other layer of `LAYERS` run through the layer's stages into `layers/<layer>/`, its output-space rows equal to the chosen layer's to the bit and its COMPASS-J rows not, the check naming an other layer that never ran, failing on a NaN in an other layer's `results.csv` and naming that layer, ending in a verdict, naming the cause, without `chosen_layer.json` or with it not an object, `--force-from` redoing the other layer's stages too, a job lost after `choose_layer` leaving the later stages, the other layer's included, `stale`, refused by the merge, and its rerun skipping them back to `ok`, Ctrl+C stopping the training inside its stage, its traceback still reaching the log, and the check still running, a refused config stopping the job before any stage, with its reasons in the log; in the process, every key left null, a misspelled key, a key in another file, a `SCORE_FLOOR_HA` that is not a positive finite number, every versioned model at every scale accepted with only layers of its model, and each one's run directory and log name, those of the recorded runs |
-| `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
-| `test_workers.py` | Two DataLoader workers on CPU: two trainings with one seed give one model, band statistics and every prediction equal those read without workers |
+| `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance on CPU; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
+| `test_workers.py` | Two DataLoader workers: two trainings with one seed give one model, band statistics and every prediction equal those read without workers |
 
 ## On a GPU
 
@@ -61,11 +61,12 @@ Run the suite on a Colab GPU runtime before the first paid run, with section 4 o
 The stages then get no `--device`, so they choose the GPU through `checkpoints.default_device` as a
 real run does, and every loader runs with 2 workers and pinned memory. `test_training_artifacts`
 then requires a positive GPU peak in `history.csv`, the `infer` status and `status/train.json`.
-Skipped there: `test_workers.py`, which every stage then covers; the two `test_results.py` tests
-that recompute a stage in the test process on CPU; the `test_training.py` test that recomputes the
-validation metrics from `best_model.pt` on CPU; and the comparison with the uninterrupted run in
-`test_resume.py`, since GPU kernels are not deterministic. No GPU run of this command is recorded
-yet.
+Nothing is skipped there. The tests that recompute a stage in the test process do it on the GPU,
+as the stage did, and still require exact equality. `test_workers.py` compares 0 and 2 workers
+explicitly. GPU kernels sum in no fixed order, so the trainings repeated in `test_workers.py` and
+`test_resume.py` compare weights, optimizer state and history within `TRAINING_TOLERANCE` of
+`tests/e2e/support.py`, zero on CPU; the generators, CUDA's included, must still match exactly.
+No GPU run of this version is recorded yet.
 
 ## Not covered
 

@@ -60,23 +60,29 @@ def stop_after_first_epoch(process: subprocess.Popen, run_dir: Path, signal_numb
 
 
 def assert_same_training(run_dir: Path, reference_dir: Path) -> None:
-    """Exact equality: same seed, one CPU core, so any difference is state the resume lost."""
+    """Compare with the uninterrupted run: past TRAINING_TOLERANCE, the resume lost state."""
+    tolerance = support.TRAINING_TOLERANCE
     history = pd.read_csv(run_dir / "history.csv").drop(columns=TIMINGS)
     expected = pd.read_csv(reference_dir / "history.csv").drop(columns=TIMINGS)
-    pd.testing.assert_frame_equal(history, expected, check_exact=True)
+    pd.testing.assert_frame_equal(history, expected, check_exact=False, **tolerance)
     last, expected_last = (
         torch.load(d / "last.pt", weights_only=True) for d in (run_dir, reference_dir)
     )
-    # Without the optimizer's moments or the generator, epoch 1 would differ.
-    for key in ("model", "rng"):
+    # Without the optimizer's moments or the generators, epoch 1 would differ.
+    torch.testing.assert_close(last["model"], expected_last["model"], **tolerance)
+    # The generators draw the batches, flips and dropout, which no kernel's sum order changes.
+    for key in ("rng", "cuda_rng"):
         torch.testing.assert_close(last[key], expected_last[key], rtol=0, atol=0)
     optimizer, expected_optimizer = last["optimizer"]["state"], expected_last["optimizer"]["state"]
-    torch.testing.assert_close(optimizer, expected_optimizer, rtol=0, atol=0)
+    torch.testing.assert_close(optimizer, expected_optimizer, **tolerance)
     best, expected_best = (
         torch.load(d / "best_model.pt", weights_only=True) for d in (run_dir, reference_dir)
     )
-    torch.testing.assert_close(best["model"], expected_best["model"], rtol=0, atol=0)
-    assert (best["epoch"], best["val_dice"]) == (expected_best["epoch"], expected_best["val_dice"])
+    torch.testing.assert_close(best["model"], expected_best["model"], **tolerance)
+    assert best["epoch"] == expected_best["epoch"]
+    assert best["val_dice"] == pytest.approx(
+        expected_best["val_dice"], rel=tolerance["rtol"], abs=tolerance["atol"]
+    )
 
 
 @pytest.fixture(scope="module")
@@ -107,9 +113,7 @@ def test_training_resumes_after_the_last_finished_epoch(
     assert "resuming after epoch 0" in resumed.stdout
     assert json.loads(status.read_text())["status"] == "ok"
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]
-    # On a GPU, kernels are not deterministic.
-    if support.DEVICE == "cpu":
-        assert_same_training(run_dir, uninterrupted)
+    assert_same_training(run_dir, uninterrupted)
 
 
 def finished_epoch_zero(run_dir: Path, data_root: Path) -> None:

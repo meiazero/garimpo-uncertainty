@@ -80,9 +80,6 @@ def test_history_records_what_a_training_needs_watching(finished_run: support.Fi
 UNEVEN_BATCH = 3
 
 
-@pytest.mark.skipif(
-    support.DEVICE != "cpu", reason="the stage ran on the GPU, this process recomputes on CPU"
-)
 def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(data_root: Path) -> None:
     """Recompute the validation loss, precision and recall from best_model.pt, apart from train.py.
 
@@ -101,7 +98,7 @@ def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(data_root: Pa
     validation = cells[cells.role == "validation"]
     assert len(validation) % UNEVEN_BATCH != 0, "an even last batch would hide a per-batch mean"
     model, metadata = garimpo_uncertainty.checkpoints.load_model(
-        run_dir / "best_model.pt", cells, "cpu"
+        run_dir / "best_model.pt", cells, support.DEVICE
     )
     loader = garimpo_uncertainty.cell_dataset.loader(
         data_root, validation, metadata["normalization"], UNEVEN_BATCH, 0
@@ -110,10 +107,11 @@ def test_validation_metrics_of_the_best_epoch_match_its_checkpoint(data_root: Pa
     bce = torch.nn.BCEWithLogitsLoss()
     weighted_loss, counts = 0.0, np.zeros(3)
     with torch.no_grad():
-        for images, masks, _ in loader:
+        for read_images, read_masks, _ in loader:
+            images, masks = read_images.to(support.DEVICE), read_masks.to(support.DEVICE)
             logits = model(images)
             weighted_loss += float(dice(logits, masks) + bce(logits, masks)) * len(images)
-            predicted, reference = (logits >= 0).numpy(), (masks > 0).numpy()
+            predicted, reference = (logits >= 0).cpu().numpy(), (read_masks > 0).numpy()
             counts += [
                 (predicted & reference).sum(),
                 (predicted & ~reference).sum(),
