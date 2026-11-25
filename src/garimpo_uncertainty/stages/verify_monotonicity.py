@@ -1,4 +1,4 @@
-"""Stage: Algorithm 2 sweep per layer and direction; writes monotonicity_<use>.csv.
+"""Stage: Algorithm 2 sweep per layer and direction; writes monotonicity_<use>.csv and the curves.
 
 --use layer informs the choice of layer, so it reads the validation role only, never test;
 --use endpoint checks the chosen layer on the cells the endpoint search actually runs on.
@@ -11,6 +11,7 @@ from pathlib import Path
 import compass2d.compass
 import compass2d.directions
 import compass2d.metrics
+import numpy as np
 import pandas as pd
 import torch
 
@@ -24,6 +25,30 @@ import garimpo_uncertainty.models.common
 import garimpo_uncertainty.pipeline.runner
 
 ROLES_BY_USE = {"layer": ("validation",), "endpoint": ("calibration", "test")}
+Swept = tuple[compass2d.compass.Monotonicity, torch.Tensor]
+
+
+def sweep(
+    decode: compass2d.compass.Decode,
+    metric: compass2d.compass.Metric,
+    z: torch.Tensor,
+    delta: torch.Tensor,
+    *,
+    beta_max: float,
+    steps: int,
+) -> Swept:
+    """Run Algorithm 2 and keep its curve, area per beta and cell, which it computes and drops.
+
+    verify_monotonicity calls the metric once per grid point, from -beta_max to beta_max.
+    """
+    curve = []
+
+    def recorded(logits: torch.Tensor) -> torch.Tensor:
+        curve.append(metric(logits))
+        return curve[-1]
+
+    flags = compass2d.compass.verify_monotonicity(decode, recorded, z, delta, beta_max, steps)
+    return flags, torch.stack(curve)
 
 
 def summarize(
@@ -55,15 +80,13 @@ def sweep_layer(
     features: list[torch.Tensor],
     fitted: compass2d.directions.Directions,
     args: argparse.Namespace,
-) -> dict[str, compass2d.compass.Monotonicity]:
+) -> dict[str, Swept]:
     """Sweep one batch through one layer, one result per direction."""
     z, decode = garimpo_uncertainty.models.common.split_at(model, layer, features)
     jacobian = garimpo_uncertainty.compass_j.jacobian(decode, z, args.direction_temperature)
     soft = garimpo_uncertainty.compass_j.soft_area(args.temperature)
     return {
-        direction: compass2d.compass.verify_monotonicity(
-            decode, soft, z, delta, args.beta_max_features, args.steps
-        )
+        direction: sweep(decode, soft, z, delta, beta_max=args.beta_max_features, steps=args.steps)
         for direction, delta in garimpo_uncertainty.compass_j.channel_deltas(
             jacobian, fitted, z
         ).items()
@@ -88,41 +111,78 @@ def sweep_role(
     *,
     args: argparse.Namespace,
     device: str,
-) -> list[dict]:
+) -> tuple[list[dict], dict[str, np.ndarray]]:
+    """Return the role's summary rows and its curves, keyed role:layer:direction, cells in order."""
     run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
     fitted = {
         layer: compass2d.directions.Directions.load(run.directions(layer)) for layer in args.layers
     }
-    uniform = []
-    per_direction: dict[tuple[str, str], list] = {}
+    logits_layer = garimpo_uncertainty.models.common.LOGITS
+    swept: dict[tuple[str, str], list[Swept]] = {}
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     for images, _, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         features = garimpo_uncertainty.models.common.encode(model, images.to(device))
-        logits, _ = garimpo_uncertainty.models.common.split_at(
-            model, garimpo_uncertainty.models.common.LOGITS, features
-        )
-        uniform.append(
-            compass2d.compass.verify_monotonicity(
+        logits, _ = garimpo_uncertainty.models.common.split_at(model, logits_layer, features)
+        swept.setdefault((logits_layer, "uniform"), []).append(
+            sweep(
                 lambda z: z,
                 hard_area,
                 logits,
                 torch.ones_like(logits),
-                args.beta_max_logits,
-                args.steps,
+                beta_max=args.beta_max_logits,
+                steps=args.steps,
             )
         )
         for layer in args.layers:
-            swept = sweep_layer(model, layer, features, fitted[layer], args)
-            for direction, flags in swept.items():
-                per_direction.setdefault((layer, direction), []).append(flags)
-    rows = [summarize(uniform, garimpo_uncertainty.models.common.LOGITS, "uniform", role)]
-    rows += [
-        summarize(flags, layer, direction, role)
-        for (layer, direction), flags in per_direction.items()
+            for direction, result in sweep_layer(
+                model, layer, features, fitted[layer], args
+            ).items():
+                swept.setdefault((layer, direction), []).append(result)
+    rows = [
+        summarize([flags for flags, _ in results], layer, direction, role)
+        for (layer, direction), results in swept.items()
     ]
-    return rows
+    curves = {
+        f"{role}:{layer}:{direction}": torch.cat([c for _, c in results], 1).cpu().numpy()
+        for (layer, direction), results in swept.items()
+    }
+    return rows, curves | {f"{role}:cell_index": cells.cell_index.to_numpy()}
+
+
+def sweep_roles(
+    model: torch.nn.Module,
+    cells: pd.DataFrame,
+    root: Path,
+    metadata: dict,
+    *,
+    args: argparse.Namespace,
+    device: str,
+) -> tuple[list[dict], dict[str, np.ndarray]]:
+    """Sweep a seeded sample of each role the use reads."""
+    rows, curves = [], {}
+    for role in ROLES_BY_USE[args.use]:
+        role_cells = cells[cells.role == role]
+        subset = role_cells.sample(
+            min(args.cells_per_role, len(role_cells)), random_state=args.seed
+        )
+        role_rows, role_curves = sweep_role(
+            model, role, subset, root, metadata, args=args, device=device
+        )
+        rows += role_rows
+        curves |= role_curves
+    return rows, curves
+
+
+def write_curves(path: Path, curves: dict[str, np.ndarray], args: argparse.Namespace) -> None:
+    """Store the curves with the grid each was swept on: logits and features take other ranges."""
+    garimpo_uncertainty.files.write_arrays(
+        path,
+        **curves,
+        beta_logits=np.linspace(-args.beta_max_logits, args.beta_max_logits, args.steps),
+        beta_features=np.linspace(-args.beta_max_features, args.beta_max_features, args.steps),
+    )
 
 
 def main() -> None:
@@ -156,29 +216,24 @@ def main() -> None:
     root = garimpo_uncertainty.data.data_root()
     device = args.device or garimpo_uncertainty.checkpoints.default_device()
     run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
-    output = run.monotonicity(args.use)
+    output, curves_output = run.monotonicity(args.use), run.monotonicity_curves(args.use)
     inputs = [args.checkpoint, run.direction_diagnostics]
     inputs += [run.directions(layer) for layer in args.layers]
 
     def work() -> dict:
         cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
         model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
-        rows = []
-        for role in ROLES_BY_USE[args.use]:
-            role_cells = cells[cells.role == role]
-            subset = role_cells.sample(
-                min(args.cells_per_role, len(role_cells)), random_state=args.seed
-            )
-            rows += sweep_role(model, role, subset, root, metadata, args=args, device=device)
+        rows, curves = sweep_roles(model, cells, root, metadata, args=args, device=device)
         with garimpo_uncertainty.files.atomic(output) as temporary:
             pd.DataFrame(rows).to_csv(temporary, index=False)
+        write_curves(curves_output, curves, args)
         show_worst(rows)
         return {"rows": len(rows), "cells_per_role": args.cells_per_role}
 
     garimpo_uncertainty.pipeline.runner.run_stage(
         run.status,
         f"{args.use}_monotonicity",
-        [output],
+        [output, curves_output],
         garimpo_uncertainty.pipeline.runner.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),

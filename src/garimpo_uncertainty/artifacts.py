@@ -76,6 +76,9 @@ class RunPaths:
     def monotonicity(self, use: str) -> Path:
         return self.root / f"monotonicity_{use}.csv"
 
+    def monotonicity_curves(self, use: str) -> Path:
+        return self.root / f"monotonicity_{use}_curves.npz"
+
     @property
     def chosen_layer(self) -> Path:
         return self.root / "chosen_layer.json"

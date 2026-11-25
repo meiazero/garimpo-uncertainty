@@ -434,6 +434,18 @@ def test_monotonicity_tables(evaluation: Evaluation) -> None:
     assert set(endpoint.role) == {"calibration", "test"}
 
 
+def test_monotonicity_curves_are_the_swept_areas(evaluation: Evaluation) -> None:
+    """Each stored curve, read back, gives the share of ascending cells the table reports."""
+    table = pd.read_csv(evaluation.run_dir / "monotonicity_layer.csv")
+    with np.load(evaluation.run_dir / "monotonicity_layer_curves.npz") as curves:
+        n_cells = len(curves["validation:cell_index"])
+        for row in table.itertuples():
+            curve = curves[f"{row.role}:{row.layer}:{row.direction}"]
+            assert curve.shape == (len(curves["beta_features"]), n_cells)
+            ascending = (np.diff(curve, axis=0) >= 0).all(0).mean()
+            assert np.isclose(ascending, row.fraction_ascending), row
+
+
 def test_direction_diagnostics(evaluation: Evaluation) -> None:
     diagnostics = pd.read_csv(evaluation.run_dir / "directions" / "diagnostics.csv")
     assert diagnostics.abs_cos_v1_w.between(0, 1 + 1e-9).all()

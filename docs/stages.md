@@ -16,9 +16,9 @@ Paths without a prefix are inside the run directory.
 | `garimpo train` | GPU | the run's slots and sidecars, split, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
 | `garimpo infer` | GPU | checkpoint, store | `predictions/cells.npz`, `predictions/{validation,calibration,test}.npy` |
 | `garimpo fit_directions` | GPU | checkpoint, training slots | `directions/<layer>.npz`, `directions/diagnostics.csv` |
-| `garimpo verify_monotonicity --use layer` | GPU | checkpoint, directions, validation slots | `monotonicity_layer.csv` |
+| `garimpo verify_monotonicity --use layer` | GPU | checkpoint, directions, validation slots | `monotonicity_layer.csv`, `monotonicity_layer_curves.npz` (area per beta and cell) |
 | `garimpo choose_layer` | CPU | `directions/diagnostics.csv`, validation rows of `monotonicity_layer.csv` | `chosen_layer.json` (the layer, the threshold, each candidate's explained variance and fractions) |
-| `garimpo verify_monotonicity --use endpoint` | GPU | checkpoint, direction of the layer, calibration and test slots | `monotonicity_endpoint.csv` |
+| `garimpo verify_monotonicity --use endpoint` | GPU | checkpoint, direction of the layer, calibration and test slots | `monotonicity_endpoint.csv`, `monotonicity_endpoint_curves.npz` |
 | `garimpo compass_scores` | GPU | checkpoint, direction of the layer, validation, calibration and test slots | `scores/scores.npz` |
 | `garimpo calibrate` | CPU | `predictions/cells.npz`, `scores/scores.npz` | `calibration/quantiles.npz` (`quantile`, `lower_term`, `upper_term` and `scale` of each row and cell; every array in [data-layout.md](data-layout.md#run-artifacts)) |
 | `garimpo generate_intervals` | GPU | checkpoint, `calibration/quantiles.npz`, directions, `scores/scores.npz`, test slots; one pass, one encoder pass per batch | `intervals/intervals.npz` |
