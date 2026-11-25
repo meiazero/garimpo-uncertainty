@@ -233,7 +233,10 @@ def main() -> None:
     garimpo_uncertainty.pipeline.runner.run_stage(
         run.status,
         f"{args.use}_monotonicity",
-        [output, curves_output],
+        # ponytail: the curves stay out of the outputs that decide a skip, so a run finished before
+        # they existed still skips instead of rewriting the table and refusing choose_layer. Such a
+        # run has no curves; list them here once no such run is kept.
+        [output],
         garimpo_uncertainty.pipeline.runner.fingerprint(
             args, inputs, hashed=garimpo_uncertainty.data.run_identity(root, args.run_dir)
         ),
