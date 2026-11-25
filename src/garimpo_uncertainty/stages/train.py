@@ -4,7 +4,6 @@ No hyperparameter has a default, so a run states every value it uses.
 """
 
 import argparse
-import datetime as dt
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -391,42 +390,35 @@ def run_epochs(
         previous_best = state.best_dice
         save_epoch(args, state, epoch, record["val_dice"])
         improved = state.best_dice > previous_best
-        print(epoch_line(record, args.epochs, state, improved=improved), flush=True)
+        garimpo_uncertainty.pipeline.runner.show(
+            epoch_line(record, args.epochs, state, improved=improved)
+        )
     return batch_shape
 
 
 def start_line(
     args: argparse.Namespace, state: TrainingState, device: str, loaders: Loaders
 ) -> str:
-    """Return what the log says before the first epoch: device, cells, updates and model size."""
+    """Return the line before the first epoch: where it trains, on what, and the model's size."""
     parameters = sum(p.numel() for p in state.model.parameters())
     return (
-        f"training on {device}: {len(loaders.train.dataset)} cells, {args.steps_per_epoch} "
-        f"updates of {args.batch_size} per epoch, epochs {state.first_epoch + 1} to "
-        f"{args.epochs}; validating {len(loaders.validation.dataset)} cells; scoring "
-        f"{len(loaders.train_eval.dataset)} training cells in eval mode; "
-        f"{parameters / 1e6:.1f} M parameters"
+        f"training on {device} · {len(loaders.train.dataset)} train cells · "
+        f"{len(loaders.validation.dataset)} validation cells · {parameters / 1e6:.1f}M params · "
+        f"epochs {state.first_epoch + 1} to {args.epochs}"
     )
 
 
 def epoch_line(record: dict, epochs: int, state: TrainingState, *, improved: bool) -> str:
-    """Return one readable line per epoch for the log; history.csv keeps every value unrounded."""
-    best = "none yet" if state.best_dice == NO_BEST_DICE else f"{state.best_dice:.4f}"
+    """Return one line per epoch, as training logs print it; history.csv keeps every value."""
     remaining = epochs - record["epoch"] - 1
     eta = remaining * np.mean([epoch["seconds"] for epoch in state.history])
     peak = record["train_peak_gpu_bytes"]
-    gpu = "" if peak is None else f", gpu {peak / 1024**3:.1f} GB"
+    gpu = "" if peak is None else f" · {peak / 1024**3:.1f} GB"
+    duration = garimpo_uncertainty.pipeline.runner.duration
     return (
-        f"epoch {record['epoch'] + 1}/{epochs}: train_loss {record['train_loss']:.4f}, "
-        f"val_loss {record['val_loss']:.4f}, val_dice {record['val_dice']:.4f} "
-        f"(best {best}{', new best' if improved else ''}), "
-        f"train_eval_dice {record['train_eval_dice']:.4f}, "
-        f"val_precision {record['val_precision']:.4f}, val_recall {record['val_recall']:.4f}, "
-        f"lr {record['lr']:.2e}, grad_norm {record['grad_norm_mean']:.3g} "
-        f"(max {record['grad_norm_max']:.3g}), {record['seconds']:.1f} s "
-        f"(data wait {record['train_data_wait_seconds']:.1f} s), "
-        f"{record['train_cells_per_second']:.0f} cells/s{gpu}, "
-        f"eta {dt.timedelta(seconds=round(eta))}"
+        f"epoch {record['epoch'] + 1}/{epochs} · loss {record['train_loss']:.4f} · val_loss "
+        f"{record['val_loss']:.4f} · val_dice {record['val_dice']:.4f}{' *' if improved else ''} · "
+        f"{duration(record['seconds'])}{gpu} · eta {duration(eta)}"
     )
 
 
@@ -493,8 +485,13 @@ def train(
 
     state = start_training(args, device, metadata, weights_file, resume)
     loaders = build_loaders(args, root, metadata["normalization"], train_cells, validation_cells)
-    print(start_line(args, state, device, loaders), flush=True)
+    garimpo_uncertainty.pipeline.runner.show(start_line(args, state, device, loaders))
     batch_shape = run_epochs(args, state, loaders, device)
+    if state.best_dice != NO_BEST_DICE:
+        best = next(r["epoch"] for r in state.history if r["val_dice"] == state.best_dice)
+        garimpo_uncertainty.pipeline.runner.result(
+            f"best val_dice {state.best_dice:.4f} at epoch {best + 1} (* marks a new best)"
+        )
     if state.best_dice == NO_BEST_DICE:
         raise ValueError(
             "every val_dice is NaN, so no best_model.pt was written: "

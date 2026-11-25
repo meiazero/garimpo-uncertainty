@@ -80,6 +80,15 @@ def main() -> None:
         print(json.dumps(report, indent=2))
         if report["problems"]:
             raise ValueError("; ".join(report["problems"]))
+        by_role = report["diagnostics"]["by_role"]
+        garimpo_uncertainty.pipeline.runner.result(
+            f"{len(cells)} cells: "
+            + ", ".join(
+                f"{role} {by_role[role]['cells']}"
+                for role in garimpo_uncertainty.data.ROLES
+                if role in by_role
+            )
+        )
         return {"cells": len(cells)}
 
     garimpo_uncertainty.pipeline.runner.run_stage(

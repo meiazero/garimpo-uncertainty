@@ -38,6 +38,7 @@ def collect_samples(
     args: argparse.Namespace,
     *,
     device: str,
+    progress: garimpo_uncertainty.pipeline.runner.Progress,
 ) -> LayerSamples:
     """Read the training cells through the layer: one Jacobian per cell, some pixels per cell."""
     jacobians, features, labels = [], [], []
@@ -54,6 +55,7 @@ def collect_samples(
         )
         features.append(pixels.cpu().numpy())
         labels.append(targets.cpu().numpy())
+        progress.advance(len(images))
     return LayerSamples(
         np.concatenate(jacobians).astype(np.float64),
         np.concatenate(features).astype(np.float64),
@@ -71,12 +73,15 @@ def fit_layer(
     *,
     args: argparse.Namespace,
     device: str,
+    progress: garimpo_uncertainty.pipeline.runner.Progress,
 ) -> tuple[compass2d.directions.Directions, dict]:
     generator = torch.Generator().manual_seed(args.seed)
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, train_cells, metadata["normalization"], args.batch_size, args.num_workers
     )
-    samples = collect_samples(model, layer, loader, generator, args, device=device)
+    samples = collect_samples(
+        model, layer, loader, generator, args, device=device, progress=progress
+    )
 
     pca = compass2d.directions.fit_pca(samples.jacobians, args.n_components)
     mean_jacobian = samples.jacobians.mean(axis=0)
@@ -110,6 +115,14 @@ def fit_layer(
     return fitted, diagnostics
 
 
+def show_variance(rows: list[dict]) -> None:
+    """Report how much of the Jacobians the first PCA component explains, across the layers."""
+    variance = [row["pca_explained_variance"] for row in rows]
+    garimpo_uncertainty.pipeline.runner.result(
+        f"{len(rows)} layers · first PCA component {min(variance):.0%}-{max(variance):.0%}"
+    )
+
+
 def fit_layers(
     args: argparse.Namespace,
     root: Path,
@@ -125,15 +138,20 @@ def fit_layers(
         raise ValueError(f"unknown layers {sorted(unknown)}; available: {available}")
     train_cells = cells[cells.role == "train"]
     rows = []
+    progress = garimpo_uncertainty.pipeline.runner.Progress(
+        "cells", len(train_cells) * len(layer_paths)
+    )
     for layer, path in layer_paths.items():
-        fitted, row = fit_layer(model, layer, train_cells, root, metadata, args=args, device=device)
+        fitted, row = fit_layer(
+            model, layer, train_cells, root, metadata, args=args, device=device, progress=progress
+        )
         with garimpo_uncertainty.files.atomic(path) as temporary:
             fitted.save(temporary)
         rows.append(row)
     with garimpo_uncertainty.files.atomic(diagnostics_path) as temporary:
         pd.DataFrame(rows).to_csv(temporary, index=False)
-    shapes = {row["layer"]: row["feature_shape"] for row in rows}
-    return shapes | {"available_layers": available}
+    show_variance(rows)
+    return {row["layer"]: row["feature_shape"] for row in rows} | {"available_layers": available}
 
 
 def main() -> None:

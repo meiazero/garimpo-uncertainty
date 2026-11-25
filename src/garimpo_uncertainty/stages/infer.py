@@ -98,6 +98,8 @@ def infer_role(
     )
     first = 0
     data_wait = 0.0
+    role = str(role_cells.role.iat[0]) if len(role_cells) else "no"
+    progress = garimpo_uncertainty.pipeline.runner.Progress(f"{role} cells", len(role_cells))
     with probability_writer(probabilities_path, len(role_cells)) as write_probabilities:
         ready = time.monotonic()
         for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
@@ -108,8 +110,18 @@ def infer_role(
             fill_area_columns(columns, batch, masks, logits, probabilities)
             write_probabilities(first, probabilities)
             first += len(images)
+            progress.advance(len(images))
             ready = time.monotonic()
     return data_wait
+
+
+def show_test_area(cells: pd.DataFrame, columns: dict[str, np.ndarray]) -> None:
+    """Report the test cells' area error, the number the split-conformal intervals start from."""
+    test = np.flatnonzero(cells.role == "test")
+    error = columns["vhat"][test] - columns["v"][test]
+    garimpo_uncertainty.pipeline.runner.result(
+        f"test area error {np.abs(error).mean():.3f} ha/cell, bias {error.mean():+.3f} ha"
+    )
 
 
 def main() -> None:
@@ -156,6 +168,7 @@ def main() -> None:
         garimpo_uncertainty.files.write_arrays(
             run.predictions, cell_index=cells.cell_index.to_numpy(), **columns
         )
+        show_test_area(cells, columns)
         shapes = {role: list(np.load(path, mmap_mode="r").shape) for role, path in arrays.items()}
         return shapes | {
             "cells_per_role": cells.role.value_counts().to_dict(),

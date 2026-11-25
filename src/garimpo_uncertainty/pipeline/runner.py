@@ -40,6 +40,12 @@ NOT_RUN = "not_run"
 ATTEMPT = "=== attempt started "
 PASS, FAIL = "PIPELINE CHECK: PASS", "PIPELINE CHECK: FAIL"
 VERDICTS = (PASS, FAIL)
+# A stage's lines that `garimpo run` shows in the terminal, as it runs and once it ends; every other
+# line goes to the log only.
+SHOWN, RESULT = "» ", "»= "
+MINUTE, HOUR = 60, 3600
+PROGRESS_EVERY_SECONDS = MINUTE
+PROGRESS_BAR = 20
 # The one stage every fraction shares, with its status in the data root instead of a run.
 DOWNLOAD_SCENES = "download_scenes"
 # The stages that depend on the COMPASS-J layer; a job also runs them on each other layer.
@@ -57,6 +63,49 @@ STAGE_ORDER = (
     "generate_intervals",
     "compute_metrics",
 )
+
+
+def show(text: str) -> None:
+    """Print a line `garimpo run` shows while the stage runs: an epoch or the progress."""
+    print(f"{SHOWN}{text}", flush=True)
+
+
+def result(text: str) -> None:
+    """Print the stage's outcome in a few numbers, which `garimpo run` puts on its closing line."""
+    print(f"{RESULT}{text}", flush=True)
+
+
+def duration(seconds: float) -> str:
+    """Return a duration as people read it: 35.4 s, 13m45s, 1h02m."""
+    whole = round(seconds)
+    if whole < MINUTE:
+        return f"{seconds:.1f} s"
+    if whole < HOUR:
+        return f"{whole // MINUTE}m{whole % MINUTE:02d}s"
+    return f"{whole // HOUR}h{whole % HOUR // MINUTE:02d}m"
+
+
+class Progress:
+    """Show how far a long loop is, at most once a minute, with the time left at its pace so far."""
+
+    def __init__(self, what: str, total: int) -> None:
+        self.what, self.total, self.done = what, total, 0
+        self.start = self.last = time.monotonic()
+
+    def advance(self, count: int) -> None:
+        self.done += count
+        now = time.monotonic()
+        if now - self.last < PROGRESS_EVERY_SECONDS or self.done >= self.total:
+            return
+        self.last = now
+        elapsed = now - self.start
+        left = elapsed / self.done * (self.total - self.done)
+        filled = PROGRESS_BAR * self.done // self.total
+        bar = "=" * filled + ">" + "." * (PROGRESS_BAR - filled - 1)
+        show(
+            f"{self.done}/{self.total} {self.what} [{bar}] {self.done / self.total:.0%} · "
+            f"{duration(elapsed)} · eta {duration(left)}"
+        )
 
 
 def read_status(status_dir: Path, stage: str) -> dict:
@@ -187,6 +236,7 @@ def _skip_or_refuse(status_path: Path, name: str, previous: dict, stage_fingerpr
             restored = {k: v for k, v in previous.items() if k != "error"}
             garimpo_uncertainty.files.write_json(status_path, restored | {"status": "ok"})
         logger.info("%s: outputs exist, skipping (use --force to redo)", name)
+        result("skipped: done before with the same inputs")
         return
     # The validation sits outside STAGE_ORDER.
     redo = (

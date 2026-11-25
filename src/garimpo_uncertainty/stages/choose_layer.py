@@ -48,6 +48,15 @@ def choose(table: pd.DataFrame, minimum: float) -> str:
     return str(table[table.qualifies].pca_explained_variance.idxmax())
 
 
+def show_choice(table: pd.DataFrame, chosen: str) -> None:
+    row = table.loc[chosen]
+    ascending = row.filter(like="fraction_ascending_").min()
+    garimpo_uncertainty.pipeline.runner.result(
+        f"{chosen} · first PCA component {row.pca_explained_variance:.0%} · ascending "
+        f"{ascending:.0%} · {int(table.qualifies.sum())}/{len(table)} layers qualified"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--run-dir", type=Path, required=True)
@@ -66,6 +75,7 @@ def main() -> None:
         output.unlink(missing_ok=True)
         table = candidates(pd.read_csv(diagnostics_path), pd.read_csv(monotonicity_path))
         layer = choose(table, args.min_fraction_ascending)
+        show_choice(table, layer)
         garimpo_uncertainty.files.write_json(
             output,
             {

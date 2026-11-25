@@ -105,8 +105,9 @@ def score_cells(
     device: str,
 ) -> dict[str, np.ndarray]:
     """Return arrays aligned with `cells`; scores have one row per COMPASS_METHODS entry."""
-    run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
-    fitted = compass2d.directions.Directions.load(run.directions(args.layer))
+    fitted = compass2d.directions.Directions.load(
+        garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir).directions(args.layer)
+    )
     methods = garimpo_uncertainty.intervals.COMPASS_METHODS
     arrays = {
         name: np.empty((len(methods), len(cells)), dtype=bool if "saturated" in name else float)
@@ -117,9 +118,11 @@ def score_cells(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     first = 0
+    progress = garimpo_uncertainty.pipeline.runner.Progress("cells", len(cells))
     for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         last = first + len(images)
         batch = score_batch(model, images.to(device), masks.to(device), fitted, args)
+        progress.advance(len(images))
         for name, array in arrays.items():
             array[:, first:last] = getattr(batch, name)
         jacobians.append(batch.jacobians)
@@ -173,6 +176,16 @@ def main() -> None:
         evaluated = cells[cells.role.isin(garimpo_uncertainty.data.EVALUATED_ROLES)]
         arrays = score_cells(model, evaluated, root, metadata, args, device=device)
         garimpo_uncertainty.files.write_arrays(run.scores, **arrays)
+        saturated = arrays["saturated"].mean(axis=1)
+        garimpo_uncertainty.pipeline.runner.result(
+            f"{len(evaluated)} cells · saturated "
+            + ", ".join(
+                f"{method} {share:.0%}"
+                for method, share in zip(
+                    garimpo_uncertainty.intervals.COMPASS_METHODS, saturated, strict=True
+                )
+            )
+        )
         return {
             "jacobians": list(arrays["jacobians"].shape),
             "feature_sums": list(arrays["feature_sums"].shape),

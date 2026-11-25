@@ -77,8 +77,11 @@ Section 5 of the notebook has one cell per model, run in order:
 
 1. "Run <model>" runs `uv run --no-sync garimpo run <scale> <model>`,
    with `<scale>` `full` for the full runs. `--num-workers` defaults to the runtime's CPUs. The
-   runner prints each stage's command, lines, exit code and duration with the UTC time, and
-   appends them to `outputs/logs/<scale>-<model>.log`.
+   cell shows one line per stage with its duration and key numbers, such as
+   `[ 3/28] infer  ok  39.7 s · test area error 0.042 ha/cell, bias -0.004 ha`; while a stage
+   runs, its epochs, and a progress bar once a minute in the long loops. A failed stage adds its
+   last 30 lines. `outputs/logs/<scale>-<model>.log` holds all that and every other line, each
+   stage's command included, with the UTC time.
 2. "Rerun <model> - (in a reexecution)" does nothing unless its `RUN` box is checked; then it runs
    the same job with its `FORCE_FROM` and `FORCE_VALIDATE` options, passed as `--force-from` and
    `--force-validate`. An option stays set in the

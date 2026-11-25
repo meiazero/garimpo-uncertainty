@@ -83,8 +83,10 @@ def compass_endpoints(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     first = 0
+    progress = garimpo_uncertainty.pipeline.runner.Progress("cells", len(cells))
     for images, _, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         last = first + len(images)
+        progress.advance(len(images))
         features = garimpo_uncertainty.models.common.encode(model, images.to(device))
         spaces = garimpo_uncertainty.compass_j.spaces(
             garimpo_uncertainty.compass_j.split(model, features, args.layer),
@@ -115,6 +117,16 @@ def widen_saturated(
     trivial = calibrated.quantile >= calibrated.censor_at[:, :, None]
     lower[trivial] = 0.0
     upper[:] = np.where(trivial, cell_ha, upper)
+
+
+def show_widened(calibrated: Calibrated, cells: int) -> None:
+    """Report the share of COMPASS intervals that had to become the whole cell."""
+    # Output-space rows have no censoring point, NaN, which never compares as reached.
+    widened = (calibrated.quantile >= calibrated.censor_at[:, :, None]).sum()
+    compass = (~np.isnan(calibrated.censor_at)).sum() * cells
+    garimpo_uncertainty.pipeline.runner.result(
+        f"{cells} cells · COMPASS intervals as the whole cell {widened / max(compass, 1):.0%}"
+    )
 
 
 def read_jacobians(scores_path: Path, cell_index: np.ndarray) -> np.ndarray:
@@ -157,6 +169,7 @@ def generate(
     )
     widen_saturated(calibrated, test.cell_ha.to_numpy(), lower, upper)
     lower, upper = garimpo_uncertainty.intervals.clip_to_cell(lower, upper, test.cell_ha.to_numpy())
+    show_widened(calibrated, lower.shape[2])
     garimpo_uncertainty.files.write_arrays(
         run.intervals,
         cell_index=cell_index,

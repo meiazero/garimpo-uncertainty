@@ -5,10 +5,11 @@
 The full scale trains on 100% of the training tiles; the pilot trains the same models on 1%, with a
 short training, to check the code first. Run it from the repository root, one run per GPU.
 
-Each stage runs in its own process. Every line it prints, and each stage's command, exit code and
-duration, goes to the terminal and to outputs/logs/<scale>-<model>.log, with the UTC time. Each
-attempt is appended under the earlier ones. Finished stages skip themselves, and the pipeline
-check runs last, after a failed or interrupted stage too.
+Each stage runs in its own process. The terminal shows one numbered line per stage with its
+duration and key numbers, and while it runs its epochs or progress; a failed stage adds its last
+lines. The log, outputs/logs/<scale>-<model>.log, holds all that and every other line, each stage's
+command included, all with the UTC time. Each attempt is appended under the earlier ones. Finished
+stages skip themselves, and the pipeline check runs last, after a failed or interrupted stage too.
 """
 
 import argparse
@@ -18,6 +19,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from typing import NoReturn
 
@@ -28,6 +30,14 @@ import garimpo_uncertainty.pipeline.commands
 import garimpo_uncertainty.pipeline.runner
 
 STAGE_ORDER = garimpo_uncertainty.pipeline.runner.STAGE_ORDER
+LAYER_STAGES = garimpo_uncertainty.pipeline.runner.LAYER_STAGES
+# Up to choose_layer, then on the chosen layer: endpoint_monotonicity and LAYER_STAGES.
+DIAGNOSTICS = STAGE_ORDER[: STAGE_ORDER.index("choose_layer") + 1]
+CALIBRATED = ("endpoint_monotonicity", *LAYER_STAGES)
+# The longest stage name, endpoint_monotonicity, so the stages' lines align.
+NAME_WIDTH = 21
+# The lines of a failed stage the terminal repeats; the log has them all.
+FAILURE_LINES = 30
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,29 +60,48 @@ def parse_args() -> argparse.Namespace:
 
 
 class Log:
-    """Print each line with the UTC time and append it to the run's log file."""
+    """Write each line with the UTC time to the run's log, and the shown ones to the terminal."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, total: int) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
+        self.total = total
+        self.started = 0
+        self.passed = 0
+        self.label = ""
+        self.outcome = ""
+        self.tail: deque[str] = deque(maxlen=FAILURE_LINES)
 
-    def write(self, text: str) -> None:
+    def write(self, text: str, *, shown: bool = True) -> None:
         line = f"{time.strftime('%H:%M:%S', time.gmtime())} {text}"
-        print(line, flush=True)
+        if shown:
+            print(line, flush=True)
         try:
             with self.path.open("a", encoding="utf-8") as file:
                 file.write(line + "\n")
         except OSError as error:
-            # A full disk must not stop the run: the terminal still shows every line.
+            # A full disk must not stop the run: the terminal still shows what matters.
             print(f"could not append to {self.path}: {error}", flush=True)
 
     def copy_lines(self, process: subprocess.Popen) -> None:
-        for line in process.stdout:
-            self.write(line.rstrip("\n"))
+        runner = garimpo_uncertainty.pipeline.runner
+        for raw in process.stdout:
+            line = raw.rstrip("\n")
+            self.tail.append(line)
+            if line.startswith(runner.RESULT):
+                self.outcome = line.removeprefix(runner.RESULT)
+            elif line.startswith(runner.SHOWN):
+                self.write(f"{self.label} {line.removeprefix(runner.SHOWN)}")
+            else:
+                self.write(line, shown=False)
 
     def run(self, name: str, command: list[str]) -> int:
         """Run one stage, logging its lines as they come; return its exit code."""
-        self.write(f"=== start {name}: {shlex.join(command)}")
+        self.started += 1
+        self.label = f"[{self.started:>2}/{self.total}] {name:<{NAME_WIDTH}}"
+        self.outcome = ""
+        self.write(f"=== start {name}: {shlex.join(command)}", shown=False)
+        self.tail.clear()
         start = time.monotonic()
         # Unbuffered, or a stage's lines would reach the log only when its process ends.
         env = os.environ | {"PYTHONUNBUFFERED": "1"}
@@ -106,7 +135,18 @@ class Log:
     def ended(self, name: str, process: subprocess.Popen, start: float) -> int:
         """Log the stage's exit code and duration; return the code, positive after a signal."""
         seconds = time.monotonic() - start
-        self.write(f"=== end {name}: exit {process.returncode} in {seconds:.1f} s")
+        self.write(f"=== end {name}: exit {process.returncode} in {seconds:.1f} s", shown=False)
+        took = garimpo_uncertainty.pipeline.runner.duration(seconds)
+        if process.returncode == 0:
+            self.passed += 1
+            self.write(
+                f"{self.label} ok {took:>7}" + (f" · {self.outcome}" if self.outcome else "")
+            )
+            return 0
+        self.write(f"{self.label} FAILED after {took}, exit {process.returncode}; its last lines:")
+        for line in self.tail:
+            self.write(f"    | {line}")
+        self.write(f"    the whole output is in {self.path}")
         # A stage killed by signal N reports -N; the shell's 128 + N keeps the job's code positive.
         return process.returncode if process.returncode >= 0 else 128 - process.returncode
 
@@ -146,6 +186,23 @@ def run_in_order(log: Log, stages: tuple[str, ...], values: dict, force_from: st
     return 0
 
 
+def stage_count(layers: int) -> int:
+    """Return how many stages a job runs, the data check and the pipeline check included."""
+    return 1 + len(DIAGNOSTICS) + len(CALIBRATED) + len(LAYER_STAGES) * (layers - 1) + 1
+
+
+def write_heading(log: Log, args: argparse.Namespace, config: dict) -> None:
+    """Say what this attempt trains and which layers it compares."""
+    log.write(
+        f"train: {float(config['TRAIN_FRACTION']):.0%} of the tiles · {config['EPOCHS']} epochs x "
+        f"{config['STEPS_PER_EPOCH']} updates x {config['BATCH_SIZE']} cells · lr {config['LR']} · "
+        f"{args.num_workers} workers"
+    )
+    log.write(f"layers: {', '.join(config['LAYERS'])}; the best one first, then the others")
+    if args.force_from or args.force_validate:
+        log.write(f"forced: from {args.force_from or 'no stage'}; data check {args.force_validate}")
+
+
 def run_stages(log: Log, values: dict, force_from: str | None) -> int:
     """Run the stages up to the layer choice, the others on the chosen layer, then other layers.
 
@@ -153,8 +210,7 @@ def run_stages(log: Log, values: dict, force_from: str | None) -> int:
     Cheung et al. (2026), Table 4, compare the interval width across layers; the chosen layer's
     files stay at the run's root, so nothing reading a run's results changes.
     """
-    diagnostics = STAGE_ORDER[: STAGE_ORDER.index("choose_layer") + 1]
-    if code := run_in_order(log, diagnostics, values, force_from):
+    if code := run_in_order(log, DIAGNOSTICS, values, force_from):
         return code
     run = garimpo_uncertainty.artifacts.RunPaths.of(Path(values["RUN_DIR"]))
     try:
@@ -162,9 +218,8 @@ def run_stages(log: Log, values: dict, force_from: str | None) -> int:
     except garimpo_uncertainty.artifacts.UNREADABLE as error:
         log.write(f"Could not read the chosen layer from {run.chosen_layer}: {error!r}")
         return 1
-    log.write(f"chosen layer: {layer}")
-    calibrated = ("endpoint_monotonicity", *garimpo_uncertainty.pipeline.runner.LAYER_STAGES)
-    return run_in_order(log, calibrated, values | {"LAYER": layer}, force_from) or (
+    log.write(f"── chosen layer: {layer} ──")
+    return run_in_order(log, CALIBRATED, values | {"LAYER": layer}, force_from) or (
         run_other_layers(log, values, layer, force_from)
     )
 
@@ -172,10 +227,11 @@ def run_stages(log: Log, values: dict, force_from: str | None) -> int:
 def run_other_layers(log: Log, values: dict, chosen: str, force_from: str | None) -> int:
     """Run the layer's stages on every other layer of LAYERS, each into layers/<layer>/."""
     run = garimpo_uncertainty.artifacts.RunPaths.of(Path(values["RUN_DIR"]))
-    for layer in (name for name in values["LAYERS"] if name != chosen):
+    others = [name for name in values["LAYERS"] if name != chosen]
+    for number, layer in enumerate(others, start=1):
+        log.write(f"── other layer {number}/{len(others)}: {layer} ──")
         where = {"LAYER": layer, "LAYER_DIR": run.other_layer(layer).layer_root}
-        stages = garimpo_uncertainty.pipeline.runner.LAYER_STAGES
-        if code := run_in_order(log, stages, values | where, force_from):
+        if code := run_in_order(log, LAYER_STAGES, values | where, force_from):
             return code
     return 0
 
@@ -197,27 +253,33 @@ def interrupt(_signum: int, _frame: object) -> NoReturn:
     raise KeyboardInterrupt
 
 
+def start_attempt(args: argparse.Namespace) -> tuple["Log", garimpo_uncertainty.config.RunConfig]:
+    """Open the log under a new attempt and say what it runs; exit if the config is refused."""
+    name = garimpo_uncertainty.config.log_name(args.scale, args.model)
+    try:
+        config = garimpo_uncertainty.config.RunConfig.load(Path("configs"), args.scale, args.model)
+    except garimpo_uncertainty.config.ConfigError as error:
+        config, problems = None, error.problems
+    log = Log(
+        Path("outputs/logs") / f"{name}.log", stage_count(len(config["LAYERS"])) if config else 0
+    )
+    started = time.strftime("%Y-%m-%d %H:%M", time.gmtime())
+    log.write(f"{garimpo_uncertainty.pipeline.runner.ATTEMPT}{started} UTC ===")
+    log.write(f"{args.model} · {args.scale} · {log.total} stages · commit {commit()}")
+    if config is None:
+        for line in problems:
+            log.write(line)
+        sys.exit(1)
+    write_heading(log, args, config.values)
+    return log, config
+
+
 def main() -> None:
     # Colab's second interrupt is SIGTERM, and SIGKILL 0.5 s later: kill the stage before that.
     signal.signal(signal.SIGTERM, interrupt)
     args = parse_args()
-    log = Log(
-        Path("outputs/logs") / f"{garimpo_uncertainty.config.log_name(args.scale, args.model)}.log"
-    )
-    started = time.strftime("%Y-%m-%d %H:%M", time.gmtime())
-    log.write(f"{garimpo_uncertainty.pipeline.runner.ATTEMPT}{started} UTC ===")
-    log.write(f"config {args.scale} {args.model}; commit {commit()}")
-    log.write(
-        f"force from {args.force_from or 'nothing'}; force validate {args.force_validate}; "
-        f"{args.num_workers} workers"
-    )
-    try:
-        config = garimpo_uncertainty.config.RunConfig.load(Path("configs"), args.scale, args.model)
-    except garimpo_uncertainty.config.ConfigError as error:
-        for line in error.problems:
-            log.write(line)
-        sys.exit(1)
-
+    start = time.monotonic()
+    log, config = start_attempt(args)
     values = job_values(config, args.num_workers)
     try:
         validate = command("validate_data", values, *(["--force"] if args.force_validate else []))
@@ -227,5 +289,8 @@ def main() -> None:
         code = 130
     # The exit code goes to the check because an error before run_stage leaves every status ok.
     check = log.run("pipeline_check", command("pipeline_check", values | {"JOB_EXIT_CODE": code}))
+    took = garimpo_uncertainty.pipeline.runner.duration(time.monotonic() - start)
+    verdict = "PASS" if code == check == 0 else "FAIL"
+    log.write(f"=== {args.model}: {log.passed}/{log.total} stages ok in {took} · {verdict}")
     # A stage's exit code wins; a failed check alone still fails the job.
     sys.exit(code or check)

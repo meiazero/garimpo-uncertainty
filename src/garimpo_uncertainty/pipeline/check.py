@@ -104,12 +104,17 @@ def report_failed_stages(records: list[dict], job_exit_code: int) -> list[dict]:
     )
     if first_failure is not None:
         print(f"\n--- failing stage: {first_failure['stage']} ({first_failure['status']})")
-        print(first_failure.get("error", "no error recorded: the job died inside this stage"))
+        error = first_failure.get("error", "no error recorded: the job died inside this stage")
+        print(error)
+        garimpo_uncertainty.pipeline.runner.show(
+            f"failing stage: {first_failure['stage']} ({first_failure['status']}): {error}"
+        )
         print(first_failure.get("traceback", ""))
     if job_exit_code != 0:
         # An import, syntax or argparse error, a refused config or the merge reach no status.
         failed.append({"stage": f"job exit code {job_exit_code}"})
         print(f"\n--- job exit code {job_exit_code}: see the lines above it in the job's log")
+        garimpo_uncertainty.pipeline.runner.show(f"job exit code {job_exit_code}")
     return failed
 
 
@@ -312,12 +317,16 @@ def report_slots(
 def exit_with_verdict(failed: list[dict]) -> None:
     print("\n" + "=" * 78)
     if failed:
-        print(f"{garimpo_uncertainty.pipeline.runner.FAIL} at {[r['stage'] for r in failed]}")
+        failed_at = f"{garimpo_uncertainty.pipeline.runner.FAIL} at {[r['stage'] for r in failed]}"
+        print(failed_at)
         print("=" * 78)
+        garimpo_uncertainty.pipeline.runner.result(failed_at)
         raise SystemExit(1)
     passed = garimpo_uncertainty.pipeline.runner.PASS
-    print(f"{passed} (every stage ran; this says nothing about method quality)")
+    verdict = f"{passed} (every stage ran; this says nothing about method quality)"
+    print(verdict)
     print("=" * 78)
+    garimpo_uncertainty.pipeline.runner.result(passed)
 
 
 def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list[str]]:

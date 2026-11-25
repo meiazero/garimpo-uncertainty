@@ -393,6 +393,12 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
     masses = compass2d.calibration.group_masses(
         calibration_cells.group.to_numpy(), calibration_ratio
     )
+    ess = compass2d.calibration.effective_sample_size(masses)
+    infinite = stacked("infinite_fraction") > 0
+    garimpo_uncertainty.pipeline.runner.result(
+        f"{len(calibration_cells)} cells in {len(masses)} groups · weighted ESS {ess:.1f} groups · "
+        f"infinite quantiles {infinite.sum()}/{infinite.size}"
+    )
     return {
         "calibration_cells": len(calibration_cells),
         "test_cells": len(test_cells),
@@ -400,7 +406,7 @@ def calibrate(args: argparse.Namespace, root: Path, quantiles_path: Path) -> dic
         "alphas": list(garimpo_uncertainty.intervals.ALPHAS),
         "density_ratio_max": float(max(calibration_ratio.max(), test_ratio.max())),
         # Below a handful, the weighted rows rest on almost no calibration group.
-        "weighted_group_ess": compass2d.calibration.effective_sample_size(masses),
+        "weighted_group_ess": ess,
         "calibration_groups": len(masses),
     }
 

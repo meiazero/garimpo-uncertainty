@@ -67,6 +67,10 @@ def aligned_cells(
     )
 
 
+# The level the terminal shows; results.csv holds every level.
+SHOWN_ALPHA = 0.1
+
+
 def tables_at_level(
     args: argparse.Namespace,
     intervals: Intervals,
@@ -167,7 +171,23 @@ def compute(
     for name, frame in frames.items():
         with garimpo_uncertainty.files.atomic(run.metric_table(name)) as temporary:
             frame.to_csv(temporary, index=False)
+    show_results(frames["results"])
     return {name: list(frame.shape) for name, frame in frames.items()}
+
+
+def show_results(results: pd.DataFrame) -> None:
+    """Report the segmentation, and at SHOWN_ALPHA which methods cover and the narrowest of them."""
+    rows = results[(results.alpha == SHOWN_ALPHA) & results.calibration.isin(("none", "external"))]
+    covered = rows[rows.picp >= 1 - SHOWN_ALPHA]
+    narrowest = (
+        f"narrowest {covered.loc[covered.mpiw.idxmin(), 'method']} {covered.mpiw.min():.2f} ha"
+        if len(covered)
+        else "none covers"
+    )
+    garimpo_uncertainty.pipeline.runner.result(
+        f"Dice {results.dice.iloc[0]:.3f} · {len(covered)}/{len(rows)} methods reach "
+        f"{1 - SHOWN_ALPHA:.0%} coverage · {narrowest}"
+    )
 
 
 def main() -> None:

@@ -70,6 +70,15 @@ def sweep_layer(
     }
 
 
+def show_worst(rows: list[dict]) -> None:
+    """Report the least monotonic sweep, the one the layer rule is about."""
+    worst = min(rows, key=lambda row: row["fraction_ascending"])
+    garimpo_uncertainty.pipeline.runner.result(
+        f"worst ascending {worst['fraction_ascending']:.0%} ({worst['role']}, {worst['layer']}, "
+        f"{worst['direction']})"
+    )
+
+
 def sweep_role(
     model: torch.nn.Module,
     role: str,
@@ -163,6 +172,7 @@ def main() -> None:
             rows += sweep_role(model, role, subset, root, metadata, args=args, device=device)
         with garimpo_uncertainty.files.atomic(output) as temporary:
             pd.DataFrame(rows).to_csv(temporary, index=False)
+        show_worst(rows)
         return {"rows": len(rows), "cells_per_role": args.cells_per_role}
 
     garimpo_uncertainty.pipeline.runner.run_stage(

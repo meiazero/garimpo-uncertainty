@@ -214,6 +214,7 @@ class PassedJob(NamedTuple):
     model: str
     run_dir: Path
     result: subprocess.CompletedProcess
+    log: str
 
 
 @pytest.fixture(scope="module")
@@ -221,7 +222,7 @@ def passed_job(run_root: Path) -> PassedJob:
     model = write_config("unet_scratch")
     result = run_job(model)
     assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
-    return PassedJob(model, run_dir_of(model), result)
+    return PassedJob(model, run_dir_of(model), result, log_of(model).read_text(encoding="utf-8"))
 
 
 def test_full_job_runs_every_stage_and_passes_the_check(passed_job: PassedJob) -> None:
@@ -246,7 +247,7 @@ def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
         assert f"=== end {stage}: exit 0 in " in log, stage
     # The stages' own lines, not only the runner's: the training's line per epoch among them.
     assert "train: ok in" in log
-    assert f"epoch {FILLED['EPOCHS']}/{FILLED['EPOCHS']}: train_loss " in log
+    assert f"epoch {FILLED['EPOCHS']}/{FILLED['EPOCHS']} · loss " in log
     assert "PIPELINE CHECK: PASS" in log
 
 
@@ -277,7 +278,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     shared = {value: names for value, names in by_value.items() if len(names) > 1}
     assert not shared, shared
 
-    commands = started_commands(passed_job.result.stdout)
+    commands = started_commands(passed_job.log)
     received = set()
     for script, runs in commands.items():
         for words in runs:
@@ -447,7 +448,7 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
     next attempt must skip them back to ok, since their inputs did not change.
     """
     run_dir = passed_job.run_dir
-    choose = started_commands(passed_job.result.stdout)["choose_layer"][0]
+    choose = started_commands(passed_job.log)["choose_layer"][0]
     order = garimpo_uncertainty.pipeline.runner.STAGE_ORDER
     later = order[order.index("choose_layer") + 1 :]
     with support.restored_after(run_dir):
@@ -491,8 +492,9 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
         result = run_job(passed_job.model)
         assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
         assert "PIPELINE CHECK: PASS" in result.stdout
+        attempt = log_of(passed_job.model).read_text(encoding="utf-8").rsplit(ATTEMPT, 1)[1]
         for stage in (*later, "choose_layer"):
-            assert f"{stage}: outputs exist, skipping" in result.stdout, stage
+            assert f"{stage}: outputs exist, skipping" in attempt, stage
 
 
 def test_unknown_force_from_stops_the_job_before_any_stage(passed_job: PassedJob) -> None:
@@ -501,7 +503,7 @@ def test_unknown_force_from_stops_the_job_before_any_stage(passed_job: PassedJob
     result = run_job(passed_job.model, "--force-from", "calibration", timeout=30)
     assert result.returncode == 2
     assert "invalid choice: 'calibration'" in result.stderr
-    assert "=== start" not in result.stdout
+    assert "validate_data" not in result.stdout
     assert status_mtimes(passed_job.run_dir) == before
 
 
@@ -599,7 +601,7 @@ def test_full_job_refuses_a_config_before_any_stage(run_root: Path) -> None:
         assert reason in result.stdout
         assert reason in log_of(model).read_text(encoding="utf-8")
     assert not (RUN_ROOT / "runs" / "misspelled-f1.0").exists()
-    assert "=== start" not in result.stdout
+    assert "=== start" not in log_of(model).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("scale", SCALES)
@@ -665,3 +667,20 @@ def test_status_chooses_the_scale_and_reads_each_last_verdict(tmp_path: Path) ->
     assert "full-unet_imagenet: NO VERDICT" in report
     assert "full-unet_scratch: NO LOG" in report
     assert "full-convnet: NOT RUN" in status("full", "--since", str(time.time() + 60))
+
+
+def test_progress_shows_at_most_once_a_minute_with_the_time_left(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = garimpo_uncertainty.pipeline.runner
+    clock = iter([0.0, 30.0, 61.0, 90.0, 200.0, 300.0])
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock))
+    progress = runner.Progress("cells", 100)
+    for _ in range(5):
+        progress.advance(20)
+    # 90 s comes 29 s after the line at 61 s, and the loop's end shows nothing.
+    assert capsys.readouterr().out.splitlines() == [
+        f"{runner.SHOWN}40/100 cells [========>...........] 40% · 1m01s · eta 1m32s",
+        f"{runner.SHOWN}80/100 cells [================>...] 80% · 3m20s · eta 50.0 s",
+    ]
+    assert [runner.duration(s) for s in (3.21, 825.4, 5520)] == ["3.2 s", "13m45s", "1h32m"]
