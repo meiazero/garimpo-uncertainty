@@ -26,8 +26,17 @@ each of its cells.
 1. Open the notebook from GitHub, in every session, at
    <https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/notebooks/01_run_experiment.ipynb>.
    A copy uploaded or saved to Drive keeps the cells of the day it was made.
-2. Choose a GPU runtime, then run Runtime > Run all. The setup mounts Drive, clones the code, runs
-   `uv sync`, and restores the data and earlier runs from Drive.
+2. Choose a GPU runtime, then run Runtime > Run all. The setup mounts Drive, clones the code,
+   installs `requirements.txt`, and restores the data and earlier runs from Drive.
+
+`requirements.txt` pins Colab's own versions of the packages it ships, so the install there
+replaces none of them. Elsewhere, in a Python 3.13 environment:
+
+```bash
+git clone --recurse-submodules https://github.com/meiazero/garimpo-uncertainty.git
+cd garimpo-uncertainty
+pip install -r requirements.txt
+```
 
 Why the cells are written as they are: [docs/colab.md](docs/colab.md).
 
@@ -74,8 +83,8 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 ## Development
 
 ```bash
-uv run pytest -q                                       # E2E tests, artifacts in tests/artifacts/
-uv run ruff format --check . && uv run ruff check .    # the pre-push checks
+pytest -q                                # E2E tests, artifacts in tests/artifacts/
+ruff format --check . && ruff check .    # the pre-push checks
 git config core.hooksPath .githooks                    # once per clone, enables the pre-push hook
 ```
 

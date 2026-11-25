@@ -1,6 +1,6 @@
 """`garimpo data_figures`: figures of the data itself, for the text's description of it.
 
-    uv run --group figures garimpo data_figures --out outputs/figures
+    garimpo data_figures --out outputs/figures
 
 They read the cell store of GARIMPO_DATA_DIR and the split, never a run, so they draw on a CPU
 before any model is trained. Cells are chosen from the reference alone.

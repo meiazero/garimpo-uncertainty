@@ -1,6 +1,6 @@
 """Run one model through every stage at one scale, every value from configs/ (docs/decisions.md).
 
-    uv run --no-sync garimpo run pilot unet_scratch
+    garimpo run pilot unet_scratch
 
 The full scale trains on 100% of the training tiles; the pilot trains the same models on 1%, with a
 short training, to check the code first. Run it from the repository root, one run per GPU.
