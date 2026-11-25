@@ -251,7 +251,7 @@ def threshold_tradeoff(runs: list[Run], stem: Path) -> None:
     fig, axes = model_grid(runs, 0.62, sharey=True)
     for ax, run in zip(axes, runs, strict=True):
         draw_tradeoff(ax, common.arrays(run.paths.root / PROFILE))
-        ax.set_xlabel("Tempo relativo ao limiar do run")
+        ax.set_xlabel("Tempo relativo ao limiar mais fino")
     for ax in axes[::2]:
         ax.set_ylabel("Mudança máx. (ha)")
     label_models(axes, runs)

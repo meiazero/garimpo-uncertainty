@@ -4,12 +4,14 @@ Everything comes from scores/scores.npz, which keeps per cell the chosen layer's
 and Jacobian, from the density ratio calibrate.py fits on those features, and from the intervals.
 """
 
+import json
 from pathlib import Path
 
 import compass2d.directions
 import matplotlib.colors
 import numpy as np
 
+import garimpo_uncertainty.data
 import garimpo_uncertainty.figures.orx_figstyle as style
 import garimpo_uncertainty.intervals
 from garimpo_uncertainty.figures import common
@@ -30,10 +32,22 @@ def weighted_pairs() -> list[tuple[str, str]]:
 
 
 def role_rows(run: Run, role: str) -> tuple[object, np.ndarray]:
-    """Return a role's cells in cell order and their rows in scores.npz."""
-    cells = run.cells[run.cells.role == role].reset_index(drop=True)
+    """Return a role's calibrated cells in cell order and their rows in scores.npz.
+
+    The cells calibrate.py used, so they align with its density ratios: without the empty ones
+    when the run calibrated on nonempty cells only.
+    """
+    cells = run.cells[run.cells.role == role]
+    status = run.paths.layer_status / "calibrate.json"
+    arguments = json.loads(status.read_text(encoding="utf-8"))["completed_fingerprint"]["arguments"]
+    if arguments["cells"] == "nonempty":
+        cells = cells[cells.v > 0]
+    cells = cells.reset_index(drop=True)
     with np.load(run.paths.scores) as stored:
-        return cells, np.searchsorted(stored["cell_index"], cells.cell_index.to_numpy())
+        rows = garimpo_uncertainty.data.positions_of(
+            stored["cell_index"], cells.cell_index.to_numpy()
+        )
+    return cells, rows
 
 
 def wilson(covered: np.ndarray) -> tuple[float, float, float]:
@@ -113,8 +127,9 @@ def quintile_coverage(run: Run) -> tuple[object, np.ndarray, dict]:
     """Return the test cells, their quintile of log density ratio, and what each pair covers."""
     test, _ = role_rows(run, "test")
     ratio = np.log(common.arrays(run.paths.quantiles)["density_ratio_test"])
-    edges = np.quantile(ratio, np.linspace(0, 1, BINS + 1))
-    band = np.clip(np.searchsorted(edges, ratio, side="right") - 1, 0, BINS - 1)
+    # By rank, not by value: tied ratios would otherwise leave a quintile empty.
+    band = np.empty(len(ratio), dtype=int)
+    band[np.argsort(ratio, kind="stable")] = np.arange(len(ratio)) * BINS // len(ratio)
     lower, upper = main_level_bounds(run, test)
     v = test.v.to_numpy()
     combinations = garimpo_uncertainty.intervals.COMBINATIONS
@@ -129,7 +144,7 @@ def main_level_bounds(run: Run, cells: object) -> tuple[np.ndarray, np.ndarray]:
     """Return each combination's bounds at the main level, (combinations, cells), in order."""
     stored = common.arrays(run.paths.intervals)
     level = int(np.flatnonzero(np.isclose(stored["alpha"], common.MAIN_ALPHA))[0])
-    at = np.searchsorted(stored["cell_index"], cells.cell_index.to_numpy())
+    at = garimpo_uncertainty.data.positions_of(stored["cell_index"], cells.cell_index.to_numpy())
     return stored["lower"][level][:, at], stored["upper"][level][:, at]
 
 

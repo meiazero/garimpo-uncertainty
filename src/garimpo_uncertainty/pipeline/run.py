@@ -222,8 +222,13 @@ def run_stages(log: Log, values: dict, force_from: str | None) -> int:
     return (
         run_in_order(log, CALIBRATED, values | {"LAYER": layer}, force_from)
         or run_other_layers(log, values, layer, force_from)
-        or run_in_order(log, ("search_profile",), values, force_from)
+        or run_in_order(log, ("search_profile",), values, profile_force(force_from))
     )
+
+
+def profile_force(force_from: str | None) -> str | None:
+    """Redo the profile only from a stage it reads: never for calibration, intervals or metrics."""
+    return None if force_from in LAYER_STAGES[1:] else force_from
 
 
 def run_other_layers(log: Log, values: dict, chosen: str, force_from: str | None) -> int:

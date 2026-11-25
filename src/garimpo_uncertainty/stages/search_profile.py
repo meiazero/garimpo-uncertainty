@@ -184,7 +184,13 @@ def main() -> None:
         run.status,
         "search_profile",
         [run.root / PROFILE],
-        garimpo_uncertainty.pipeline.runner.fingerprint(args, inputs),
+        garimpo_uncertainty.pipeline.runner.fingerprint(
+            args,
+            inputs,
+            hashed=garimpo_uncertainty.data.run_identity(
+                garimpo_uncertainty.data.data_root(), run.root
+            ),
+        ),
         lambda: profile(args, run),
         force=args.force,
     )

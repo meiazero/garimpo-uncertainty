@@ -50,6 +50,7 @@ def finish_run(run_dir: Path) -> None:
     support.run_stages_after_training(run_dir, layers, ROOT, **SMOOTH_DIRECTIONS)
     support.compute_metrics(run_dir, support.BOUNDARY_TOLERANCE, ROOT)
     support.run_other_layers(run_dir, layers, ROOT)
+    support.run("search_profile", *support.stage_args("search_profile", run_dir), data_root=ROOT)
 
 
 def slots_of(cell_index: np.ndarray) -> dict[str, bytes]:

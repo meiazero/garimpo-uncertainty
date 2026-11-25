@@ -30,6 +30,7 @@ import pytest
 import garimpo_uncertainty.config
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.pipeline.runner
+from garimpo_uncertainty.stages.search_profile import PROFILE
 from tests.e2e import support
 
 RUN_ROOT = support.ROOT / "tests" / "artifacts" / "run"
@@ -422,6 +423,7 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         before = status_mtimes(run_dir)
         validated = validation.stat().st_mtime_ns
         checkpoint = (run_dir / "best_model.pt").stat().st_mtime_ns
+        profile = (run_dir / PROFILE).stat().st_mtime_ns
         result = run_job(passed_job.model, "--force-from", "calibrate", "--force-validate")
         after = status_mtimes(run_dir)
         assert result.returncode == 0, result.stdout[-8000:] + result.stderr[-4000:]
@@ -429,7 +431,9 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
         redone = {stage for stage in after if after[stage] != before[stage]}
         (other,) = set(LAYERS) - {support.chosen_layer(run_dir)}
         forced = ("calibrate", "generate_intervals", "compute_metrics")
-        assert redone == {*forced, *(f"{stage} [{other}]" for stage in forced)}
+        # The profile reads none of them: its status goes stale and back to ok, its file stays.
+        assert redone == {*forced, "search_profile", *(f"{stage} [{other}]" for stage in forced)}
+        assert (run_dir / PROFILE).stat().st_mtime_ns == profile
         assert validation.stat().st_mtime_ns != validated
         assert (run_dir / "best_model.pt").stat().st_mtime_ns == checkpoint
     log = log_of(passed_job.model).read_text(encoding="utf-8")
