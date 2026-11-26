@@ -65,7 +65,8 @@ real run does, and every loader runs with 2 workers and pinned memory. `test_tra
 then requires a positive GPU peak in `history.csv`, the `infer` status and `status/train.json`.
 Nothing is skipped there. The tests that recompute a stage in the test process do it on the GPU,
 as the stage did, and still require exact equality. `test_workers.py` compares 0 and 2 workers
-explicitly for inference. GPU kernels sum in no fixed order, so the trainings repeated in
+explicitly for inference. Every stage, and the test process, runs torch's deterministic
+algorithms, but until a GPU run shows them equal to the bit, the trainings repeated in
 `test_workers.py` and `test_resume.py` compare their float weights and each optimizer moment as one
 vector, whose difference must stay under `GPU_RELATIVE_DIFFERENCE` of `tests/e2e/support.py` in
 norm, and the history within 1% (`HISTORY_TOLERANCE`), with no peak GPU memory; integers and the

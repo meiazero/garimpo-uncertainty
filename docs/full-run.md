@@ -96,7 +96,7 @@ in section 7, which saves the runs and logs once more and releases the GPU.
 With the copy every 30 minutes, a session that ends mid-run keeps the finished stages and the
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
 its first epoch and requires the rerun to end where an uninterrupted run ends: exactly on CPU, and
-on a GPU, whose kernels are not deterministic, within a tolerance, the generators still exactly. Rerun without
+on a GPU within a tolerance, the generators still exactly. Rerun without
 `--force-from train` to resume: with it, `garimpo train` refuses to discard an unfinished training and says so. No `garimpo`
 command installs anything, so a run never changes the environment under itself.
 

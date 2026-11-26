@@ -5,6 +5,7 @@ torch, and a stage's own flags and help are those of its module.
 """
 
 import importlib
+import os
 import sys
 
 STAGES = (
@@ -38,4 +39,11 @@ def main() -> None:
     name = sys.argv[1]
     # The command's parser reads sys.argv, and names itself after sys.argv[0] in its messages.
     sys.argv = [f"garimpo {name}", *sys.argv[2:]]
-    importlib.import_module(COMMANDS[name]).main()
+    # cuBLAS reads this once, at its first call, and torch's deterministic algorithms need it.
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    command = importlib.import_module(COMMANDS[name])
+    # A command that loaded torch runs only deterministic kernels and fails on an op that has none,
+    # so a rerun on the same GPU and software repeats every bit.
+    if (torch := sys.modules.get("torch")) is not None:
+        torch.use_deterministic_algorithms(mode=True)
+    command.main()

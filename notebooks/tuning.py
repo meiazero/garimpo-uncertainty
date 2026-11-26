@@ -32,6 +32,11 @@ import garimpo_uncertainty.models.common
 import garimpo_uncertainty.stages.compass_scores
 import garimpo_uncertainty.stages.train
 
+# Every section measures what `garimpo` runs, which turns these on for every command that loads
+# torch. cuBLAS reads CUBLAS_WORKSPACE_CONFIG at its first call, which comes later than this.
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+torch.use_deterministic_algorithms(mode=True)
+
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -430,19 +435,6 @@ def backend_flags(*, cudnn_tf32: bool, matmul_tf32: bool, benchmark: bool) -> It
         yield
     finally:
         cudnn.allow_tf32, matmul.allow_tf32, cudnn.benchmark = saved
-
-
-@contextlib.contextmanager
-def deterministic() -> Iterator[None]:
-    """Run under torch's deterministic algorithms, where an op that has none raises.
-
-    cuBLAS also needs CUBLAS_WORKSPACE_CONFIG, which the setup sets before torch starts.
-    """
-    torch.use_deterministic_algorithms(mode=True)
-    try:
-        yield
-    finally:
-        torch.use_deterministic_algorithms(mode=False)
 
 
 def synthetic_features(rng: np.random.Generator, channels: int) -> tuple[np.ndarray, ...]:

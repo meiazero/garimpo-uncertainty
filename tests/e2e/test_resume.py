@@ -29,7 +29,8 @@ MEASURED = [
     "train_cells_per_second",
 ]
 LAST_PT_TIMEOUT_SECONDS = 300
-# On a GPU the weights differ in their last bits, which can flip a pixel of the thresholded scores.
+# Until a GPU run shows the resumed weights equal to the bit (support.GPU_RELATIVE_DIFFERENCE), a
+# last-bit difference could flip a pixel of the thresholded scores.
 HISTORY_TOLERANCE = (
     {"rtol": 0.0, "atol": 0.0} if support.DEVICE == "cpu" else {"rtol": 1e-2, "atol": 1e-6}
 )

@@ -102,9 +102,10 @@ if DEVICE == "cuda" and not torch.cuda.is_available():
     raise RuntimeError("GARIMPO_TEST_DEVICE=cuda, but torch sees no GPU")
 DEVICE_ARGS = ["--device", "cpu"] if DEVICE == "cpu" else []
 NUM_WORKERS = "0" if DEVICE == "cpu" else "2"
-# GPU kernels sum in no fixed order, and Adam's first steps move a weight by about lr times the sign
-# of its gradient, so one whose gradient is rounding noise may move the other way. A lost state or
-# another batch moves every weight, so on a GPU the norm of the whole difference is compared.
+# Every stage runs torch's deterministic algorithms, but no GPU run has yet shown a resumed or
+# repeated training equal to the bit, so on a GPU the norm of the whole difference is compared: a
+# lost state or another batch moves every weight. Adam's first steps move a weight by about lr times
+# the sign of its gradient, so rounding noise alone would move single weights the other way.
 GPU_RELATIVE_DIFFERENCE = 1e-3
 # The `garimpo` command itself, then a check that it never imported torch.
 TORCH_FREE = (

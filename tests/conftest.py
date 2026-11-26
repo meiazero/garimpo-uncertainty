@@ -5,10 +5,16 @@ import shutil
 from pathlib import Path
 
 import pytest
+import torch
 
 # Workers run torch side by side, so threads per process would oversubscribe. The count also shapes
 # the weights: test_fractions' one-tile run fails fit_directions at 2 threads and passes at 1.
 os.environ["OMP_NUM_THREADS"] = "1"
+
+# What `garimpo_uncertainty.cli` turns on for every stage: a test that recomputes a stage here
+# compares it to the bit with the stage's own output.
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+torch.use_deterministic_algorithms(mode=True)
 
 # On a hybrid Intel CPU, oneDNN's dilated convolution, in the ConvNet's encoder, gives other last
 # bits on an efficiency core than on a performance core, so two processes compared to the bit could
