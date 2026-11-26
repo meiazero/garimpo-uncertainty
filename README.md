@@ -72,7 +72,7 @@ names the smallest setting that is enough and the full run's hours on that machi
 or a strict float32 result that loses a bit fails it; another candidate that moves a bit is
 reported for a decision. Open it at
 <https://colab.research.google.com/github/meiazero/garimpo-uncertainty/blob/main/notebooks/03_tune_hardware.ipynb>
-on an L4 or A100 runtime, then run Runtime > Run all.
+on an L4 runtime at the latest runtime version, then run Runtime > Run all.
 
 ## Documentation
 

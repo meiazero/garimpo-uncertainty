@@ -56,10 +56,32 @@ SCORES = garimpo_uncertainty.stages.compass_scores.BatchScores._fields[:6]
 COMPASS_METHODS = garimpo_uncertainty.intervals.COMPASS_METHODS
 
 
+GPU = "NVIDIA L4"  # the experiment's one GPU: another picks other kernels, so other bits
+
+
 def require_gpu() -> None:
-    """Stop without a GPU: timings on another machine would size the pipeline to the wrong one."""
+    """Stop on any GPU but the L4: its bits and timings would size another experiment."""
     if not torch.cuda.is_available():
-        raise SystemExit("No GPU: run this on a Colab GPU runtime (Runtime > Change runtime type).")
+        raise SystemExit("No GPU: pick the L4 under Runtime > Change runtime type.")
+    if (name := torch.cuda.get_device_name(0)) != GPU:
+        raise SystemExit(f"This session got the {name}; the experiment runs on the {GPU} only.")
+
+
+def stack() -> dict[str, str]:
+    """Return the software that picks the GPU's kernels; sessions share bits only if it matches."""
+    driver = subprocess.run(
+        ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    return {
+        "colab_release": os.environ.get("COLAB_RELEASE_TAG", "unknown"),
+        "torch": torch.__version__,
+        "cuda": str(torch.version.cuda),
+        "cudnn": str(torch.backends.cudnn.version()),
+        "driver": driver,
+    }
 
 
 def ram_gb() -> float:
@@ -248,9 +270,19 @@ def benches(arch: str, layers: list[str], cells: int, seed: int) -> Iterator[Ben
 def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool) -> dict:
     """Read every cell from the disk onto the GPU as a stage does; return each batch's checksum.
 
-    As train reads, the cells come shuffled and flipped at BATCH_SIZE. The checksum is an integer
-    sum on the GPU, the same small cost at every worker count, so no read escapes the clock.
+    As train reads, the cells come shuffled and flipped at BATCH_SIZE. The checksum is integer sums
+    on the GPU, the same small cost at every worker count, so no read escapes the clock.
     """
+
+    def checksum(tensor: torch.Tensor) -> torch.Tensor:
+        # A plain sum misses a flip; each cell's sums weighted by column and by row catch it.
+        bits = tensor.to("cuda").view(torch.int32)
+        columns = bits.sum((1, 2), dtype=torch.int64)
+        rows = bits.sum((1, 3), dtype=torch.int64)
+        width = torch.arange(columns.shape[-1], device="cuda")
+        height = torch.arange(rows.shape[-1], device="cuda")
+        return torch.cat([(columns * width).sum(1), (rows * height).sum(1)])
+
     evict(store)
     torch.manual_seed(CONFIG["SEED"])
     loader = garimpo_uncertainty.cell_dataset.loader(
@@ -263,10 +295,10 @@ def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool
         augment=as_train,
     )
     sums = [
-        torch.stack([t.to("cuda").view(torch.int32).sum(dtype=torch.int64) for t in batch[:2]])
+        torch.cat([checksum(tensor) for tensor in batch[:2]])
         for batch in garimpo_uncertainty.cell_dataset.batches(loader)
     ]
-    return {"checksums": torch.stack(sums).cpu().numpy()}
+    return {"checksums": torch.cat(sums).cpu().numpy()}
 
 
 def training_run(
@@ -398,6 +430,19 @@ def backend_flags(*, cudnn_tf32: bool, matmul_tf32: bool, benchmark: bool) -> It
         yield
     finally:
         cudnn.allow_tf32, matmul.allow_tf32, cudnn.benchmark = saved
+
+
+@contextlib.contextmanager
+def deterministic() -> Iterator[None]:
+    """Run under torch's deterministic algorithms, where an op that has none raises.
+
+    cuBLAS also needs CUBLAS_WORKSPACE_CONFIG, which the setup sets before torch starts.
+    """
+    torch.use_deterministic_algorithms(mode=True)
+    try:
+        yield
+    finally:
+        torch.use_deterministic_algorithms(mode=False)
 
 
 def synthetic_features(rng: np.random.Generator, channels: int) -> tuple[np.ndarray, ...]:
