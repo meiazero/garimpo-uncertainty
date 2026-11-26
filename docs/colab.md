@@ -25,6 +25,12 @@ restored under another path refuses ([stages.md](stages.md#run-identity)).
 Each session clones the repository again without credentials, so code changes are committed and
 pushed from your own machine, never from the session.
 
+Every notebook installs `requirements.txt` with `scripts/colab_install.py`. It stops, naming the
+package, when pip would replace Colab's torch, torchvision, triton or an `nvidia-*` or `cuda-*`
+library, which pick the GPU's kernels and so its bits: a runtime version with another torch, such
+as 2026.10, stops there. A runtime a day or two behind its published versions differs in a few
+other packages, which pip aligns to the pins.
+
 ## Every cell runs again safely
 
 One cell per section, and each can run again, alone or through Run all, in the same session or a
@@ -103,11 +109,9 @@ measures the machine instead of running the pipeline:
   `outputs/tuning/store/` on the local disk, and its results stay in the kernel's memory, so the
   release at the end, when `RELEASE` is checked, erases them: copy the verdict first.
 - Its measurements run in the kernel's own Python, the one the pipeline's commands run on. The
-  setup installs `requirements.txt` there, after checking that it keeps the CUDA build of torch and
-  torchvision; on a runtime version with another torch, such as 2026.10, it stops. A runtime a day
-  or two behind its published versions differs in a few other packages, which pip aligns to the
-  pins. Then it reads
-  the `.pth` files of the editable installs, which Python only reads at startup, so `import
+  setup installs `requirements.txt` there, as every notebook does (above), and names what pip
+  replaced that the kernel had already imported, which keeps its old version until a restart. Then
+  it reads the `.pth` files of the editable installs, which Python only reads at startup, so `import
   garimpo_uncertainty` works without restarting the session.
 - Each measuring cell starts with `%%section <name>`, a cell magic defined in the setup. It runs the
   cell, and when the cell raises it prints the traceback and records the failure for the verdict

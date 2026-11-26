@@ -19,7 +19,32 @@ dependencies = [
     "segmentation-models-pytorch==0.6.0",
     "shapely>=2.0",
     "torch>=2.14.0",
+    # Its CUDA build comes with torch's, from the same index.
+    "torchvision",
 ]
+
+[dependency-groups]
+# The tools the suite and the hooks run.
+dev = [
+    "pytest==8.4.2",
+    "pytest-xdist==3.8.0",
+    "ruff==0.17.6",
+]
+
+[tool.uv]
+# Colab's machines; uv.lock then holds the one build each of them installs.
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[[tool.uv.index]]
+# The index of Colab's torch build; PyPI serves another.
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+compass = { path = "compass", editable = true }
+torch = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }
 
 [project.scripts]
 garimpo = "garimpo_uncertainty.cli:main"

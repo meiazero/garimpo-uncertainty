@@ -39,5 +39,6 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: requirements.txt
-      - run: pip install -r requirements.txt
+      # torch's pin names its CUDA build, which PyTorch's index serves, not PyPI.
+      - run: pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130
       - run: pytest -q

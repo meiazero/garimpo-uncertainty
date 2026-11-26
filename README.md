@@ -29,14 +29,22 @@ each of its cells.
 2. Choose a GPU runtime, then run Runtime > Run all. The setup mounts Drive, clones the code,
    installs `requirements.txt`, and restores the data and earlier runs from Drive.
 
-`requirements.txt` pins the versions Colab publishes for the packages it ships, so the install there
-replaces none of them, except a few that a runtime a day or two behind that list still has older.
-Elsewhere, in a Python 3.13 environment:
+`uv.lock` holds Colab's version of every package Colab ships, so the install there replaces none of
+them, except a few that a runtime a day or two behind that list still has older; `requirements.txt`
+is its export, which the notebooks install with pip. Elsewhere:
 
 ```bash
 git clone --recurse-submodules https://github.com/meiazero/garimpo-uncertainty.git
 cd garimpo-uncertainty
-pip install -r requirements.txt
+uv sync
+```
+
+To move to a newer Colab runtime, lock against its published pip freeze, with the latest commit of
+github.com/googlecolab/backend-info in place of `0cadcd7`, then export:
+
+```bash
+uv add --upgrade -c https://raw.githubusercontent.com/googlecolab/backend-info/0cadcd7/pip-freeze.gpu.txt --group dev --bounds exact pytest pytest-xdist ruff
+uv export --format requirements-txt --no-hashes --group dev -o requirements.txt
 ```
 
 Why the cells are written as they are: [docs/colab.md](docs/colab.md).
