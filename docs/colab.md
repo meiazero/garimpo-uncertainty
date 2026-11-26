@@ -103,8 +103,10 @@ measures the machine instead of running the pipeline:
   `outputs/tuning/store/` on the local disk, and its results stay in the kernel's memory, so the
   release at the end, when `RELEASE` is checked, erases them: copy the verdict first.
 - Its measurements run in the kernel's own Python, the one the pipeline's commands run on. The
-  setup installs `requirements.txt` there, after checking that it replaces none of Colab's packages:
-  on another runtime version than the latest one, whose versions it pins, it stops. Then it reads
+  setup installs `requirements.txt` there, after checking that it keeps the CUDA build of torch and
+  torchvision; on a runtime version with another torch, such as 2026.10, it stops. A runtime a day
+  or two behind its published versions differs in a few other packages, which pip aligns to the
+  pins. Then it reads
   the `.pth` files of the editable installs, which Python only reads at startup, so `import
   garimpo_uncertainty` works without restarting the session.
 - Each measuring cell starts with `%%section <name>`, a cell magic defined in the setup. It runs the

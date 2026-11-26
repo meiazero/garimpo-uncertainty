@@ -1,5 +1,6 @@
-# The experiment's environment: Colab's own versions of the packages it ships, so installing there
-# replaces none of them, and the tested versions of the rest. From the repository root, after
+# The experiment's environment: the versions Colab publishes for the packages it ships, so installing
+# there replaces none of them but the few a runtime a day or two behind still has older, and the
+# tested versions of the rest. From the repository root, after
 # `git submodule update --init`:
 #
 #   pip install -r requirements.txt

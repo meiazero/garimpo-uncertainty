@@ -29,8 +29,9 @@ each of its cells.
 2. Choose a GPU runtime, then run Runtime > Run all. The setup mounts Drive, clones the code,
    installs `requirements.txt`, and restores the data and earlier runs from Drive.
 
-`requirements.txt` pins Colab's own versions of the packages it ships, so the install there
-replaces none of them. Elsewhere, in a Python 3.13 environment:
+`requirements.txt` pins the versions Colab publishes for the packages it ships, so the install there
+replaces none of them, except a few that a runtime a day or two behind that list still has older.
+Elsewhere, in a Python 3.13 environment:
 
 ```bash
 git clone --recurse-submodules https://github.com/meiazero/garimpo-uncertainty.git
