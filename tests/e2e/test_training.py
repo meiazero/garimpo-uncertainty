@@ -246,6 +246,7 @@ def replaced(args: list[str], flag: str, *values: str) -> list[str]:
         ("--num-classes", ["2"], "--loss wants one logit per pixel"),
         ("--num-classes", ["0"], "--num-classes must be 1 or more"),
         ("--loss", ["focal"], "unknown loss 'focal'"),
+        ("--loss", ['{"name": "bce", "reduction": "none"}'], "one number per batch"),
         ("--loss", ['{"name": "dice_bce", "weight": 2}'], "unexpected keyword argument 'weight'"),
         ("--optimizer", ["lion"], "unknown optimizer 'lion'"),
         ("--optimizer", ['{"name": "adamw", "lr": 0.1}'], "multiple values for keyword argument"),

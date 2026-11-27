@@ -384,6 +384,9 @@ def check_classes(args: argparse.Namespace) -> None:
         if part.multiclass != (args.num_classes > 1):
             wants = "two or more classes" if part.multiclass else "one logit per pixel"
             raise ValueError(f"{flag} wants {wants}, and --num-classes is {args.num_classes}")
+    loss = parts["--loss"](torch.zeros(1, args.num_classes, 2, 2), torch.zeros(1, 1, 2, 2))
+    if loss.ndim != 0:
+        raise ValueError(f"--loss must give one number per batch, not a {list(loss.shape)} tensor")
 
 
 def callback_names(args: argparse.Namespace) -> list[str]:

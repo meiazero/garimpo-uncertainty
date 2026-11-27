@@ -616,8 +616,13 @@ def test_config_refuses_a_misspelled_or_misplaced_key(tmp_path: Path) -> None:
         garimpo_uncertainty.config.RunConfig.load(tmp_path, SCALE, "model")
 
 
-def test_config_refuses_more_classes_than_the_stages_after_train_read(tmp_path: Path) -> None:
-    assert "NUM_CLASSES must be 1 for a run, got 2" in refusal(tmp_path, NUM_CLASSES=2)
+@pytest.mark.parametrize("classes", [2, True, {}, "1"])
+def test_config_refuses_more_classes_than_the_stages_after_train_read(
+    tmp_path: Path, classes: object
+) -> None:
+    assert f"NUM_CLASSES must be 1 for a run, got {classes!r}" in refusal(
+        tmp_path, NUM_CLASSES=classes
+    )
 
 
 @pytest.mark.parametrize("floor", [0, -0.01, float("nan"), float("inf"), "0.01ha"])

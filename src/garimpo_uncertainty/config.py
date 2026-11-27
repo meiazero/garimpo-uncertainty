@@ -97,8 +97,9 @@ def problems(values: dict, misplaced: list[str]) -> list[str]:
     if values.get("ARCH") == "unet" and is_empty(values.get(ENCODER_WEIGHTS)):
         found.append(f"{ENCODER_WEIGHTS}: missing or empty, and the U-Net needs it")
     # garimpo train takes more classes, but every stage after it reads one logit per pixel.
-    if values.get("NUM_CLASSES") not in {None, 1}:
-        found.append(f"NUM_CLASSES must be 1 for a run, got {values['NUM_CLASSES']!r}")
+    classes = values.get("NUM_CLASSES")
+    if not is_empty(classes) and (type(classes) is not int or classes != 1):
+        found.append(f"NUM_CLASSES must be 1 for a run, got {classes!r}")
     if not isinstance(values.get("LAYERS", []), list):
         found.append("LAYERS: must be a list of layer names")
     floor = values.get("SCORE_FLOOR_HA")
