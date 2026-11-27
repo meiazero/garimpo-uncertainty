@@ -80,11 +80,17 @@ class Verdict:
             self.failures.append(
                 f"train {arch}: {moved} workers end with other weights than 0 workers"
             )
-        fed = [row for row in rows if row["data_wait_share"] <= STARVED]
-        if not fed:
+        self.size_workers(arch, [r for r in rows if r["stable"] and r["weights_match_0_workers"]])
+
+    def size_workers(self, arch: str, kept: list[dict]) -> None:
+        """Size the run by the fewest workers, of those that keep the weights, that keep it fed."""
+        fed = [row for row in kept if row["data_wait_share"] <= STARVED]
+        if kept and not fed:
             self.failures.append(
-                f"train {arch}: data loading starves the loop at every worker count"
+                f"train {arch}: data loading starves the loop at every worker count that keeps "
+                "the weights"
             )
+        if not fed:
             return
         pick = min(fed, key=lambda row: row["workers"])
         hours = pick["seconds_per_update"] * self.updates / 3600

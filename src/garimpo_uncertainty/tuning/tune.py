@@ -8,6 +8,7 @@ decide on. outputs/tuning/results.json keeps the rows.
 
 import argparse
 import json
+import math
 import os
 import sys
 import traceback
@@ -86,6 +87,17 @@ def run_sections(chosen: dict, out: Path) -> tuple[dict, list[str]]:
     return results, failed
 
 
+def json_safe(value: object) -> object:
+    """Return `value` with None for each NaN, a GPU use never sampled, as JSON has no NaN."""
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [json_safe(item) for item in value]
+    return value
+
+
 def full_run_size() -> tuple[int, int]:
     """Return the full run's updates and the cells its search stages read."""
     full = garimpo_uncertainty.tuning.workloads.read_json(
@@ -120,7 +132,7 @@ def main() -> None:
     print("Choices as the sections read them:", json.dumps(chosen, indent=2), sep="\n")
     results, failed = run_sections(chosen, OUT)
     OUT.mkdir(parents=True, exist_ok=True)
-    garimpo_uncertainty.files.write_json(OUT / "results.json", results)
+    garimpo_uncertainty.files.write_json(OUT / "results.json", json_safe(results))
     updates, cells = full_run_size()
     verdict = garimpo_uncertainty.tuning.verdict.judge(
         results, failed, chosen["archs"], updates, cells

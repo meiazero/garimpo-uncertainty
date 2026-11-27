@@ -1,5 +1,6 @@
 """The tuning's verdict and its run of sections, on rows written by hand; the timings need a GPU."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -29,6 +30,12 @@ def test_the_fewest_workers_that_keep_training_fed_size_the_run() -> None:
     assert verdict.findings[-1] == "train unet: 2 workers keep it fed; 9000 updates take ~1.0 h"
 
 
+def test_results_json_holds_no_nan_for_a_gpu_use_never_sampled() -> None:
+    results = {"train-unet": {"rows": [train_row(0, 0.0) | {"gpu_busy": float("nan")}]}}
+    written = json.dumps(garimpo_uncertainty.tuning.tune.json_safe(results), allow_nan=False)
+    assert json.loads(written)["train-unet"]["rows"][0]["gpu_busy"] is None
+
+
 def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:
     verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
     verdict.train("unet", [train_row(0, 0.5, stable=False), train_row(2, 0.4)])
@@ -52,9 +59,15 @@ def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:
     )
     assert verdict.failures == [
         "train unet: two runs at [0] workers end with other weights under deterministic algorithms",
-        "train unet: data loading starves the loop at every worker count",
+        "train unet: data loading starves the loop at every worker count that keeps the weights",
         "loader: train at 2 workers read other bytes",
     ]
+
+
+def test_an_unstable_worker_count_never_sizes_the_run() -> None:
+    verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=3600, evaluated_cells=1)
+    verdict.train("unet", [train_row(0, 0.0, stable=False), train_row(2, 0.0)])
+    assert verdict.findings[-1].startswith("train unet: 2 workers keep it fed")
 
 
 def test_workers_that_move_the_weights_fail_the_tuning() -> None:
