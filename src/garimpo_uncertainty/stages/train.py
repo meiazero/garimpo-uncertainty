@@ -362,7 +362,12 @@ def add_part_arguments(parser: argparse.ArgumentParser) -> None:
 
 def check_choices(args: argparse.Namespace) -> None:
     """Raise when a chosen part is unknown, takes other options, or misfits the classes."""
-    garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.entry(args.optimizer)
+    garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
+        args.optimizer,
+        params=[torch.nn.Parameter(torch.zeros(1))],
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+    )
     for spec in args.augmentations:
         garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(spec)
     check_classes(args)
