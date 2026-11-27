@@ -251,6 +251,7 @@ def replaced(args: list[str], flag: str, *values: str) -> list[str]:
         ("--loss", ['{"name": "dice_bce", "weight": 2}'], "unexpected keyword argument 'weight'"),
         ("--optimizer", ["lion"], "unknown optimizer 'lion'"),
         ("--optimizer", ['{"name": "adamw", "lr": 0.1}'], "multiple values for keyword argument"),
+        ("--optimizer", ['{"name": "sgd", "differentiable": true}'], "leaf Variable"),
         ("--metrics", ["precision"], "--metrics must include dice"),
         (
             "--callbacks",
@@ -288,6 +289,17 @@ def test_a_loss_option_torch_refuses_only_when_called_is_refused_before_any_epoc
     result = support.run("train", *args, data_root=data_root, check=False)
     assert result.returncode == 2, result.stderr
     assert "label_smoothing must be between" in result.stderr
+
+
+def test_a_loss_that_gives_nan_without_mining_is_refused_before_any_epoch(
+    data_root: Path, tmp_path: Path
+) -> None:
+    args = replaced(support.train_args("unet", tmp_path / "run"), "--num-classes", "2")
+    args = replaced(args, "--loss", '{"name": "cross_entropy", "ignore_index": 0}')
+    args = replaced(args, "--postprocess", "softmax_argmax")
+    result = support.run("train", *args, data_root=data_root, check=False)
+    assert result.returncode == 2, result.stderr
+    assert "finite on a batch with no mining" in result.stderr
 
 
 def test_imagenet_absent_file_names_the_command(data_root: Path, tmp_path: Path) -> None:

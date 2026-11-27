@@ -359,12 +359,13 @@ def add_part_arguments(parser: argparse.ArgumentParser) -> None:
 
 def check_choices(args: argparse.Namespace) -> None:
     """Raise when a chosen part is unknown, takes other options, or misfits the classes."""
-    garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
-        args.optimizer,
-        params=[torch.nn.Parameter(torch.zeros(1))],
-        lr=args.lr,
-        weight_decay=args.weight_decay,
+    parameter = torch.nn.Parameter(torch.zeros(1))
+    optimizer = garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
+        args.optimizer, params=[parameter], lr=args.lr, weight_decay=args.weight_decay
     )
+    # Some options, such as sgd's differentiable, fail only in the first update.
+    parameter.sum().backward()
+    optimizer.step()
     for spec in args.augmentations:
         garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(spec)
     check_classes(args)
@@ -397,6 +398,9 @@ def check_loss(loss_fn: torch.nn.Module, num_classes: int) -> None:
         raise ValueError(f"--loss must give one number per batch, not a {list(one.shape)} tensor")
     if not torch.allclose(one, loss_fn(logits.repeat(2, 1, 1, 1), mask.repeat(2, 1, 1, 1))):
         raise ValueError("--loss must average over the batch: twice the same cell changed it")
+    for label in (0.0, 1.0):
+        if not torch.isfinite(loss_fn(logits, torch.full_like(mask, label))):
+            raise ValueError("--loss must be finite on a batch with no mining or all mining")
 
 
 def callback_names(args: argparse.Namespace) -> list[str]:
