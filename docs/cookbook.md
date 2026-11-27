@@ -130,10 +130,10 @@ rest is an estimate.
 
 | Part | Per run | Runs | Source |
 |---|---|---|---|
-| Training, U-Net | ~3.5 h: 25,000 updates at ~0.47 s, plus ~7 s of evaluation per epoch | 3 | Notebook 3's training section (2026-11-26), with the 3% that deterministic algorithms added; the pilot's `history.csv` |
-| Training, ConvNet | ~4.3 h: 25,000 updates at ~0.59 s, plus the evaluation | 1 | Notebook 3's training section |
-| COMPASS scores, U-Net | ~2.6 h on the 5 layers | 3 | The pilot's 5.6 h, measured before each beta was decoded once (PR #58), divided by the 2.2 times fewer decodes of notebook 3's search section |
-| COMPASS scores, ConvNet | ~0.1 h | 1 | Notebook 3's search section |
+| Training, U-Net | ~3.5 h: 25,000 updates at ~0.47 s, plus ~7 s of evaluation per epoch | 3 | The training section of notebook 3 before PR #59 (2026-11-26), now `garimpo tune`'s train section, with the 3% that deterministic algorithms added; the pilot's `history.csv` |
+| Training, ConvNet | ~4.3 h: 25,000 updates at ~0.59 s, plus the evaluation | 1 | The same run of notebook 3 before PR #59 |
+| COMPASS scores, U-Net | ~2.6 h on the 5 layers | 3 | The pilot's 5.6 h, measured before each beta was decoded once (PR #58), divided by the 2.2 times fewer decodes that the search section of notebook 3 before PR #59 measured, now `garimpo tune`'s search section |
+| COMPASS scores, ConvNet | ~0.1 h | 1 | The search section of notebook 3 before PR #59 |
 | Intervals and the other stages | up to ~1 h | 4 | The pilot's statuses: 44 min of `generate_intervals`, the rest under 10 min |
 
 That is about 26 h for the four full runs. The pilot scores 864 cells, 31% of the full run's 2,816,
