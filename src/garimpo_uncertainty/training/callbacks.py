@@ -1,11 +1,11 @@
-"""What runs around the training loop: checkpoints and the epoch log always, the rest by config.
+"""What runs around the training loop, each callback picked by name from CALLBACKS.
 
-CALLBACK_REGISTRY holds the callbacks a config may add, which run before the checkpoint, so
-last.pt holds what they decided.
+Every run needs `checkpoint`, whose best_model.pt the later stages read; `train` refuses a config
+without it, or with a callback that changes the state after it.
 """
 
 import math
-from pathlib import Path
+from typing import override
 
 import numpy as np
 import pandas as pd
@@ -22,14 +22,14 @@ CALLBACK_REGISTRY = garimpo_uncertainty.registry.Registry("callback")
 TrainingState = garimpo_uncertainty.training.loop.TrainingState
 
 
+@CALLBACK_REGISTRY.register("checkpoint")
 class CheckpointCallback(garimpo_uncertainty.training.loop.Callback):
     """Writes history.csv and last.pt every epoch, and best_model.pt when val_dice improved."""
 
-    def __init__(self, run_dir: Path) -> None:
-        self.run = garimpo_uncertainty.artifacts.RunPaths.of(run_dir)
-
+    @override
     def on_epoch_end(self, state: TrainingState, record: dict) -> None:
-        run, epoch, dice = self.run, record["epoch"], record["val_dice"]
+        run = garimpo_uncertainty.artifacts.RunPaths.of(state.run_dir)
+        epoch, dice = record["epoch"], record["val_dice"]
         # Every epoch, so a job killed at its limit still reports what it measured.
         with garimpo_uncertainty.files.atomic(run.history) as temporary:
             pd.DataFrame(state.history).to_csv(temporary, index=False)
@@ -61,11 +61,12 @@ class CheckpointCallback(garimpo_uncertainty.training.loop.Callback):
         )
 
 
+@CALLBACK_REGISTRY.register("console_log")
 class ConsoleLogCallback(garimpo_uncertainty.training.loop.Callback):
     """Prints one line per epoch, as training logs show it; history.csv keeps every value."""
 
-    def __init__(self, epochs: int, best_dice: float) -> None:
-        self.epochs, self.previous_best = epochs, best_dice
+    def on_fit_start(self, trainer: garimpo_uncertainty.training.loop.Trainer) -> None:
+        self.epochs, self.previous_best = trainer.epochs, trainer.state.best_dice
 
     def on_epoch_end(self, state: TrainingState, record: dict) -> None:
         improved = state.best_dice > self.previous_best
@@ -90,6 +91,8 @@ class EarlyStopping(garimpo_uncertainty.training.loop.Callback):
     A NaN never improves. The protocol trains a fixed number of updates at every fraction, so
     configs/base.json leaves this out.
     """
+
+    changes_state = True
 
     def __init__(
         self, patience: int, min_delta: float = 0.0, monitor: str = "val_dice", mode: str = "max"

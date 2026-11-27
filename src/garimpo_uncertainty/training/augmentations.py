@@ -5,6 +5,7 @@ and applies it in `__call__`, in a worker. So a cell gets the same augmentation 
 loads it, and the number of workers leaves the trained weights alone.
 """
 
+import json
 from typing import Any, override
 
 import numpy as np
@@ -57,6 +58,8 @@ class Albumentations(Augmentation):
         # Imported here, so only a config that names it loads OpenCV into every worker.
         import albumentations  # noqa: PLC0415
 
+        if "ToTensorV2" in json.dumps(transform):
+            raise ValueError("albumentations: leave out ToTensorV2; the loader makes the tensors")
         self.pipeline = albumentations.from_dict({"transform": transform})
 
     @override

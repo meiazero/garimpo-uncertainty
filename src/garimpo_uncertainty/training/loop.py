@@ -7,6 +7,7 @@ a training subset in eval mode, then every callback's `on_epoch_end`, in order.
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -32,6 +33,7 @@ class TrainingState:
     history: list[dict]
     best_dice: float
     first_epoch: int
+    run_dir: Path  # where the checkpoints go
     # Set by a callback to end the training after this epoch, as early stopping does.
     stopped: bool = False
     # What callbacks keep across a resume, by callback name.
@@ -50,6 +52,12 @@ class Loaders:
 class Callback:
     """Runs after each epoch's validation, once its record is in the history."""
 
+    # A callback that changes the state must run before the checkpoint, so last.pt keeps it.
+    changes_state = False
+
+    def on_fit_start(self, trainer: "Trainer") -> None:
+        """Run once, before the first epoch of this call to fit."""
+
     def on_epoch_end(self, state: TrainingState, record: dict) -> None:
         raise NotImplementedError
 
@@ -63,6 +71,8 @@ class Trainer:
     def fit(self, loaders: Loaders) -> list[int] | None:
         """Train up to `epochs`; return the shape of the last batch, None if no epoch ran."""
         batch_shape = None
+        for callback in self.callbacks:
+            callback.on_fit_start(self)
         for epoch in range(self.state.first_epoch, self.epochs):
             if self.state.stopped:
                 break

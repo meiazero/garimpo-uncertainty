@@ -173,6 +173,7 @@ def start_training(
         history=[],
         best_dice=garimpo_uncertainty.training.loop.NO_BEST_DICE,
         first_epoch=0,
+        run_dir=args.run_dir,
     )
     if resume is None:
         return state
@@ -245,14 +246,10 @@ def fit(
     loaders: garimpo_uncertainty.training.loop.Loaders,
     device: str,
 ) -> list[int] | None:
-    """Run the epochs left, with the configured callbacks before the checkpoint and the log."""
+    """Run the epochs left, with the configured callbacks in their order."""
     callbacks = [
-        *(
-            garimpo_uncertainty.training.callbacks.CALLBACK_REGISTRY.build(spec)
-            for spec in args.callbacks
-        ),
-        garimpo_uncertainty.training.callbacks.CheckpointCallback(args.run_dir),
-        garimpo_uncertainty.training.callbacks.ConsoleLogCallback(args.epochs, state.best_dice),
+        garimpo_uncertainty.training.callbacks.CALLBACK_REGISTRY.build(spec)
+        for spec in args.callbacks
     ]
     trainer = garimpo_uncertainty.training.loop.Trainer(state, device, args.epochs, callbacks)
     batch_shape = trainer.fit(loaders)
@@ -350,7 +347,7 @@ def add_part_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="*",
         type=parse,
         required=True,
-        help=f"run before the checkpoint: {', '.join(callbacks.names())}",
+        help=f"in order, checkpoint included: {', '.join(callbacks.names())}",
     )
     parser.add_argument(
         "--metrics",
@@ -375,6 +372,8 @@ def check_choices(args: argparse.Namespace) -> None:
 
 
 def check_classes(args: argparse.Namespace) -> None:
+    if args.num_classes < 1:
+        raise ValueError(f"--num-classes must be 1 or more, got {args.num_classes}")
     parts = {
         "--loss": garimpo_uncertainty.training.losses.LOSS_REGISTRY.build(args.loss),
         "--postprocess": garimpo_uncertainty.postprocess.POSTPROCESS_REGISTRY.build(
@@ -387,18 +386,27 @@ def check_classes(args: argparse.Namespace) -> None:
             raise ValueError(f"{flag} wants {wants}, and --num-classes is {args.num_classes}")
 
 
+def callback_names(args: argparse.Namespace) -> list[str]:
+    names = [spec if isinstance(spec, str) else spec["name"] for spec in args.callbacks]
+    if twice := sorted({name for name in names if names.count(name) > 1}):
+        raise ValueError(f"--callbacks names {', '.join(twice)} twice: a run keeps one state each")
+    if "checkpoint" not in names:
+        raise ValueError("--callbacks must include checkpoint: the later stages read best_model.pt")
+    return names
+
+
 def check_callbacks(args: argparse.Namespace) -> None:
     if "dice" not in args.metrics:
         raise ValueError("--metrics must include dice: val_dice picks the best checkpoint")
     columns = {"val_loss", *(f"val_{name}" for name in args.metrics)}
-    names = [spec if isinstance(spec, str) else spec["name"] for spec in args.callbacks]
-    if twice := sorted({name for name in names if names.count(name) > 1}):
-        raise ValueError(f"--callbacks names {', '.join(twice)} twice: a run keeps one state each")
-    for spec in args.callbacks:
+    names = callback_names(args)
+    for name, spec in zip(names, args.callbacks, strict=True):
         callback = garimpo_uncertainty.training.callbacks.CALLBACK_REGISTRY.build(spec)
         monitor = getattr(callback, "monitor", None)
         if monitor is not None and monitor not in columns:
             raise ValueError(f"--callbacks monitors {monitor}, not one of {sorted(columns)}")
+        if callback.changes_state and names.index(name) > names.index("checkpoint"):
+            raise ValueError(f"--callbacks puts {name} after checkpoint, so last.pt would miss it")
 
 
 def main() -> None:

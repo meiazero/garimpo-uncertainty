@@ -16,9 +16,10 @@ listed in [runs.md](runs.md#model-variants).
 registry in `garimpo_uncertainty/training/` or `postprocess.py`; `garimpo train --help` lists the
 names. `POSTPROCESS` and `METRICS` take bare names, as their parts have no options. Each entry of
 the other four is a bare name, such as `"dice_bce"`, or an object with a name and its options,
-such as `{"name": "early_stopping", "patience": 10}`. `AUGMENTATIONS` and `CALLBACKS` may be `[]`,
-but not null. The checkpoint and the epoch line are not in `CALLBACKS`: every run needs
-`best_model.pt` and `last.pt`, so they always run, after the configured callbacks.
+such as `{"name": "early_stopping", "patience": 10}`. `AUGMENTATIONS` may be `[]`, but not null.
+`CALLBACKS` runs in its order and must hold `checkpoint`, whose `best_model.pt` the later stages
+read, after any callback that changes the training state, such as `early_stopping`, so `last.pt`
+keeps what it decided. `NUM_CLASSES` must be 1 for a run.
 
 ## Decided
 
@@ -34,7 +35,7 @@ but not null. The checkpoint and the epoch line are not in `CALLBACKS`: every ru
 | `NUM_CLASSES`, `POSTPROCESS` | 1, `sigmoid_threshold` | Mining against background is one logit per pixel, mined where it is at least 0, a probability of 0.5 (`postprocess.THRESHOLD`). The stages after training read one-logit models only (`checkpoints.load_model` refuses another); `softmax_argmax` and `cross_entropy` are the two-class variants |
 | `METRICS` | `dice`, `precision`, `recall` | Logged per epoch in `history.csv`; the best checkpoint is the epoch of highest `val_dice` |
 | `AUGMENTATIONS` | `flips` | A horizontal and a vertical flip, each with probability 0.5 (`training/augmentations.py`), drawn in the main process so the weights stay the same at any worker count. An `albumentations` entry takes, as `transform`, the `"transform"` of `albumentations.to_dict(pipeline)`, and its seed is drawn in the main process too; none is used |
-| `CALLBACKS` | `[]` | Checkpoints and the epoch line always run. `early_stopping` is implemented but left out: every fraction trains the same number of updates (first row) |
+| `CALLBACKS` | `checkpoint`, `console_log` | `checkpoint` writes `history.csv`, `best_model.pt` and `last.pt`; `console_log` prints the epoch line. `early_stopping` is implemented but left out: every fraction trains the same number of updates (first row) |
 | `LOSS` | `dice_bce` | Ma et al. 2021, Medical Image Analysis, PubMed 33813286: compound losses "are the most robust losses"; nnU-Net combines Dice and cross-entropy. Upstream COMPASS trains on Dice alone |
 | `SEED`, `SUBSET_SEED` | 0, 0 | `SUBSET_SEED` is the versioned lists' seed, so nothing is regenerated |
 | Resampling of B11 and B12 to 10 m | `bilinear` | The `sentinel2_moco` weights were pretrained on SSL4EO-S12, upsampled with `cv2.INTER_LINEAR_EXACT` (`ssl4eo_dataset.py:102` of github.com/zhu-xlab/SSL4EO-S12); torchgeo resamples float rasters bilinearly. No study comparing nearest and bilinear for this was found. Jasansky et al.'s code downloads through `stackstac`, whose default is nearest |

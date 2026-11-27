@@ -1,6 +1,7 @@
 """The parts a config swaps in training: registries, early stopping, two classes, Albumentations."""
 
 import albumentations
+import albumentations.pytorch
 import compass2d.directions
 import compass2d.metrics
 import numpy as np
@@ -47,7 +48,13 @@ def stopper(
 
 def state() -> garimpo_uncertainty.training.loop.TrainingState:
     return garimpo_uncertainty.training.loop.TrainingState(
-        *(None,) * 5, metadata={}, arguments={}, history=[], best_dice=-1.0, first_epoch=0
+        *(None,) * 5,
+        metadata={},
+        arguments={},
+        history=[],
+        best_dice=-1.0,
+        first_epoch=0,
+        run_dir=None,
     )
 
 
@@ -115,6 +122,7 @@ def test_two_classes_train_and_score_through_the_loop() -> None:
         history=[],
         best_dice=-1.0,
         first_epoch=0,
+        run_dir=None,
     )
     loaders = garimpo_uncertainty.training.loop.Loaders(loader, loader, loader)
     trainer = garimpo_uncertainty.training.loop.Trainer(training, "cpu", 1, [])
@@ -123,6 +131,16 @@ def test_two_classes_train_and_score_through_the_loop() -> None:
     assert record["updates"] == 2
     assert 0 <= record["val_dice"] <= 1
     assert np.isfinite(record["val_loss"])
+
+
+def test_albumentations_refuses_a_pipeline_that_returns_tensors() -> None:
+    pipeline = albumentations.Compose(
+        [albumentations.HorizontalFlip(), albumentations.pytorch.ToTensorV2()]
+    )
+    with pytest.raises(ValueError, match="leave out ToTensorV2"):
+        garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(
+            {"name": "albumentations", "transform": albumentations.to_dict(pipeline)["transform"]}
+        )
 
 
 def test_albumentations_repeats_the_draw_it_is_given() -> None:

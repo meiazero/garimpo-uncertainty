@@ -244,6 +244,7 @@ def replaced(args: list[str], flag: str, *values: str) -> list[str]:
     ("flag", "values", "message"),
     [
         ("--num-classes", ["2"], "--loss wants one logit per pixel"),
+        ("--num-classes", ["0"], "--num-classes must be 1 or more"),
         ("--loss", ["focal"], "unknown loss 'focal'"),
         ("--loss", ['{"name": "dice_bce", "weight": 2}'], "unexpected keyword argument 'weight'"),
         ("--optimizer", ["lion"], "unknown optimizer 'lion'"),
@@ -251,13 +252,19 @@ def replaced(args: list[str], flag: str, *values: str) -> list[str]:
         ("--metrics", ["precision"], "--metrics must include dice"),
         (
             "--callbacks",
-            ['{"name": "early_stopping", "patience": 2, "monitor": "val_iou"}'],
+            ['{"name": "early_stopping", "patience": 2, "monitor": "val_iou"}', "checkpoint"],
             "monitors val_iou",
         ),
         (
             "--callbacks",
-            ['{"name": "early_stopping", "patience": 2}', "early_stopping"],
+            ['{"name": "early_stopping", "patience": 2}', "early_stopping", "checkpoint"],
             "names early_stopping twice",
+        ),
+        ("--callbacks", ["console_log"], "must include checkpoint"),
+        (
+            "--callbacks",
+            ["checkpoint", '{"name": "early_stopping", "patience": 2}'],
+            "puts early_stopping after checkpoint",
         ),
     ],
 )

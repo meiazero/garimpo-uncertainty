@@ -195,7 +195,8 @@ def test_an_early_stop_stays_stopped_when_the_training_runs_again(
     run_dir = tmp_path / "run"
     # No later val_loss beats the first by 1e9, so the stop comes right after the second epoch.
     stop = '{"name": "early_stopping", "patience": 1, "monitor": "val_loss", "min_delta": 1e9}'
-    args = [*support.train_args("convnet", run_dir, epochs="4"), "--callbacks", stop]
+    args = support.train_args("convnet", run_dir, epochs="4")
+    args.insert(args.index("--callbacks") + 1, stop)  # before the checkpoint, so last.pt keeps it
     result = support.run("train", *args, data_root=data_root)
     assert "stopped early after epoch 2" in result.stdout
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]

@@ -189,6 +189,7 @@ def training_run(
         history=[],
         best_dice=math.nan,
         first_epoch=0,
+        run_dir=store,  # fit_epoch runs no callback, so nothing is written here
     )
     batches = garimpo_uncertainty.cell_dataset.loader(
         store,

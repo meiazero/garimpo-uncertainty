@@ -39,8 +39,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 A run is one of these models at the `full` scale, `configs/scales/full.json`, with the values of
 `configs/base.json` that every run shares. Each value has its source in
 [decisions.md](decisions.md). `garimpo run` composes the three files and stops the run before
-any stage when a key is missing, null, empty (except `AUGMENTATIONS` and `CALLBACKS`, which may
-be `[]`), unknown or in another file, or when `SCORE_FLOOR_HA`
+any stage when a key is missing, null, empty (except `AUGMENTATIONS`, which may be `[]`), unknown or in another file, or when `SCORE_FLOOR_HA`
 is not a positive finite number. The run writes to `runs/<model>-f1.0`: the merge reads the runs
 from those paths. The `pilot` scale runs the same four models at 1% ([pilot.md](pilot.md)).
 

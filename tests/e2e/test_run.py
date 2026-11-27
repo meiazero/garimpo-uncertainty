@@ -85,7 +85,7 @@ FILLED = {
     "METRICS": ["dice", "precision", "recall"],
     "AUGMENTATIONS": ["flips"],
     # Never stops within the test's epochs; an object, so its JSON reaches train whole.
-    "CALLBACKS": [{"name": "early_stopping", "patience": 1000}],
+    "CALLBACKS": [{"name": "early_stopping", "patience": 1000}, "checkpoint", "console_log"],
     "LR": 1e-3,
     # Not 0, which SEED holds, so a swap shows in the commands.
     "WEIGHT_DECAY": 1e-6,
@@ -614,6 +614,10 @@ def test_config_refuses_a_misspelled_or_misplaced_key(tmp_path: Path) -> None:
         garimpo_uncertainty.config.ConfigError, match=r"SVM_C: belongs in .*base\.json"
     ):
         garimpo_uncertainty.config.RunConfig.load(tmp_path, SCALE, "model")
+
+
+def test_config_refuses_more_classes_than_the_stages_after_train_read(tmp_path: Path) -> None:
+    assert "NUM_CLASSES must be 1 for a run, got 2" in refusal(tmp_path, NUM_CLASSES=2)
 
 
 @pytest.mark.parametrize("floor", [0, -0.01, float("nan"), float("inf"), "0.01ha"])

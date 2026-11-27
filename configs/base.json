@@ -16,7 +16,10 @@
   "AUGMENTATIONS": [
     "flips"
   ],
-  "CALLBACKS": [],
+  "CALLBACKS": [
+    "checkpoint",
+    "console_log"
+  ],
   "SEED": 0,
   "SVM_C": 1.0,
   "SVM_CLASS_WEIGHT": "balanced",

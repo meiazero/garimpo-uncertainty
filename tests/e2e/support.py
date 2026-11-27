@@ -350,7 +350,7 @@ def train_args(
         "POSTPROCESS": "sigmoid_threshold",
         "METRICS": ["dice", "precision", "recall"],
         "AUGMENTATIONS": ["flips"],
-        "CALLBACKS": [],
+        "CALLBACKS": ["checkpoint", "console_log"],
         "SEED": "0",
         "NUM_WORKERS": NUM_WORKERS,
     }

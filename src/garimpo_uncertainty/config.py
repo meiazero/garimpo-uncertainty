@@ -52,9 +52,9 @@ BASE_KEYS = (
     "BOUNDARY_TOLERANCE_PX",
     "CELL_PX",
 )
-# Lists present in every run, and [] on purpose when a run takes none: no augmentation, no early
-# stop. null still refuses, as a value left out rather than chosen.
-MAY_BE_EMPTY = ("AUGMENTATIONS", "CALLBACKS")
+# A list present in every run, and [] on purpose when a run takes no augmentation. null still
+# refuses, as a value left out rather than chosen.
+MAY_BE_EMPTY = ("AUGMENTATIONS",)
 REQUIRED = (*MODEL_KEYS, *SCALE_KEYS, *BASE_KEYS)
 
 
@@ -96,6 +96,9 @@ def problems(values: dict, misplaced: list[str]) -> list[str]:
     ]
     if values.get("ARCH") == "unet" and is_empty(values.get(ENCODER_WEIGHTS)):
         found.append(f"{ENCODER_WEIGHTS}: missing or empty, and the U-Net needs it")
+    # garimpo train takes more classes, but every stage after it reads one logit per pixel.
+    if values.get("NUM_CLASSES") not in {None, 1}:
+        found.append(f"NUM_CLASSES must be 1 for a run, got {values['NUM_CLASSES']!r}")
     if not isinstance(values.get("LAYERS", []), list):
         found.append("LAYERS: must be a list of layer names")
     floor = values.get("SCORE_FLOOR_HA")
