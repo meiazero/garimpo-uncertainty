@@ -7,6 +7,7 @@ per candidate as it goes; the verdict reads the rows.
 import json
 import os
 import statistics
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -20,7 +21,7 @@ measure = garimpo_uncertainty.tuning.measure
 work = garimpo_uncertainty.tuning.workloads
 
 
-def hardware(form: dict, out: Path) -> dict:  # noqa: ARG001 - one signature for every section
+def hardware(form: dict, out: Path) -> Iterator[dict]:  # noqa: ARG001 - one signature for every section
     measure.require_gpu()
     gpu = torch.cuda.get_device_properties(0)
     found = {
@@ -37,10 +38,10 @@ def hardware(form: dict, out: Path) -> dict:  # noqa: ARG001 - one signature for
         },
     }
     print(json.dumps(found, indent=2))
-    return {"hardware": found}
+    yield {"hardware": found}
 
 
-def loader(form: dict, out: Path) -> dict:
+def loader(form: dict, out: Path) -> Iterator[dict]:
     store = out / "store"
     cells = work.synthetic_store(store, form["loader_cells"], form["seed"])
     rows = []
@@ -60,7 +61,7 @@ def loader(form: dict, out: Path) -> dict:
                 f"CPU busy {row['cpu_busy']:.0%}, I/O wait {row['cpu_iowait']:.0%}, "
                 f"same bytes as 0 workers {row['bitwise']}"
             )
-    return {"loader": {"rows": rows}}
+    yield {"loader": {"rows": rows}}
 
 
 def training_row(
@@ -82,10 +83,9 @@ def training_row(
     return row
 
 
-def train(form: dict, out: Path) -> dict:
+def train(form: dict, out: Path) -> Iterator[dict]:
     store = out / "store"
     cells = work.synthetic_store(store, form["loader_cells"], form["seed"])
-    found = {}
     for arch in form["archs"]:
         loops = {workers: [] for workers in form["workers"]}
         runs = {
@@ -105,8 +105,7 @@ def train(form: dict, out: Path) -> dict:
                     f"CPU busy {row['cpu_busy']:.0%}"
                 )
             rows.append(row)
-        found[f"train-{arch}"] = {"rows": rows}
-    return found
+        yield {f"train-{arch}": {"rows": rows}}
 
 
 class SearchTimes(NamedTuple):
@@ -159,8 +158,7 @@ def search_row(bench: work.Bench, form: dict) -> dict:
     }
 
 
-def search(form: dict, out: Path) -> dict:  # noqa: ARG001
-    found = {}
+def search(form: dict, out: Path) -> Iterator[dict]:  # noqa: ARG001
     for arch in form["archs"]:
         rows = []
         for bench in work.benches(arch, form["search_layers"][arch], form["cells"], form["seed"]):
@@ -172,19 +170,17 @@ def search(form: dict, out: Path) -> dict:  # noqa: ARG001
                 f"{calls['separate']:.0f} -> {calls['memo']:.0f}, "
                 f"{row['ms_per_decode']['memo']:.1f} ms per decode, GPU busy {row['gpu_busy']:.0%}"
             )
-        found[f"search-{arch}"] = {"rows": rows}
-    return found
+        yield {f"search-{arch}": {"rows": rows}}
 
 
-def batch(form: dict, out: Path) -> dict:  # noqa: ARG001
+def batch(form: dict, out: Path) -> Iterator[dict]:  # noqa: ARG001
     reference = work.CONFIG["EVAL_BATCH_SIZE"]
     sizes = sorted({reference, *form["batch_sizes"]})
     if uneven := [size for size in sizes if form["cells"] % size]:
         raise SystemExit(f"--cells {form['cells']} is no multiple of the batch sizes {uneven}")
-    return {
-        f"batch-{arch}": {"reference": reference, "rows": batch_rows(arch, sizes, reference, form)}
-        for arch in form["archs"]
-    }
+    for arch in form["archs"]:
+        rows = batch_rows(arch, sizes, reference, form)
+        yield {f"batch-{arch}": {"reference": reference, "rows": rows}}
 
 
 def batch_rows(arch: str, sizes: list[int], reference: int, form: dict) -> list[dict]:
@@ -223,9 +219,8 @@ def flagged_pass(bench: work.Bench, flags: dict) -> dict:
         return work.score_pass(bench, work.CONFIG["EVAL_BATCH_SIZE"])
 
 
-def precision(form: dict, out: Path) -> dict:  # noqa: ARG001
+def precision(form: dict, out: Path) -> Iterator[dict]:  # noqa: ARG001
     candidates = precision_candidates()
-    found = {}
     for arch in form["archs"]:
         rows = []
         for bench in work.benches(arch, form["timed_layers"][arch], form["cells"], form["seed"]):
@@ -243,11 +238,10 @@ def precision(form: dict, out: Path) -> dict:  # noqa: ARG001
                     f"{arch} {bench.layer} {name:22}: {row['seconds']['median']:.1f} s, "
                     f"same bits as strict float32 {same}"
                 )
-        found[f"precision-{arch}"] = {"rows": rows}
-    return found
+        yield {f"precision-{arch}": {"rows": rows}}
 
 
-def lightgbm(form: dict, out: Path) -> dict:  # noqa: ARG001
+def lightgbm(form: dict, out: Path) -> Iterator[dict]:  # noqa: ARG001
     rng = np.random.default_rng(form["seed"])
     rows = []
     for channels in (16, 256):
@@ -263,7 +257,7 @@ def lightgbm(form: dict, out: Path) -> dict:  # noqa: ARG001
                 f"{channels:3} channels, {jobs:2} threads: {row['seconds']['median']:.2f} s, "
                 f"CPU busy {row['cpu_busy']:.0%}, same ratios as 1 thread {rows[-1]['bitwise']}"
             )
-    return {"lightgbm": {"rows": rows}}
+    yield {"lightgbm": {"rows": rows}}
 
 
 # In the notebook's order; the verdict expects every one, per architecture where it says so.

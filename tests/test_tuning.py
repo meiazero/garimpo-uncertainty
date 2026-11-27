@@ -1,5 +1,6 @@
 """The tuning's verdict and its run of sections, on rows written by hand; the timings need a GPU."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -107,13 +108,30 @@ def test_a_loader_or_lightgbm_row_that_differs_between_two_runs_fails_the_tuning
     ]
 
 
+def test_an_architecture_done_before_another_fails_keeps_its_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def search(form: dict, out: Path) -> Iterator[dict]:
+        yield {"search-unet": {"rows": []}}
+        raise RuntimeError("convnet ran out of memory")
+
+    monkeypatch.setattr(garimpo_uncertainty.tuning.sections, "SECTIONS", {"search": search})
+    results, failed = garimpo_uncertainty.tuning.tune.run_sections({}, tmp_path)
+    assert results == {"search-unet": {"rows": []}}
+    assert failed == ["search: RuntimeError: convnet ran out of memory"]
+
+
 def test_a_section_that_fails_is_noted_and_the_rest_still_run(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    def no_gpu(form: dict, out: Path) -> dict:
+    def no_gpu(form: dict, out: Path) -> Iterator[dict]:
         raise SystemExit("No GPU")
+        yield {}
 
-    sections = {"hardware": no_gpu, "lightgbm": lambda form, out: {"lightgbm": {"rows": []}}}
+    def lightgbm(form: dict, out: Path) -> Iterator[dict]:
+        yield {"lightgbm": {"rows": []}}
+
+    sections = {"hardware": no_gpu, "lightgbm": lightgbm}
     monkeypatch.setattr(garimpo_uncertainty.tuning.sections, "SECTIONS", sections)
     results, failed = garimpo_uncertainty.tuning.tune.run_sections({}, tmp_path)
     assert results == {"lightgbm": {"rows": []}}

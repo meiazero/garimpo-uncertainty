@@ -67,12 +67,17 @@ def form(args: argparse.Namespace) -> dict:
 
 
 def run_sections(chosen: dict, out: Path) -> tuple[dict, list[str]]:
-    """Run every section in order; a failure is noted and the later sections still run."""
+    """Run every section in order; a failure is noted and the later sections still run.
+
+    A section yields each architecture's result once it is done, so a later one that fails keeps
+    the earlier ones.
+    """
     results, failed = {}, []
     for name, section in garimpo_uncertainty.tuning.sections.SECTIONS.items():
         print(f"\n===== {name} =====", flush=True)
         try:
-            results |= section(chosen, out)
+            for part in section(chosen, out):
+                results |= part
         except (Exception, SystemExit) as error:  # noqa: BLE001 - every section must get its turn
             traceback.print_exc()
             failed.append(f"{name}: {type(error).__name__}: {error}")
@@ -104,7 +109,7 @@ def show(results: dict, verdict: garimpo_uncertainty.tuning.verdict.Verdict) -> 
     print(
         "TUNING: FAIL"
         if verdict.failures
-        else "TUNING: PASS: every section ran, and nothing lost a bit"
+        else "TUNING: PASS: every section ran, and every reference kept its bits"
     )
 
 
