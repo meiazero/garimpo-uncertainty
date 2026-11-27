@@ -4,8 +4,9 @@
 Every number comes from the runs' files, so a figure is redrawn, never edited.
 
 ```bash
-garimpo figures runs/full/*-f1.0 --out outputs/figures
-garimpo figures runs/full/*-f1.0 --out outputs/figures --only q2_coverage_and_width
+garimpo figures runs/*-f1.0 --out outputs/figures
+garimpo figures runs/*-f1.0 --out outputs/figures --only q2_coverage_and_width
+garimpo figures --scale auto --models unet_scratch convnet --out outputs/figures
 ```
 
 Run it from the repository root, with `GARIMPO_DATA_DIR` set as for the stages: the qualitative

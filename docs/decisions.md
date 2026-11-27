@@ -12,6 +12,12 @@ missing, null or empty, or a key is unknown or in another file (`garimpo_uncerta
 The run's directory is `<RUNS_DIR>/<model>-f<TRAIN_FRACTION>`, such as `runs/unet_scratch-f1.0`, as
 listed in [runs.md](runs.md#model-variants).
 
+`OPTIMIZER`, `LOSS`, `POSTPROCESS`, `METRICS`, `AUGMENTATIONS` and `CALLBACKS` name parts of a
+registry in `garimpo_uncertainty/training/` or `postprocess.py`. Each entry is a bare name, such
+as `"dice_bce"`, or an object with a name and its options, such as
+`{"name": "early_stopping", "patience": 10}`; `garimpo train --help` lists the names.
+`AUGMENTATIONS` and `CALLBACKS` may be `[]`, but not null.
+
 ## Decided
 
 | Value | Set to | Source |
@@ -22,6 +28,11 @@ listed in [runs.md](runs.md#model-variants).
 | `BATCH_SIZE` | 16 | Jasansky et al., same dataset and 512-pixel chips: `configs/cnn/cnn_segment_config_gpu_L4.yaml` of github.com/SimonJasansky/mine-segmentation. COMPASS used 32 on 128-pixel images (Appendix E) |
 | `LR` | 1e-4, AdamW | Cheung et al. 2026, COMPASS, Appendix E; `2D/datasets/kvasir/run_nn.py:58` of github.com/matthewyccheung/compass |
 | `WEIGHT_DECAY` | 0.01 | The same upstream line calls AdamW without `weight_decay`, so it trains at PyTorch's default, 1e-2 |
+| `OPTIMIZER` | `adamw` | The optimizer of the `LR` row's source |
+| `NUM_CLASSES`, `POSTPROCESS` | 1, `sigmoid_threshold` | Mining against background is one logit per pixel, mined where it is at least 0, a probability of 0.5 (`postprocess.THRESHOLD`). The stages after training read one-logit models only (`checkpoints.load_model` refuses another); `softmax_argmax` and `cross_entropy` are the two-class variants |
+| `METRICS` | `dice`, `precision`, `recall` | Logged per epoch in `history.csv`; the best checkpoint is the epoch of highest `val_dice` |
+| `AUGMENTATIONS` | `flips` | A horizontal and a vertical flip, each with probability 0.5 (`training/augmentations.py`), drawn in the main process so the weights stay the same at any worker count. An `albumentations` entry takes a pipeline serialized by `albumentations.to_dict`; none is used |
+| `CALLBACKS` | `[]` | Checkpoints and the epoch line always run. `early_stopping` is implemented but left out: every fraction trains the same number of updates (first row) |
 | `LOSS` | `dice_bce` | Ma et al. 2021, Medical Image Analysis, PubMed 33813286: compound losses "are the most robust losses"; nnU-Net combines Dice and cross-entropy. Upstream COMPASS trains on Dice alone |
 | `SEED`, `SUBSET_SEED` | 0, 0 | `SUBSET_SEED` is the versioned lists' seed, so nothing is regenerated |
 | Resampling of B11 and B12 to 10 m | `bilinear` | The `sentinel2_moco` weights were pretrained on SSL4EO-S12, upsampled with `cv2.INTER_LINEAR_EXACT` (`ssl4eo_dataset.py:102` of github.com/zhu-xlab/SSL4EO-S12); torchgeo resamples float rasters bilinearly. No study comparing nearest and bilinear for this was found. Jasansky et al.'s code downloads through `stackstac`, whose default is nearest |
@@ -32,7 +43,7 @@ listed in [runs.md](runs.md#model-variants).
 | `BOUNDARY_TOLERANCE_PX` | 5.43 | 0.75% of the image diagonal, Csurka et al. 2013, BMVC; also MATLAB `bfscore`'s default. A 512-pixel cell's diagonal is 724 pixels |
 | ConvNet (`--arch convnet`) | smp's `DeepLabV3`: encoder `models.ENCODER` (ResNet-18, the U-Net's), `encoder_weights=None`, `classes=1`, every other argument at smp's default: `encoder_output_stride` 8, `decoder_channels` 256, `decoder_atrous_rates` (12, 24, 36), ASPP not separable, `decoder_aspp_dropout` 0.5, final upsampling equal to the output stride | User decision, 2026-11-08. In the installed `segmentation_models_pytorch` 0.6.0: defaults at `decoders/deeplabv3/model.py:61-73`, upsampling at `model.py:93-99`; `DeepLabV3Decoder.forward` at `decoders/deeplabv3/decoder.py:64-70` starts from `features[-1]` alone, so no skip connections. Against `unet_scratch` it changes the decoder and, with it, the encoder's output stride: the same ResNet-18 layers, dilated to stride 8 (`model.py:84-91` passes `output_stride` to the encoder) |
 | `alpha` | 0.05, 0.1 and 0.15, every run | Cheung et al. 2026, COMPASS, Table 1; the constant `intervals.ALPHAS`, no flag |
-| `EVAL_BATCH_SIZE` | 16, `BATCH_SIZE` | The stages after training load the model in eval mode with `requires_grad` off (`checkpoints.load_model`), and their one backward pass, the Jacobian, differentiates only the layers after `z` (`directions.jacobian_sum`). At the same batch they hold less than training, which also keeps the whole network's activations, the weight gradients and AdamW's two moments. In eval mode each sample is independent, but another batch size can pick other cuDNN kernels and so other last bits (`notebooks/03_tune_hardware.ipynb`, batch size section), so every run keeps 16; changing it after an OOM refuses nothing |
+| `EVAL_BATCH_SIZE` | 16, `BATCH_SIZE` | The stages after training load the model in eval mode with `requires_grad` off (`checkpoints.load_model`), and their one backward pass, the Jacobian, differentiates only the layers after `z` (`directions.jacobian_sum`). At the same batch they hold less than training, which also keeps the whole network's activations, the weight gradients and AdamW's two moments. In eval mode each sample is independent, but another batch size can pick other cuDNN kernels and so other last bits (`garimpo tune`, batch section), so every run keeps 16; changing it after an OOM refuses nothing |
 | Layers to diagnose (`LAYERS`) | U-Net: `decoder.blocks.0` to `decoder.blocks.4`. ConvNet: `decoder.aspp`, `decoder.relu` | COMPASS Appendix E tried every layer of the head; `choose_layer` then calibrates one of them |
 | `DIRECTION_TEMPERATURE` | 10000, in `fit_directions`, `verify_monotonicity` and `compass_scores` | Upstream's temperature, the metric's. Its known cost: the gradient vanishes beyond \|logit\| ≈ 5e-3, so cells predicted empty get the PCA mean as direction. A temperature chosen by leave-one-group-out on calibration was not pursued, since the aim is COMPASS's own setting, not a tuned one |
 | `MIN_FRACTION_ASCENDING`: share of validation cells whose sweep must be ascending, in both directions, for a layer to be chosen | 0.95 | Cheung et al. (2026) set none: §4.1 only says to verify monotonicity, and §2.3 reports it held in all their experiments. Chosen as 1 minus the smallest alpha, 0.05, so the share of non-monotonic cells stays below the smallest miscoverage the intervals allow. With `SWEEP_CELLS` 20 it needs 19 of 20 cells. If no layer reaches it, `choose_layer` stops the job naming the best layer and its fraction; rerunning with another value redoes only `choose_layer` and what follows |

@@ -56,19 +56,19 @@ After each fix, before its push, one agent reviews the diff against two rules an
 
 ## Fixes: notebooks keep the Colab session, the package keeps the logic
 
-- [ ] 9. Make `garimpo tune` a command backed by a `garimpo_uncertainty/tuning/` package, so `03_tune_hardware.ipynb` is a form and one `!garimpo tune` line. (8 files, after 1-5)
+- [x] 9. Make `garimpo tune` a command backed by a `garimpo_uncertainty/tuning/` package (`measure`, `workloads`, `sections`, `verdict`, `tune`), so `03_tune_hardware.ipynb` is a form and one `!garimpo tune` line. (8 files, after 1-5)
   - `notebooks/tuning.py` is imported through `sys.path.insert(0, CODE / "notebooks")` (03, cell 4); no test covers it.
   - The measurement loops (03, cells 9-19) and the verdict with its thresholds (03, cell 21) live in cells; 20 commits touched `notebooks/` from 2026-11-24 to 2026-11-26, 5 of them `fix(notebook)`.
   - `%%section`, `FAILED`, `RESULTS`, `exec(cell, user_ns)`, `loaded_and_replaced()` and `site.addsitedir` (03, cell 4) exist only because the logic runs in the kernel.
   - `EVALUATED_CELLS = 16 * ...` (03, cell 21) hardcodes what `notebooks/tuning.py:51` derives as `CELLS_PER_TILE`.
-- [ ] 10. Make `garimpo experiment` run pilot then full, the merge and the status (01, cells 10-12), and let `garimpo figures` choose the scale and the runs with intervals (02, cell 6). (5 files)
+- [x] 10. Make `garimpo experiment` run pilot then full, the merge and the status (01, cells 10-12), and let `garimpo figures --scale` choose the runs with intervals (02, cell 6). (5 files)
   - `next_scale()` (01, cell 10) and 02 cell 6 parse the last stdout line of `garimpo status`.
   - `MODELS` is typed by hand in 01 cell 6 and 02 cell 6, a copy of `configs/models/`.
   - 02 cell 6 rebuilds `RunConfig.run_dir` by hand.
-- [ ] 11. Leave in the notebooks only the Colab session: mount, clone at `BRANCH`, install, unpack, rsync to and from Drive, the 30-minute copy, the test gate's Drive marker, release. One identical bootstrap cell and one identical release cell in all three. (3 files, after 9-10)
+- [x] 11. Leave in the notebooks only the Colab session: mount, clone at `BRANCH`, install, unpack, rsync to and from Drive, the 30-minute copy, the test gate's Drive marker, release. One identical bootstrap cell and one identical release cell in all three. (3 files, after 9-10)
   - 01 and 02 never update an existing clone; 03 fetches and checks out `BRANCH` (03, cell 4).
   - `release_runtime()` is copied in 01 and 02; 03 cell 23 releases without flushing Drive.
-- [ ] 12. Point `docs/` and `README.md` at the new registries, config keys and commands, and delete `notebooks/tuning.py`. (6 files, after 1-11)
+- [x] 12. Point `docs/` and `README.md` at the new registries, config keys and commands, and AGENTS.md rule 1 at the registries that exist. (6 files, after 1-11)
 
 ## Not applied, with the reason
 

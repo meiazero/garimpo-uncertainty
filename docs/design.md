@@ -14,7 +14,7 @@ Each of the four runs is one `garimpo run` job:
 shares (`validate_data`'s `group_leakage`), and calibrated on the `calibration` role (`external`),
 on it reweighted toward `test` by a density ratio (`external_weighted`), or on the other `test`
 groups, leaving out the evaluated one (`own_region`); CQR's regressor is fitted on `train` cells.
-`garimpo merge` then runs once, by hand, over the four runs. Tile counts come from
+`garimpo merge` then runs once over the four runs, as `garimpo experiment` ends. Tile counts come from
 `outputs/split.csv`; methods and calibrations from `src/garimpo_uncertainty/intervals.py`.
 
 ```mermaid
@@ -67,7 +67,7 @@ flowchart TD
     end
     CAL -.-> METHODS
 
-    CM -- "once, by hand, over the four runs" --> MR["garimpo merge<br/>tables across runs"]
+    CM -- "once, over the four runs" --> MR["garimpo merge<br/>tables across runs"]
     MR --> DISS["Result tables and figures"]
 ```
 

@@ -5,13 +5,15 @@ the `compass/` submodule.
 
 ## Architecture
 
-1. **Registry + Factory.** Models, losses, optimizers, metrics, transforms, post-processing,
-   callbacks, COMPASS directions, searches and quantile rules are chosen by name from a registry
-   (`@register_model("unet")`, `LOSS_REGISTRY`, ...) and built by a factory from a config dict.
-   Never pick one with `if/elif` on a name, and never repeat a registry's names in `argparse`
-   `choices`: read them from the registry.
+1. **Registry + Factory.** Models, losses, optimizers, metrics, augmentations, post-processing
+   and callbacks are chosen by name from a `garimpo_uncertainty.registry.Registry`
+   (`MODEL_REGISTRY.register("unet")`, `LOSS_REGISTRY`, ...) and built from a config value, a name
+   or `{"name": ..., **kwargs}`. COMPASS directions come from compass2d's `DIRECTIONS`, and
+   calibration's row fillers and quantile situations from a dict keyed by name. Never pick one
+   with `if/elif` on a name, and never repeat a registry's names in `argparse` `choices`: read
+   them from the registry.
 2. **Strategy.** Each loss is an `nn.Module`; a combined loss such as Dice + BCE is its own
-   module. Post-processing steps are pure functions `(logits: Tensor) -> Tensor`.
+   module. Post-processing steps are pure callables `(logits: Tensor) -> Tensor`, with no state.
 3. **Pipeline / Builder.** `CellDataset` only reads `(image, mask)` from disk; normalization and
    augmentation come from an injected `transform` built from config.
 4. **Template Method + Callbacks.** The training loop is fixed (`train_step`, `val_step`,
@@ -30,8 +32,9 @@ A variation the protocol does not use is still implemented, and ships off in `co
   main process; a step that draws inside the workers says so in `run_meta.json`.
 - Files already written by runs keep loading: checkpoint state_dict keys, layer names such as
   `decoder.blocks.0`, and the fields of `directions.npz`.
-- Notebooks hold only the Colab session: mount Drive, clone, install, copy to and from Drive,
-  release the runtime. Everything else is a `garimpo` command they call.
+- Notebooks hold only the Colab session: mount Drive, clone, install, unpack the data, copy to
+  and from Drive, keep the tests' pass marker in Drive, release the runtime. Everything else is a
+  `garimpo` command they call.
 - `compass/` changes go to its `dev` branch; its `main` is never pushed to.
 
 ## Review

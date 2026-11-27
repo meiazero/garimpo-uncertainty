@@ -28,7 +28,7 @@ tables go to `runs/pilot/`, never to `outputs/`.
    `outputs/logs/pilot-<model>.log`, also copied to `logs/` in Drive.
 
 The four models run one after another on the one GPU. Each writes to
-`runs/pilot/<model>-f0.01/`, and section 6 merges their tables into `runs/pilot/tables/`. The runs
+`runs/pilot/<model>-f0.01/`, and section 5 then merges their tables into `runs/pilot/tables/`. The runs
 and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
 
 Outside Colab, `garimpo run pilot <model>` runs one model's pilot.
@@ -59,7 +59,7 @@ fail the check: [stages.md](stages.md#statuses).
 1. Commit and push the fix from your machine. The session's clone cannot push, and the next
    session's clone picks the fix up.
 2. In a new session, run Runtime > Run all: the pilot redoes itself from `train`, since its
-   training did not finish on the new commit. For the full runs, set section 3's `FORCE_FROM` to
+   training did not finish on the new commit. For the full runs, set section 1's `FORCE_FROM` to
    the first stage the fix affects first; it stays set in the open tab, so clear it once the rerun
    passes, and reopening the notebook from its link also clears it.
 

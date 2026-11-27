@@ -9,8 +9,9 @@ ruff format --check . && ruff check .
 
 ## How the suite runs
 
-- The tests live in `tests/e2e/` and leave their artifacts in `tests/artifacts/`, which is reset
-  when a session starts.
+- The E2E tests live in `tests/e2e/` and leave their artifacts in `tests/artifacts/`, which is
+  reset when a session starts; the unit tests of the parts, the tuning and `garimpo experiment`
+  live in `tests/`.
 - They run on 4 workers by default; `pytest -n <N>` changes that and `pytest -n 0` runs serially.
   Each module has one subject and runs whole on one worker (`--dist loadfile`).
 - `tests/e2e/conftest.py` builds the shared dataset and the finished runs once, under a file lock,
@@ -50,6 +51,9 @@ ruff format --check . && ruff check .
 | `test_run.py` | `garimpo run` run as Colab runs it, from a root holding configs of its own: a full job to PASS, its log holding every line it printed and every stage's end, each flag that takes a value receiving, in the command the runner logs, the config value its name gives (or a short table of exceptions gives), every config value distinct from the others and each one reaching a stage, the chosen layer (not the first of `LAYERS`) reaching the calibrated stages, `--force-from` and `--force-validate` with a second attempt appended to the log, an unknown `--force-from`, a failed stage stopping the job, the other layer of `LAYERS` run through the layer's stages into `layers/<layer>/`, its output-space rows equal to the chosen layer's to the bit and its COMPASS-J rows not, the check naming an other layer that never ran, failing on a NaN in an other layer's `results.csv` and naming that layer, ending in a verdict, naming the cause, without `chosen_layer.json` or with it not an object, `--force-from` redoing the other layer's stages too, a job lost after `choose_layer` leaving the later stages, the other layer's included, `stale`, refused by the merge, and its rerun skipping them back to `ok`, Ctrl+C stopping the training inside its stage, its traceback still reaching the log, and the check still running, a refused config stopping the job before any stage, with its reasons in the log; in the process, every key left null, a misspelled key, a key in another file, a `SCORE_FLOOR_HA` that is not a positive finite number, every versioned model at every scale accepted with only layers of its model, and each one's run directory and log name, those of the recorded runs |
 | `test_resume.py` | Training killed (SIGKILL, as a Colab session ending, and Ctrl+C) once epoch 0's `last.pt` exists, then rerun: it resumes after epoch 0 and ends with the weights, optimizer state, generator, best checkpoint and history of an uninterrupted run, with no tolerance on CPU; a resume keeps the best Dice so far; `--force` refuses to discard an unfinished training and never resumes a finished one's end |
 | `test_workers.py` | Two DataLoader workers: two trainings with one seed give one model and the band statistics of the shared run; every prediction equals those read without workers |
+| `../test_training_parts.py` | The registry refusing an unknown name, a name registered twice and a spec with no name; `dice_bce` equal to its Dice plus its BCE, to the bit; early stopping, its state across a resume, and its refusals; a two-class model trained with `cross_entropy` and `softmax_argmax`; an `albumentations` entry drawn from the sampler's generator; the 0.5 threshold of `postprocess`, of the hard area and of compass2d held equal; garimpo's interval method names derived from compass2d's `DIRECTIONS` |
+| `../test_tuning.py` | The tuning's verdict on rows written by hand: the fewest workers that keep training fed, a lost bit or a starved loop failing it, a crashed section noted while the rest run |
+| `../test_experiment.py` | `garimpo experiment` starting the full runs only once the pilot passed, and stopping after an interrupt; `garimpo figures --scale` drawing only the runs with intervals |
 
 ## On a GPU
 
