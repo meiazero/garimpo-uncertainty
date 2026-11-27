@@ -8,7 +8,7 @@ import torch
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +34,14 @@ def load_model(checkpoint: Path, cells: pd.DataFrame, device: str) -> tuple[torc
     metadata = content["meta"]
     garimpo_uncertainty.data.check_split(metadata, cells)
     warn_on_code_change(metadata)
-    model = garimpo_uncertainty.models.common.build(
-        metadata["arch"],
-        in_channels=metadata["in_channels"],
-    )
+    # Checkpoints written before NUM_CLASSES existed hold one logit per pixel.
+    classes = metadata.get("num_classes", 1)
+    if classes != 1:
+        raise ValueError(
+            f"{checkpoint} has {classes} logits per pixel; the stages after training, COMPASS "
+            "and the intervals, read one"
+        )
+    model = garimpo_uncertainty.models.build(metadata["arch"], in_channels=metadata["in_channels"])
     model.load_state_dict(content["model"])
     return model.eval().requires_grad_(requires_grad=False).to(device), metadata
 

@@ -5,6 +5,12 @@
     # via garimpo-uncertainty
 affine==3.0.1 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via rasterio
+albucore==0.0.24 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via albumentations
+albumentations==2.0.8 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via garimpo-uncertainty
+annotated-types==0.8.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via pydantic
 anyio==4.16.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via httpx
 attrs==26.1.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
@@ -84,12 +90,15 @@ networkx==3.7 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via torch
 numpy==2.4.6 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
+    #   albucore
+    #   albumentations
     #   compass
     #   contourpy
     #   garimpo-uncertainty
     #   geopandas
     #   lightgbm
     #   matplotlib
+    #   opencv-python-headless
     #   pandas
     #   pyogrio
     #   rasterio
@@ -139,6 +148,10 @@ nvidia-nvshmem-cu13==3.4.5 ; platform_machine == 'x86_64' and sys_platform == 'l
     # via torch
 nvidia-nvtx==13.0.85 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via cuda-toolkit
+opencv-python-headless==5.0.0.93 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via
+    #   albucore
+    #   albumentations
 packaging==26.3 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
     #   geopandas
@@ -157,6 +170,10 @@ pillow==11.3.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     #   torchvision
 pluggy==1.7.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via pytest
+pydantic==2.14.2 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via albumentations
+pydantic-core==2.50.2 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via pydantic
 pygments==2.21.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via pytest
 pyogrio==0.13.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
@@ -180,6 +197,7 @@ pytz==2025.2 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via pandas
 pyyaml==6.0.3 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
+    #   albumentations
     #   huggingface-hub
     #   timm
 rasterio==1.5.2 ; platform_machine == 'x86_64' and sys_platform == 'linux'
@@ -196,6 +214,7 @@ scikit-learn==1.6.1 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     #   garimpo-uncertainty
 scipy==1.16.3 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
+    #   albumentations
     #   garimpo-uncertainty
     #   lightgbm
     #   scikit-learn
@@ -207,8 +226,12 @@ shapely==2.2.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via
     #   garimpo-uncertainty
     #   geopandas
+simsimd==6.5.16 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via albucore
 six==1.17.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via python-dateutil
+stringzilla==5.3.2 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via albucore
 sympy==1.14.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via torch
 threadpoolctl==3.7.0 ; platform_machine == 'x86_64' and sys_platform == 'linux'
@@ -237,6 +260,11 @@ typing-extensions==4.16.0 ; platform_machine == 'x86_64' and sys_platform == 'li
     # via
     #   anyio
     #   huggingface-hub
+    #   pydantic
+    #   pydantic-core
     #   torch
+    #   typing-inspection
+typing-inspection==0.4.4 ; platform_machine == 'x86_64' and sys_platform == 'linux'
+    # via pydantic
 tzdata==2026.6 ; platform_machine == 'x86_64' and sys_platform == 'linux'
     # via pandas

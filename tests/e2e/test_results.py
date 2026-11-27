@@ -21,7 +21,7 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.evaluation
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 import garimpo_uncertainty.stages.generate_intervals
 from tests.e2e import support
 
@@ -766,9 +766,7 @@ def test_each_compass_row_alone_matches_the_one_pass(
                 evaluation.data_root, test, compass_inputs.metadata["normalization"], 8, 0
             ):
                 last = first + len(images)
-                features = garimpo_uncertainty.models.common.encode(
-                    model, images.to(support.DEVICE)
-                )
+                features = model.encode(images.to(support.DEVICE))
                 quantile = evaluation.all_quantile[level, k, first:last]
                 base = method.removeprefix("a_")
                 asymmetric = base != method
@@ -781,14 +779,10 @@ def test_each_compass_row_alone_matches_the_one_pass(
                     np.where(whole_cell[row, first:last], 0.0, quantile), device=support.DEVICE
                 )
                 if base == "compass_l":
-                    logits, _ = garimpo_uncertainty.models.common.split_at(
-                        model, garimpo_uncertainty.models.common.LOGITS, features
-                    )
+                    logits, _ = model.split_at(garimpo_uncertainty.models.LOGITS, features)
                     space = (lambda zi: zi, hard, logits, torch.ones_like(logits))
                 else:
-                    z, decode = garimpo_uncertainty.models.common.split_at(
-                        model, evaluation.layer, features
-                    )
+                    z, decode = model.split_at(evaluation.layer, features)
                     direction = base.removeprefix("compass_j_")
                     deltas = compass2d.directions.cell_deltas(
                         direction,

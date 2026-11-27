@@ -5,6 +5,8 @@ description = "Calibrated prediction intervals for artisanal mining area from Se
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    # Read only by the albumentations augmentation; Colab ships this release.
+    "albumentations>=2.0.8",
     "compass==0.1.0",  # the submodule; PyPI's compass is another package
     "geopandas>=1.0",
     "matplotlib>=3.9",
@@ -15,7 +17,7 @@ dependencies = [
     "scikit-learn>=1.3",
     "safetensors>=0.4",
     "scipy>=1.13",
-    # models.common.split_at mirrors this release's UnetDecoder.forward and DeepLabV3Decoder.forward.
+    # The models' split_at mirrors this release's UnetDecoder.forward and DeepLabV3Decoder.forward.
     "segmentation-models-pytorch==0.6.0",
     "shapely>=2.0",
     "torch>=2.14.0",
@@ -176,5 +178,7 @@ ban-relative-imports = "all"
 "scripts/*" = ["T201"]
 "src/garimpo_uncertainty/stages/*" = ["T201"]
 "src/garimpo_uncertainty/pipeline/*" = ["T201"]
+"src/garimpo_uncertainty/tuning/*" = ["T201"]
+"src/garimpo_uncertainty/figures/make.py" = ["T201"]
 # A Colab form line cannot wrap, and the notebook's prints are its output.
 "notebooks/*.ipynb" = ["E501", "T201"]

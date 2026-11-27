@@ -27,9 +27,15 @@ BASE_KEYS = (
     "SUBSET_SEED",
     "BATCH_SIZE",
     "EVAL_BATCH_SIZE",
+    "NUM_CLASSES",
+    "OPTIMIZER",
     "LR",
     "WEIGHT_DECAY",
     "LOSS",
+    "POSTPROCESS",
+    "METRICS",
+    "AUGMENTATIONS",
+    "CALLBACKS",
     "SEED",
     "SVM_C",
     "SVM_CLASS_WEIGHT",
@@ -46,7 +52,14 @@ BASE_KEYS = (
     "BOUNDARY_TOLERANCE_PX",
     "CELL_PX",
 )
+# A list present in every run, and [] on purpose when a run takes no augmentation. null still
+# refuses, as a value left out rather than chosen.
+MAY_BE_EMPTY = ("AUGMENTATIONS",)
+LISTS = ("LAYERS", "METRICS", "AUGMENTATIONS", "CALLBACKS")
 REQUIRED = (*MODEL_KEYS, *SCALE_KEYS, *BASE_KEYS)
+# The architectures whose adapter takes starting weights; written out, as importing the models
+# loads torch, and tests/test_training_parts.py holds it equal to the registry.
+WEIGHTED_ARCHS = ("unet",)
 
 
 class ConfigError(ValueError):
@@ -75,14 +88,39 @@ def layer_files(configs: Path, scale: str, model: str) -> dict[Path, tuple[str, 
     }
 
 
+def beyond_train(values: dict) -> list[str]:
+    """Return why the stages after train could not read what these values would train."""
+    found = []
+    if values.get("ARCH") in WEIGHTED_ARCHS and is_empty(values.get(ENCODER_WEIGHTS)):
+        found.append(f"{ENCODER_WEIGHTS}: missing or empty, and {values['ARCH']} needs it")
+    # garimpo train takes more classes and other rules, but every stage after it reads one logit
+    # per pixel, mined where it is at least 0 (compass2d.metrics.hard_area).
+    classes = values.get("NUM_CLASSES")
+    if not is_empty(classes) and (type(classes) is not int or classes != 1):
+        found.append(f"NUM_CLASSES must be 1 for a run, got {classes!r}")
+    rule = values.get("POSTPROCESS")
+    if not is_empty(rule) and rule != "sigmoid_threshold":
+        found.append(f"POSTPROCESS must be sigmoid_threshold for a run, got {rule!r}")
+    return found
+
+
 def problems(values: dict, misplaced: list[str]) -> list[str]:
     """Return why the composed values cannot run, one line per key."""
     found = list(misplaced)
-    found += [f"{key}: missing or empty" for key in REQUIRED if is_empty(values.get(key))]
-    if values.get("ARCH") == "unet" and is_empty(values.get(ENCODER_WEIGHTS)):
-        found.append(f"{ENCODER_WEIGHTS}: missing or empty, and the U-Net needs it")
-    if not isinstance(values.get("LAYERS", []), list):
-        found.append("LAYERS: must be a list of layer names")
+    found += [
+        f"{key}: missing or empty"
+        for key in REQUIRED
+        if key not in values
+        or values[key] is None
+        or (key not in MAY_BE_EMPTY and is_empty(values[key]))
+    ]
+    found += beyond_train(values)
+    # "" is empty too, so only this tells it from the [] a run may choose.
+    found += [
+        f"{key}: must be a list, got {values[key]!r}"
+        for key in LISTS
+        if values.get(key) is not None and not isinstance(values[key], list)
+    ]
     floor = values.get("SCORE_FLOOR_HA")
     # calibrate checks the floor too, but only after training.
     is_number = isinstance(floor, int | float) and not isinstance(floor, bool)

@@ -11,7 +11,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import NamedTuple, Self
 
 import compass2d.calibration
 import compass2d.compass
@@ -48,6 +48,49 @@ def quantile_rule(
     return lambda scores, groups: rule(scores, groups) if len(scores) else np.inf
 
 
+class Populations(NamedTuple):
+    """The scores and groups each situation calibrates on, and the density ratio of each cell."""
+
+    calibration_scores: np.ndarray
+    calibration_groups: np.ndarray
+    test_scores: np.ndarray
+    test_groups: np.ndarray
+    calibration_ratio: np.ndarray
+    test_ratio: np.ndarray
+
+
+Rule = Callable[[np.ndarray, np.ndarray], float]
+
+
+def external_quantiles(rule: Rule, populations: Populations, alpha: float) -> np.ndarray:  # noqa: ARG001 - one signature for every situation
+    scores, groups = populations.calibration_scores, populations.calibration_groups
+    return np.full(len(populations.test_scores), rule(scores, groups))
+
+
+def weighted_quantiles(rule: Rule, populations: Populations, alpha: float) -> np.ndarray:  # noqa: ARG001 - the weighting is its own rule
+    return compass2d.calibration.group_weighted_quantiles(
+        populations.calibration_scores,
+        populations.calibration_groups,
+        populations.calibration_ratio,
+        populations.test_ratio,
+        alpha,
+    )
+
+
+def own_region_quantiles(rule: Rule, populations: Populations, alpha: float) -> np.ndarray:  # noqa: ARG001
+    return compass2d.calibration.leave_one_group_out_quantiles(
+        populations.test_scores, populations.test_groups, rule
+    )
+
+
+# A _subsampled calibration swaps the rule, not the function, so it has no entry of its own.
+SITUATIONS: dict[str, Callable[[Rule, Populations, float], np.ndarray]] = {
+    "external": external_quantiles,
+    "external_weighted": weighted_quantiles,
+    "own_region": own_region_quantiles,
+}
+
+
 def quantile_per_cell(
     calibration: str,
     calibration_scores: np.ndarray,
@@ -60,17 +103,21 @@ def quantile_per_cell(
     alpha: float,
     seed: int,
 ) -> np.ndarray:
-    rule = quantile_rule(calibration, alpha, seed)
     situation = calibration.removesuffix("_subsampled")
-    if situation == "external":
-        return np.full(len(test_scores), rule(calibration_scores, calibration_groups))
-    if calibration == "external_weighted":
-        return compass2d.calibration.group_weighted_quantiles(
-            calibration_scores, calibration_groups, calibration_ratio, test_ratio, alpha
-        )
-    if situation == "own_region":
-        return compass2d.calibration.leave_one_group_out_quantiles(test_scores, test_groups, rule)
-    raise ValueError(f"unknown calibration: {calibration!r}")
+    subsampled = situation != calibration
+    if situation not in SITUATIONS or (
+        subsampled and situation not in garimpo_uncertainty.intervals.SUBSAMPLED_CALIBRATIONS
+    ):
+        raise ValueError(f"unknown calibration: {calibration!r}")
+    populations = Populations(
+        calibration_scores,
+        calibration_groups,
+        test_scores,
+        test_groups,
+        calibration_ratio,
+        test_ratio,
+    )
+    return SITUATIONS[situation](quantile_rule(calibration, alpha, seed), populations, alpha)
 
 
 @dataclass(frozen=True)
@@ -107,25 +154,43 @@ class CalibrationProblem:
         self, situation: str, calibration_scores: np.ndarray, test_scores: np.ndarray
     ) -> np.ndarray:
         """Each stratum of predicted mining calibrated alone (Vovk et al., 2005)."""
+        if situation not in MONDRIAN_SITUATIONS:
+            raise ValueError(
+                f"no Mondrian calibration {situation!r}; known: {list(MONDRIAN_SITUATIONS)}"
+            )
         rule = quantile_rule(situation, self.alpha, self.seed)
-        calibration_strata = garimpo_uncertainty.intervals.mondrian_stratum(self.calibration)
-        test_strata = garimpo_uncertainty.intervals.mondrian_stratum(self.test)
-        test_groups = self.test.group.to_numpy()
-        if situation == "external":
-            return compass2d.calibration.mondrian_quantiles(
-                calibration_scores,
-                self.calibration.group.to_numpy(),
-                calibration_strata,
-                test_strata,
-                rule,
-            )
-        quantiles = np.empty(len(test_scores))
-        for stratum in np.unique(test_strata):
-            inside = test_strata == stratum
-            quantiles[inside] = compass2d.calibration.leave_one_group_out_quantiles(
-                test_scores[inside], test_groups[inside], rule
-            )
-        return quantiles
+        return MONDRIAN_SITUATIONS[situation](self, rule, calibration_scores, test_scores)
+
+
+def external_mondrian(
+    problem: CalibrationProblem, rule: Rule, calibration_scores: np.ndarray, _test: np.ndarray
+) -> np.ndarray:
+    return compass2d.calibration.mondrian_quantiles(
+        calibration_scores,
+        problem.calibration.group.to_numpy(),
+        garimpo_uncertainty.intervals.mondrian_stratum(problem.calibration),
+        garimpo_uncertainty.intervals.mondrian_stratum(problem.test),
+        rule,
+    )
+
+
+def own_region_mondrian(
+    problem: CalibrationProblem, rule: Rule, _calibration: np.ndarray, test_scores: np.ndarray
+) -> np.ndarray:
+    test_strata = garimpo_uncertainty.intervals.mondrian_stratum(problem.test)
+    test_groups = problem.test.group.to_numpy()
+    quantiles = np.empty(len(test_scores))
+    for stratum in np.unique(test_strata):
+        inside = test_strata == stratum
+        quantiles[inside] = compass2d.calibration.leave_one_group_out_quantiles(
+            test_scores[inside], test_groups[inside], rule
+        )
+    return quantiles
+
+
+MONDRIAN_SITUATIONS: dict[
+    str, Callable[[CalibrationProblem, Rule, np.ndarray, np.ndarray], np.ndarray]
+] = {"external": external_mondrian, "own_region": own_region_mondrian}
 
 
 # A scores.npz from before the one-sided scores fails here by name, not by position.
@@ -223,15 +288,31 @@ def read_scores(
     return scores, calibration_ratio, test_ratio
 
 
-def fill_compass_row(
+@dataclass(frozen=True)
+class RowInputs:
+    """What any row of quantiles.npz may read; each filler takes what its method needs."""
+
+    problem: CalibrationProblem
+    scores: CompassScores
+    score_floor_ha: float
+    cqr_models: tuple
+
+
+def fill_independent_row(
     rows: Rows,
     k: int,
-    method: str,
-    calibration: str,
-    *,
-    scores: CompassScores,
-    problem: CalibrationProblem,
+    method: str,  # noqa: ARG001 - one signature for every filler
+    calibration: str,  # noqa: ARG001
+    inputs: RowInputs,
 ) -> None:
+    rows.lower_term[k], rows.upper_term[k] = garimpo_uncertainty.intervals.independent_pixel_terms(
+        inputs.problem.test, inputs.problem.alpha
+    )
+    rows.quantile[k], rows.scale[k] = 0.0, 1.0
+
+
+def fill_compass_row(rows: Rows, k: int, method: str, calibration: str, inputs: RowInputs) -> None:
+    scores, problem = inputs.scores, inputs.problem
     m = garimpo_uncertainty.intervals.COMPASS_METHODS.index(method)
     rows.quantile[k] = problem.quantile(
         calibration, scores.score[m, scores.calibration_at], scores.score[m, scores.test_at]
@@ -257,14 +338,9 @@ def side_ratio(scores: CompassScores, m: int, alpha: float) -> float:
 
 
 def fill_asymmetric_row(
-    rows: Rows,
-    k: int,
-    method: str,
-    calibration: str,
-    *,
-    scores: CompassScores,
-    problem: CalibrationProblem,
+    rows: Rows, k: int, method: str, calibration: str, inputs: RowInputs
 ) -> None:
+    scores, problem = inputs.scores, inputs.problem
     m = garimpo_uncertainty.intervals.COMPASS_METHODS.index(method.removeprefix("a_"))
     ratio = side_ratio(scores, m, problem.alpha)
     joint, flags = (
@@ -289,15 +365,9 @@ def fill_asymmetric_row(
 
 
 def fill_output_space_row(
-    rows: Rows,
-    k: int,
-    method: str,
-    calibration: str,
-    *,
-    problem: CalibrationProblem,
-    score_floor_ha: float,
-    cqr_models: tuple,
+    rows: Rows, k: int, method: str, calibration: str, inputs: RowInputs
 ) -> None:
+    problem, score_floor_ha, cqr_models = inputs.problem, inputs.score_floor_ha, inputs.cqr_models
     rows.lower_term[k], rows.upper_term[k], rows.scale[k] = (
         garimpo_uncertainty.intervals.method_terms(method, problem.test, score_floor_ha, cqr_models)
     )
@@ -317,6 +387,13 @@ def fill_output_space_row(
     rows.n_scores[k] = len(problem.test if own_region else problem.calibration)
 
 
+FILLERS = (
+    {"independent_pixels": fill_independent_row}
+    | dict.fromkeys(garimpo_uncertainty.intervals.COMPASS_METHODS, fill_compass_row)
+    | dict.fromkeys(garimpo_uncertainty.intervals.ASYMMETRIC_METHODS, fill_asymmetric_row)
+)
+
+
 def rows_at(
     problem: CalibrationProblem,
     scores: CompassScores,
@@ -327,26 +404,9 @@ def rows_at(
     cqr_models = garimpo_uncertainty.intervals.fit_cqr(train_cells, problem.alpha, args.seed)
     combinations = garimpo_uncertainty.intervals.COMBINATIONS
     rows = Rows.allocate(len(combinations), len(problem.test))
+    inputs = RowInputs(problem, scores, args.score_floor_ha, cqr_models)
     for k, (method, calibration) in enumerate(combinations):
-        if method == "independent_pixels":
-            rows.lower_term[k], rows.upper_term[k] = (
-                garimpo_uncertainty.intervals.independent_pixel_terms(problem.test, problem.alpha)
-            )
-            rows.quantile[k], rows.scale[k] = 0.0, 1.0
-        elif method in garimpo_uncertainty.intervals.COMPASS_METHODS:
-            fill_compass_row(rows, k, method, calibration, scores=scores, problem=problem)
-        elif method in garimpo_uncertainty.intervals.ASYMMETRIC_METHODS:
-            fill_asymmetric_row(rows, k, method, calibration, scores=scores, problem=problem)
-        else:
-            fill_output_space_row(
-                rows,
-                k,
-                method,
-                calibration,
-                problem=problem,
-                score_floor_ha=args.score_floor_ha,
-                cqr_models=cqr_models,
-            )
+        FILLERS.get(method, fill_output_space_row)(rows, k, method, calibration, inputs)
     rows.infinite_fraction[:] = np.isinf(rows.quantile).mean(axis=1)
     return rows
 

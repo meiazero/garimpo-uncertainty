@@ -10,24 +10,29 @@ import torch
 import torch.utils.data
 
 import garimpo_uncertainty.data
+import garimpo_uncertainty.training.augmentations
 
-FLIP_PROBABILITY = 0.5
 
+class AugmentedDraws(torch.utils.data.Sampler):
+    """`samples` cells drawn as RandomSampler draws them, each with what its augmentations drew.
 
-class FlippedDraws(torch.utils.data.Sampler):
-    """`samples` cells drawn as RandomSampler draws them, each with its two flips.
-
-    The flips come from the sampler's own generator, in the main process, so they follow the
-    draws and not the worker that loads the cell: the number of workers leaves the weights alone.
+    The augmentations draw from the sampler's own generator, in the main process, so the draws
+    follow the cells and not the worker that loads them: the number of workers leaves the weights
+    alone.
     """
 
-    def __init__(self, dataset: torch.utils.data.Dataset, samples: int) -> None:
-        self.dataset, self.samples = dataset, samples
+    def __init__(
+        self,
+        dataset: torch.utils.data.Dataset,
+        samples: int,
+        augmentations: tuple[garimpo_uncertainty.training.augmentations.Augmentation, ...],
+    ) -> None:
+        self.dataset, self.samples, self.augmentations = dataset, samples, augmentations
 
     def __len__(self) -> int:
         return self.samples
 
-    def __iter__(self) -> Iterator[tuple[int, bool, bool]]:
+    def __iter__(self) -> Iterator[tuple[int, tuple]]:
         # One draw from torch's generator per pass, as RandomSampler takes its own seed.
         generator = torch.Generator().manual_seed(
             int(torch.empty((), dtype=torch.int64).random_().item())
@@ -36,40 +41,31 @@ class FlippedDraws(torch.utils.data.Sampler):
             self.dataset, num_samples=self.samples, generator=generator
         )
         for index in cells:
-            horizontal, vertical = (torch.rand(2, generator=generator) > FLIP_PROBABILITY).tolist()
-            yield index, horizontal, vertical
+            yield index, tuple(augmentation.draw(generator) for augmentation in self.augmentations)
 
 
 class CellDataset(torch.utils.data.Dataset):
-    """Yields (image, mask, cell_index); image is BOA reflectance, z-scored when stats are given."""
+    """Yields (image, mask, cell_index): BOA reflectance and its mask, through `transform`."""
 
     def __init__(
         self,
         root: Path,
         cells: pd.DataFrame,
-        normalization: dict[str, list[float]] | None,
-        *,
-        augment: bool = False,
+        transform: garimpo_uncertainty.training.augmentations.Transform | None,
     ) -> None:
         self.root = root
         self.cell_index = cells.cell_index.to_numpy()
         self.offsets = cells.boa_offset.to_numpy(dtype=np.float32)
-        self.augment = augment
+        self.transform = transform
         # Opened in __getitem__, once per worker: a map held here would be pickled by value when
         # workers spawn. SCL stays out: nothing in training reads it.
         self.images, self.masks = None, None
-        self.mean, self.std = None, None
-        if normalization is not None:
-            self.mean = np.array(normalization["mean"], dtype=np.float32).reshape(-1, 1, 1)
-            self.std = np.array(normalization["std"], dtype=np.float32).reshape(-1, 1, 1)
 
     def __len__(self) -> int:
         return len(self.cell_index)
 
-    def __getitem__(
-        self, drawn: int | tuple[int, bool, bool]
-    ) -> tuple[torch.Tensor, torch.Tensor, int]:
-        index, horizontal, vertical = drawn if self.augment else (drawn, False, False)
+    def __getitem__(self, drawn: int | tuple[int, tuple]) -> tuple[torch.Tensor, torch.Tensor, int]:
+        index, draws = drawn if isinstance(drawn, tuple) else (drawn, ())
         if self.images is None:
             self.images = np.load(self.root / "images.npy", mmap_mode="r")
             self.masks = np.load(self.root / "masks.npy", mmap_mode="r")
@@ -78,13 +74,9 @@ class CellDataset(torch.utils.data.Dataset):
         # Baseline 04.00 shifts DN by the offset; nodata 0 would go negative, hence the floor.
         reflectance = np.maximum(raw + self.offsets[index], 0)
         image = reflectance / garimpo_uncertainty.data.REFLECTANCE_SCALE
-        if self.mean is not None:
-            image = (image - self.mean) / self.std
         mask = (self.masks[cell_index][None] > 0).astype(np.float32)
-        if horizontal:
-            image, mask = image[..., ::-1], mask[..., ::-1]
-        if vertical:
-            image, mask = image[..., ::-1, :], mask[..., ::-1, :]
+        if self.transform is not None:
+            image, mask = self.transform(image, mask, draws)
         return torch.from_numpy(image.copy()), torch.from_numpy(mask.copy()), cell_index
 
 
@@ -96,16 +88,19 @@ def loader(
     num_workers: int,
     *,
     samples: int | None = None,
+    augmentations: tuple[garimpo_uncertainty.training.augmentations.Augmentation, ...] = (),
 ) -> torch.utils.data.DataLoader:
-    """In order, or training's draws: `samples` cells in back-to-back shuffles, randomly flipped.
+    """In order, or training's draws: `samples` cells in back-to-back shuffles, augmented.
 
     A fixed number of samples gives every training fraction the same updates per epoch.
     """
-    dataset = CellDataset(root, cells, normalization, augment=samples is not None)
+    transform = garimpo_uncertainty.training.augmentations.Transform(normalization, augmentations)
+    dataset = CellDataset(root, cells, transform)
+    sampler = None if samples is None else AugmentedDraws(dataset, samples, augmentations)
     return torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
-        sampler=None if samples is None else FlippedDraws(dataset, samples),
+        sampler=sampler,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
     )

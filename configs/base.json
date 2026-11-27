@@ -2,9 +2,24 @@
   "SUBSET_SEED": 0,
   "BATCH_SIZE": 16,
   "EVAL_BATCH_SIZE": 16,
+  "NUM_CLASSES": 1,
+  "OPTIMIZER": "adamw",
   "LR": 0.0001,
   "WEIGHT_DECAY": 0.01,
   "LOSS": "dice_bce",
+  "POSTPROCESS": "sigmoid_threshold",
+  "METRICS": [
+    "dice",
+    "precision",
+    "recall"
+  ],
+  "AUGMENTATIONS": [
+    "flips"
+  ],
+  "CALLBACKS": [
+    "checkpoint",
+    "console_log"
+  ],
   "SEED": 0,
   "SVM_C": 1.0,
   "SVM_CLASS_WEIGHT": "balanced",

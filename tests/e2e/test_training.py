@@ -233,6 +233,75 @@ def test_encoder_weights_refusals(data_root: Path, tmp_path: Path, case: str, me
     assert message in result.stderr
 
 
+def replaced(args: list[str], flag: str, *values: str) -> list[str]:
+    """Return `args` with the words after `flag`, up to the next flag, replaced by `values`."""
+    start = args.index(flag) + 1
+    end = next((i for i in range(start, len(args)) if args[i].startswith("--")), len(args))
+    return [*args[:start], *values, *args[end:]]
+
+
+@pytest.mark.parametrize(
+    ("flag", "values", "message"),
+    [
+        ("--num-classes", ["2"], "--loss wants one logit per pixel"),
+        ("--num-classes", ["0"], "--num-classes must be 1 or more"),
+        ("--loss", ["focal"], "unknown loss 'focal'"),
+        ("--loss", ['{"name": "bce", "reduction": "none"}'], "one number per batch"),
+        ("--loss", ['{"name": "bce", "reduction": "sum"}'], "must average over the batch"),
+        ("--loss", ['{"name": "dice_bce", "weight": 2}'], "unexpected keyword argument 'weight'"),
+        ("--optimizer", ["lion"], "unknown optimizer 'lion'"),
+        ("--optimizer", ['{"name": "adamw", "lr": 0.1}'], "multiple values for keyword argument"),
+        ("--optimizer", ['{"name": "sgd", "differentiable": true}'], "leaf Variable"),
+        ("--metrics", ["precision"], "--metrics must include dice"),
+        (
+            "--callbacks",
+            ['{"name": "early_stopping", "patience": 2, "monitor": "val_iou"}', "checkpoint"],
+            "monitors val_iou",
+        ),
+        (
+            "--callbacks",
+            ['{"name": "early_stopping", "patience": 2}', "early_stopping", "checkpoint"],
+            "names early_stopping twice",
+        ),
+        ("--callbacks", ["console_log"], "must include checkpoint"),
+        (
+            "--callbacks",
+            ["checkpoint", '{"name": "early_stopping", "patience": 2}'],
+            "puts early_stopping after checkpoint",
+        ),
+    ],
+)
+def test_parts_that_cannot_train_are_refused_before_any_epoch(
+    data_root: Path, tmp_path: Path, flag: str, values: list[str], message: str
+) -> None:
+    args = replaced(support.train_args("unet", tmp_path / "run"), flag, *values)
+    result = support.run("train", *args, data_root=data_root, check=False)
+    assert result.returncode == 2, result.stderr
+    assert message in result.stderr
+
+
+def test_a_loss_option_torch_refuses_only_when_called_is_refused_before_any_epoch(
+    data_root: Path, tmp_path: Path
+) -> None:
+    args = replaced(support.train_args("unet", tmp_path / "run"), "--num-classes", "2")
+    args = replaced(args, "--loss", '{"name": "cross_entropy", "label_smoothing": 2}')
+    args = replaced(args, "--postprocess", "softmax_argmax")
+    result = support.run("train", *args, data_root=data_root, check=False)
+    assert result.returncode == 2, result.stderr
+    assert "label_smoothing must be between" in result.stderr
+
+
+def test_a_loss_that_gives_nan_without_mining_is_refused_before_any_epoch(
+    data_root: Path, tmp_path: Path
+) -> None:
+    args = replaced(support.train_args("unet", tmp_path / "run"), "--num-classes", "2")
+    args = replaced(args, "--loss", '{"name": "cross_entropy", "ignore_index": 0}')
+    args = replaced(args, "--postprocess", "softmax_argmax")
+    result = support.run("train", *args, data_root=data_root, check=False)
+    assert result.returncode == 2, result.stderr
+    assert "finite on a batch with no mining" in result.stderr
+
+
 def test_imagenet_absent_file_names_the_command(data_root: Path, tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     args = [*support.train_args("unet", run_dir, epochs="1"), "--encoder-weights", "imagenet"]

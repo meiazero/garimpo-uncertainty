@@ -186,3 +186,24 @@ def test_forced_redo_of_a_finished_training_never_resumes_from_its_end(
     rerun = support.run("train", *training_args(run_dir), data_root=data_root)
     assert "resuming" not in rerun.stdout
     assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]
+
+
+def test_an_early_stop_stays_stopped_when_the_training_runs_again(
+    data_root: Path, tmp_path: Path
+) -> None:
+    """last.pt keeps the stop and the callback's count, so a rerun trains no further epoch."""
+    run_dir = tmp_path / "run"
+    # No later val_loss beats the first by 1e9, so the stop comes right after the second epoch.
+    stop = '{"name": "early_stopping", "patience": 1, "monitor": "val_loss", "min_delta": 1e9}'
+    args = support.train_args("convnet", run_dir, epochs="4")
+    args.insert(args.index("--callbacks") + 1, stop)  # before the checkpoint, so last.pt keeps it
+    result = support.run("train", *args, data_root=data_root)
+    assert "stopped early after epoch 2" in result.stdout
+    assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]
+    last = torch.load(run_dir / "last.pt", weights_only=True)
+    assert last["stopped"]
+    assert last["callbacks"]["early_stopping"]["waited"] == 1
+    # As after a session lost before the status was written: train resumes from last.pt.
+    (run_dir / "status" / "train.json").unlink()
+    support.run("train", *args, data_root=data_root)
+    assert pd.read_csv(run_dir / "history.csv").epoch.tolist() == [0, 1]

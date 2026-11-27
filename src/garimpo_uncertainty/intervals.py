@@ -13,6 +13,11 @@ import sklearn.ensemble
 
 import garimpo_uncertainty.data
 
+# The directions compass2d registers, in its order; written out, as importing compass2d loads torch,
+# which compute_metrics must not; tests/test_training_parts.py holds the two equal.
+DIRECTIONS = ("pca", "svm")
+JACOBIAN_METHODS = tuple(f"compass_j_{direction}" for direction in DIRECTIONS)
+COMPASS_METHODS = ("compass_l", *JACOBIAN_METHODS)  # the rows of scores/scores.npz
 COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibrations as PCA
     ("independent_pixels", "none"),
     ("conformal_simple", "external"),
@@ -24,15 +29,11 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("conformal_local", "own_region"),
     ("cqr", "external"),
     ("cqr", "own_region"),
-    ("compass_l", "external"),
-    ("compass_l", "external_weighted"),
-    ("compass_l", "own_region"),
-    ("compass_j_pca", "external"),
-    ("compass_j_pca", "external_weighted"),
-    ("compass_j_pca", "own_region"),
-    ("compass_j_svm", "external"),
-    ("compass_j_svm", "external_weighted"),
-    ("compass_j_svm", "own_region"),
+    *(
+        (method, situation)
+        for method in COMPASS_METHODS
+        for situation in ("external", "external_weighted", "own_region")
+    ),
 )
 # Mondrian calibration by predicted mining, the stratum known when an interval is used: one quantile
 # for cells predicted empty, one for the rest. Each is the pooled group quantile, without classic
@@ -41,9 +42,7 @@ MONDRIAN_METHODS = (
     "conformal_simple",
     "conformal_local",
     "cqr",
-    "compass_l",
-    "compass_j_pca",
-    "compass_j_svm",
+    *COMPASS_METHODS,
 )
 COMBINATIONS += tuple(
     (method, f"{situation}_mondrian")
@@ -52,23 +51,22 @@ COMBINATIONS += tuple(
 )
 # Asymmetric COMPASS (Cheung et al., 2026, Algorithm 6) through one joint score: each a_ row reads
 # the one-sided scores of the COMPASS method named after the prefix.
-ASYMMETRIC_METHODS = ("a_compass_l", "a_compass_j_pca", "a_compass_j_svm")
+ASYMMETRIC_METHODS = tuple(f"a_{method}" for method in COMPASS_METHODS)
 COMBINATIONS += tuple(
     (method, situation) for method in ASYMMETRIC_METHODS for situation in ("external", "own_region")
 )
 # Sensitivity analysis: the pooled external and own-region rows again, by repeated subsampling.
+# The weighted quantile has no subsampled form, so only these two calibrations get one.
+SUBSAMPLED_CALIBRATIONS = ("external", "own_region")
 COMBINATIONS += tuple(
     (method, f"{calibration}_subsampled")
     for method, calibration in COMBINATIONS
-    if calibration in {"external", "own_region"}
+    if calibration in SUBSAMPLED_CALIBRATIONS
 )
 SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
 DENSITY_RATIO_FOLDS = 5  # group folds of the cross-fitted domain classifier
 ALPHAS = (0.05, 0.1, 0.15)  # Cheung et al. (2026), Table 1
-# The two directions of COMPASS-J, fitted per layer on the training role.
-DIRECTIONS = ("pca", "svm")
-COMPASS_METHODS = ("compass_l", "compass_j_pca", "compass_j_svm")  # the rows of scores/scores.npz
-LAYER_METHODS = ("compass_j_pca", "compass_j_svm", "a_compass_j_pca", "a_compass_j_svm")
+LAYER_METHODS = (*JACOBIAN_METHODS, *(f"a_{method}" for method in JACOBIAN_METHODS))
 
 
 def depends_on_layer(results: pd.DataFrame) -> pd.Series:
@@ -120,21 +118,45 @@ def independent_pixel_terms(cells: pd.DataFrame, alpha: float) -> tuple[np.ndarr
     return center - half_width, center + half_width
 
 
+Terms = tuple[np.ndarray, np.ndarray, np.ndarray]
+
+
+def simple_terms(cells: pd.DataFrame, _floor: float, _cqr_models: tuple) -> Terms:
+    vhat = cells.vhat.to_numpy()
+    return vhat, vhat, np.ones_like(vhat)
+
+
+def relative_terms(cells: pd.DataFrame, floor: float, _cqr_models: tuple) -> Terms:
+    vhat = cells.vhat.to_numpy()
+    return vhat, vhat, np.maximum(vhat, floor)
+
+
+def local_terms(cells: pd.DataFrame, floor: float, _cqr_models: tuple) -> Terms:
+    vhat = cells.vhat.to_numpy()
+    return vhat, vhat, np.maximum(uncertainty_ha(cells), floor)
+
+
+def cqr_terms(cells: pd.DataFrame, _floor: float, cqr_models: tuple) -> Terms:
+    lower = cqr_models[0].predict(cells[["vhat"]].to_numpy())
+    upper = cqr_models[1].predict(cells[["vhat"]].to_numpy())
+    return lower, upper, np.ones_like(cells.vhat.to_numpy())
+
+
+OUTPUT_SPACE_TERMS = {
+    "conformal_simple": simple_terms,
+    "conformal_relative": relative_terms,
+    "conformal_local": local_terms,
+    "cqr": cqr_terms,
+}
+
+
 def method_terms(
     method: str, cells: pd.DataFrame, score_floor_ha: float, cqr_models: tuple
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    vhat = cells.vhat.to_numpy()
-    if method == "conformal_simple":
-        return vhat, vhat, np.ones_like(vhat)
-    if method == "conformal_relative":
-        return vhat, vhat, np.maximum(vhat, score_floor_ha)
-    if method == "conformal_local":
-        return vhat, vhat, np.maximum(uncertainty_ha(cells), score_floor_ha)
-    if method == "cqr":
-        lower = cqr_models[0].predict(cells[["vhat"]].to_numpy())
-        upper = cqr_models[1].predict(cells[["vhat"]].to_numpy())
-        return lower, upper, np.ones_like(vhat)
-    raise ValueError(f"not an output-space method: {method!r}")
+) -> Terms:
+    """Return the lower term, the upper term and the scale of an output-space method."""
+    if method not in OUTPUT_SPACE_TERMS:
+        raise ValueError(f"not an output-space method: {method!r}")
+    return OUTPUT_SPACE_TERMS[method](cells, score_floor_ha, cqr_models)
 
 
 def scores(v: np.ndarray, lower: np.ndarray, upper: np.ndarray, scale: np.ndarray) -> np.ndarray:

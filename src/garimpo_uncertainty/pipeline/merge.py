@@ -128,6 +128,8 @@ def main() -> None:
         [layer_results(run_dir) for run_dir in args.runs], ignore_index=True
     )
     args.out.mkdir(parents=True, exist_ok=True)
+    # layer_results.csv goes last: notebook 01 copies the tables to Drive once it changed.
     for name, table in merged.items():
-        table.to_csv(args.out / name, index=False)
+        with garimpo_uncertainty.files.atomic(args.out / name) as temporary:
+            table.to_csv(temporary, index=False)
         print(f"{args.out / name}: {len(table)} rows")

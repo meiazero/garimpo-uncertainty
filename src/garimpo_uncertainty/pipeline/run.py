@@ -329,11 +329,19 @@ def main() -> None:
     start = time.monotonic()
     log, config = start_attempt(args)
     values = job_values(config, args.num_workers) | {"PILOT": args.scale == PILOT}
+    interrupted = False
     try:
         code = run_job(log, args, config, values)
     except KeyboardInterrupt:
+        interrupted, code = True, 130
+    finally:
+        # The verdict is the attempt's record, so an interrupt from here on, such as Colab's
+        # SIGTERM after the stage already stopped, is ignored. A handler, unlike SIG_IGN, is not
+        # passed on: a terminal's Ctrl+C to the whole group still stops the check, which then fails.
+        for kind in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(kind, lambda *_: None)
+    if interrupted:
         log.write("interrupted by Ctrl+C; run again to resume")
-        code = 130
     # The exit code goes to the check because an error before run_stage leaves every status ok.
     check = log.run("pipeline_check", command("pipeline_check", values | {"JOB_EXIT_CODE": code}))
     took = garimpo_uncertainty.pipeline.runner.duration(time.monotonic() - start)

@@ -1,20 +1,16 @@
-"""Mechanics shared by the cells of 03_tune_hardware.ipynb: timing, usage, synthetic data.
+"""What the tuning times: the pipeline's own hot paths, on synthetic cells of the real shape.
 
-The notebook holds the experiments and the verdict and imports this module as `t`; nothing here
-decides anything.
+Each workload calls the code `garimpo` runs, so a timing or a lost bit here is the experiment's.
 """
 
 import argparse
-import contextlib
 import json
 import math
 import os
-import statistics
-import subprocess
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import NamedTuple, Self
+from typing import NamedTuple
 
 import compass2d.calibration
 import compass2d.compass
@@ -27,24 +23,24 @@ import torch
 import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
+import garimpo_uncertainty.postprocess
 import garimpo_uncertainty.stages.compass_scores
-import garimpo_uncertainty.stages.train
-
-# Every section measures what `garimpo` runs, which turns these on for every command that loads
-# torch. cuBLAS reads CUBLAS_WORKSPACE_CONFIG at its first call, which comes later than this.
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-torch.use_deterministic_algorithms(mode=True)
+import garimpo_uncertainty.training.augmentations
+import garimpo_uncertainty.training.loop
+import garimpo_uncertainty.training.losses
+import garimpo_uncertainty.training.optimizers
+import garimpo_uncertainty.tuning.measure
 
 
 def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG = read_json(ROOT / "configs" / "base.json")
-SPLIT = read_json(ROOT / "outputs" / "split_summary.json")
+CONFIG = read_json(garimpo_uncertainty.files.ROOT / "configs" / "base.json")
+SPLIT = read_json(garimpo_uncertainty.files.ROOT / "outputs" / "split_summary.json")
 BANDS = len(garimpo_uncertainty.data.BANDS)
 CELL_PX = CONFIG["CELL_PX"]
 CELLS_PER_TILE = (garimpo_uncertainty.data.TILE_PX // CELL_PX) ** 2
@@ -61,146 +57,12 @@ SCORES = garimpo_uncertainty.stages.compass_scores.BatchScores._fields[:6]
 COMPASS_METHODS = garimpo_uncertainty.intervals.COMPASS_METHODS
 
 
-GPU = "NVIDIA L4"  # the experiment's one GPU: another picks other kernels, so other bits
-
-
-def require_gpu() -> None:
-    """Stop on any GPU but the L4: its bits and timings would size another experiment."""
-    if not torch.cuda.is_available():
-        raise SystemExit("No GPU: pick the L4 under Runtime > Change runtime type.")
-    if (name := torch.cuda.get_device_name(0)) != GPU:
-        raise SystemExit(f"This session got the {name}; the experiment runs on the {GPU} only.")
-
-
-def stack() -> dict[str, str]:
-    """Return the software that picks the GPU's kernels; sessions share bits only if it matches."""
-    driver = subprocess.run(
-        ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    return {
-        "colab_release": os.environ.get("COLAB_RELEASE_TAG", "unknown"),
-        "torch": torch.__version__,
-        "cuda": str(torch.version.cuda),
-        "cudnn": str(torch.backends.cudnn.version()),
-        "driver": driver,
-    }
-
-
-def ram_gb() -> float:
-    meminfo = Path("/proc/meminfo").read_text(encoding="utf-8").split()
-    return int(meminfo[meminfo.index("MemTotal:") + 1]) / 2**20
-
-
-# --- Timing and usage ---------------------------------------------------------------------------
-
-
-def cpu_ticks() -> tuple[int, int, int]:
-    """Busy, I/O-wait and total ticks of every CPU since boot, from /proc/stat."""
-    first_line = Path("/proc/stat").read_text(encoding="utf-8").split("\n", 1)[0]
-    # guest and guest_nice, the last two, are already counted in user and nice.
-    ticks = [int(value) for value in first_line.split()[1:9]]
-    idle, iowait = ticks[3], ticks[4]
-    return sum(ticks) - idle - iowait, iowait, sum(ticks)
-
-
-class Usage:
-    """How busy the GPU and the CPUs were over a block, and the most GPU memory it reserved.
-
-    nvidia-smi samples the GPU's busy share every 100 ms; /proc/stat counts the CPUs' ticks.
-    """
-
-    def __enter__(self) -> Self:
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()  # else the peak starts at what earlier candidates left cached
-        torch.cuda.reset_peak_memory_stats()
-        self.ticks = cpu_ticks()
-        query = ["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits", "-lms", "100"]
-        self.sampler = subprocess.Popen(  # noqa: S603
-            ["nvidia-smi", *query],  # noqa: S607
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        return self
-
-    def __exit__(self, *_: object) -> None:
-        torch.cuda.synchronize()
-        self.sampler.terminate()
-        samples = [float(line) for line in self.sampler.communicate()[0].split() if line.isdigit()]
-        now = cpu_ticks()
-        busy, iowait, total = (end - start for end, start in zip(now, self.ticks, strict=True))
-        self.found = {
-            "gpu_busy": statistics.fmean(samples) / 100 if samples else math.nan,
-            "gpu_memory_gb": torch.cuda.max_memory_reserved() / 2**30,
-            "cpu_busy": busy / max(total, 1),
-            "cpu_iowait": iowait / max(total, 1),
-        }
-
-
-class Timed(NamedTuple):
-    """One candidate: each timed run's seconds and usage, and the bytes of its untimed run."""
-
-    seconds: list[float]
-    usage: list[dict]
-    outputs: dict[str, bytes] | None
-    stable: bool
-    failed: str | None
-
-
-def bytes_of(arrays: dict[str, np.ndarray]) -> dict[str, bytes]:
-    return {name: np.ascontiguousarray(array).tobytes() for name, array in arrays.items()}
-
-
-def time_candidates(candidates: dict, repeats: int) -> dict:
-    """Run each candidate once untimed, then `repeats` times in an order that alternates.
-
-    The untimed run pays CUDA's lazy loading and cuDNN's choice of kernels; the alternating order
-    lets clock boost and throttling fall on every candidate alike. A candidate returns its outputs
-    as arrays; `stable` says every timed run gave the untimed run's bytes. One that runs out of GPU
-    memory is left out of the timing, with the reason.
-    """
-    found = {}
-    for name, run in candidates.items():
-        try:
-            found[name] = Timed([], [], bytes_of(run()), stable=True, failed=None)
-        except torch.cuda.OutOfMemoryError:
-            torch.cuda.empty_cache()
-            found[name] = Timed([], [], None, stable=False, failed="out of GPU memory")
-    names = [name for name in candidates if found[name].failed is None]
-    for repeat in range(repeats):
-        for name in names if repeat % 2 == 0 else names[::-1]:
-            with Usage() as usage:
-                start = time.perf_counter()
-                outputs = bytes_of(candidates[name]())
-                seconds = time.perf_counter() - start
-            timed = found[name]
-            timed.seconds.append(seconds)
-            timed.usage.append(usage.found)
-            found[name] = timed._replace(stable=timed.stable and outputs == timed.outputs)
-    return found
-
-
-def summarized(timed: Timed) -> dict:
-    """Return the seconds' median and range, each usage averaged over the runs, and `stable`."""
-    if timed.failed:
-        return {"failed": timed.failed}
-    seconds = {
-        "median": statistics.median(timed.seconds),
-        "low": min(timed.seconds),
-        "high": max(timed.seconds),
-    }
-    usage = {key: statistics.fmean(run[key] for run in timed.usage) for key in timed.usage[0]}
-    return {"seconds": seconds, **usage, "stable": timed.stable}
-
-
-def same(first: Timed, second: Timed) -> bool:
-    return first.outputs is not None and first.outputs == second.outputs
-
-
-# --- Synthetic data -----------------------------------------------------------------------------
+def augmentations() -> tuple:
+    """Build the config's augmentations when a section needs them, so a bad one fails only it."""
+    return tuple(
+        garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(spec)
+        for spec in CONFIG["AUGMENTATIONS"]
+    )
 
 
 def synthetic_store(root: Path, cells: int, seed: int) -> pd.DataFrame:
@@ -251,25 +113,22 @@ def random_directions(channels: int, rng: np.random.Generator) -> compass2d.dire
 
 def benches(arch: str, layers: list[str], cells: int, seed: int) -> Iterator[Bench]:
     """Yield a Bench per decoder layer in `layers`, or per layer of the model when it is empty."""
-    require_gpu()
+    garimpo_uncertainty.tuning.measure.require_gpu()
     torch.manual_seed(CONFIG["SEED"])
-    model = garimpo_uncertainty.models.common.build(arch, BANDS)
+    model = garimpo_uncertainty.models.build(arch, BANDS)
     model = model.eval().requires_grad_(requires_grad=False).to("cuda")
-    known = garimpo_uncertainty.models.common.feature_layers(model)[:-1]
+    known = model.feature_layers()[:-1]
     if unknown := sorted(set(layers) - set(known)):
         raise SystemExit(f"{arch} has no layer {unknown}; its layers are {known}")
     generator = torch.Generator().manual_seed(seed)
     images = torch.randn((cells, BANDS, CELL_PX, CELL_PX), generator=generator)
     rate = torch.rand((cells, 1, 1, 1), generator=generator) * 0.3
     masks = (torch.rand((cells, 1, CELL_PX, CELL_PX), generator=generator) < rate).float()
-    features = garimpo_uncertainty.models.common.encode(model, images[:1].to("cuda"))
+    features = model.encode(images[:1].to("cuda"))
     rng = np.random.default_rng(seed)
     for layer in layers or known:
-        z, _ = garimpo_uncertainty.models.common.split_at(model, layer, features)
+        z, _ = model.split_at(layer, features)
         yield Bench(model, images, masks, layer, random_directions(z.shape[1], rng))
-
-
-# --- The pipeline's hot paths -------------------------------------------------------------------
 
 
 def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool) -> dict:
@@ -297,6 +156,7 @@ def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool
         CONFIG["BATCH_SIZE" if as_train else "EVAL_BATCH_SIZE"],
         workers,
         samples=len(cells) if as_train else None,
+        augmentations=augmentations() if as_train else (),
     )
     sums = [
         torch.cat([checksum(tensor) for tensor in batch[:2]])
@@ -314,13 +174,26 @@ def training_run(
     bit: the model's build and the weights' copy are not the loop's.
     """
     torch.manual_seed(CONFIG["SEED"])
-    model = garimpo_uncertainty.models.common.build(arch, BANDS).to("cuda")
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=CONFIG["LR"], weight_decay=CONFIG["WEIGHT_DECAY"]
-    )
-    loss = garimpo_uncertainty.stages.train.build_loss(CONFIG["LOSS"])
-    state = garimpo_uncertainty.stages.train.TrainingState(
-        model, optimizer, loss, {}, {}, [], math.nan, 0
+    model = garimpo_uncertainty.models.build(arch, BANDS, CONFIG["NUM_CLASSES"]).to("cuda")
+    state = garimpo_uncertainty.training.loop.TrainingState(
+        model=model,
+        optimizer=garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
+            CONFIG["OPTIMIZER"],
+            params=model.parameters(),
+            lr=CONFIG["LR"],
+            weight_decay=CONFIG["WEIGHT_DECAY"],
+        ),
+        loss_fn=garimpo_uncertainty.training.losses.LOSS_REGISTRY.build(CONFIG["LOSS"]),
+        postprocess=garimpo_uncertainty.postprocess.POSTPROCESS_REGISTRY.build(
+            CONFIG["POSTPROCESS"]
+        ),
+        metric_names=CONFIG["METRICS"],
+        metadata={},
+        arguments={},
+        history=[],
+        best_dice=math.nan,
+        first_epoch=0,
+        run_dir=store,  # fit_epoch runs no callback, so nothing is written here
     )
     batches = garimpo_uncertainty.cell_dataset.loader(
         store,
@@ -329,11 +202,13 @@ def training_run(
         CONFIG["BATCH_SIZE"],
         workers,
         samples=steps * CONFIG["BATCH_SIZE"],
+        augmentations=augmentations(),
     )
     evict(store)
-    with Usage() as usage:
+    with garimpo_uncertainty.tuning.measure.Usage() as usage:
         started = time.monotonic()
-        fitted, _ = garimpo_uncertainty.stages.train.fit_epoch(state, batches, "cuda", started)
+        trainer = garimpo_uncertainty.training.loop.Trainer(state, "cuda", 1, [])
+        fitted, _ = trainer.fit_epoch(batches, started)
         torch.cuda.synchronize()
         seconds = time.monotonic() - started
     loops.append((seconds, fitted["train_data_wait_seconds"], usage.found))
@@ -383,7 +258,7 @@ def batch_inputs(bench: Bench, cells: slice) -> BatchInputs:
     """One batch's spaces, target, Jacobians and summed features, from the stage's batch_spaces."""
     stage_args = argparse.Namespace(**SEARCH, layer=bench.layer)
     images = bench.images[cells].to("cuda")
-    features = garimpo_uncertainty.models.common.encode(bench.model, images)
+    features = bench.model.encode(images)
     spaces, jacobians, feature_sums = garimpo_uncertainty.stages.compass_scores.batch_spaces(
         bench.model, features, bench.fitted, stage_args
     )
@@ -414,25 +289,6 @@ def score_pass(bench: Bench, size: int) -> dict[str, np.ndarray]:
         scores = searched(inputs, SEARCHERS["memo"], counter)
         parts.append(scores | {"jacobians": inputs.jacobians.T, "sums": inputs.feature_sums.T})
     return {name: np.concatenate([part[name] for part in parts], axis=-1) for name in parts[0]}
-
-
-def current_flags() -> dict[str, bool]:
-    return {
-        "cudnn_tf32": torch.backends.cudnn.allow_tf32,
-        "matmul_tf32": torch.backends.cuda.matmul.allow_tf32,
-        "benchmark": torch.backends.cudnn.benchmark,
-    }
-
-
-@contextlib.contextmanager
-def backend_flags(*, cudnn_tf32: bool, matmul_tf32: bool, benchmark: bool) -> Iterator[None]:
-    cudnn, matmul = torch.backends.cudnn, torch.backends.cuda.matmul
-    saved = cudnn.allow_tf32, matmul.allow_tf32, cudnn.benchmark
-    cudnn.allow_tf32, matmul.allow_tf32, cudnn.benchmark = cudnn_tf32, matmul_tf32, benchmark
-    try:
-        yield
-    finally:
-        cudnn.allow_tf32, matmul.allow_tf32, cudnn.benchmark = saved
 
 
 def synthetic_features(rng: np.random.Generator, channels: int) -> tuple[np.ndarray, ...]:

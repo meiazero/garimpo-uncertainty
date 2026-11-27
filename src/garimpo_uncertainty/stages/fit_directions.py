@@ -19,7 +19,6 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.models.common
 import garimpo_uncertainty.pipeline.runner
 
 
@@ -44,8 +43,8 @@ def collect_samples(
     jacobians, features, labels = [], [], []
     feature_shape = None
     for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
-        encoded = garimpo_uncertainty.models.common.encode(model, images.to(device))
-        z, decode = garimpo_uncertainty.models.common.split_at(model, layer, encoded)
+        encoded = model.encode(images.to(device))
+        z, decode = model.split_at(layer, encoded)
         feature_shape = list(z.shape[1:])
         jacobians.append(
             garimpo_uncertainty.compass_j.jacobian(decode, z, args.direction_temperature)
@@ -132,7 +131,7 @@ def fit_layers(
 ) -> dict:
     cells = garimpo_uncertainty.data.read_run_cells(root, args.run_dir)
     model, metadata = garimpo_uncertainty.checkpoints.load_model(args.checkpoint, cells, device)
-    available = garimpo_uncertainty.models.common.feature_layers(model)
+    available = model.feature_layers()
     unknown = set(args.layers) - set(available)
     if unknown:
         raise ValueError(f"unknown layers {sorted(unknown)}; available: {available}")

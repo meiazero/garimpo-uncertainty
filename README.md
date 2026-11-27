@@ -11,8 +11,11 @@ width.
 - Four runs, all at 100% and all on a ResNet-18 encoder: a U-Net from scratch, from ImageNet
   weights and from Sentinel-2 MoCo weights, and smp's DeepLabV3 as the ConvNet.
 - `compass/` (submodule) holds the adapted COMPASS method, and `src/garimpo_uncertainty/` the
-  satellite code: `stages/` the stages, each one a `garimpo <stage>` command, and `pipeline/` the
-  job, `garimpo run`, that chains them. `outputs/` holds
+  satellite code: `stages/` the stages, each one a `garimpo <stage>` command; `pipeline/` the
+  job, `garimpo run`, that chains them, and `garimpo experiment`, that runs the pilot and then the
+  full runs; `models/` and `training/` the parts that `configs/base.json` picks by name; `tuning/`
+  the hardware measurements of `garimpo tune`. The notebooks only hold the Colab session, and
+  call these commands and the test suite. `outputs/` holds
   the versioned tables, including `split.csv`, the split used, and `tiles/`, the tiles each
   training fraction downloads.
 - No model result exists yet. The code has run only under pytest, on synthetic data; the pipeline
@@ -58,12 +61,12 @@ the commit checked out, then the four full runs, which later sessions continue o
 
 | Section | What it does |
 |---|---|
-| 1. Setup | Mounts Drive, clones the code, builds the environment |
-| 2. Data | Unpacks the data once and restores the earlier runs and logs |
-| 3. Redo after a fix | The one option: a stage the full runs redo after a code fix |
+| 1. Redo after a fix | The one option: a stage the full runs redo after a code fix |
+| 2. Setup | Clones the code and builds the environment |
+| 3. Drive and data | Mounts Drive, unpacks the data once and restores the earlier runs and logs |
 | 4. Tests | Runs the suite on the GPU, once per commit |
-| 5. Runs | The four models through every stage: the pilot on 1% of the training tiles and one tile per evaluation group until all four pass, then the full runs on 100% |
-| 6. Merge | Merges the four runs' tables of each scale that ran, into `outputs/` for the full runs |
+| 5. Runs | `garimpo experiment`: the four models through every stage, the pilot on 1% of the training tiles and one tile per evaluation group until all four pass, then the full runs on 100%; then the merge of each scale whose runs all passed, into `outputs/` for the full runs |
+| 6. Save | Copies the runs and logs to Drive one last time |
 | 7. Release | Writes the pending files to Drive and releases the GPU |
 
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
@@ -75,8 +78,9 @@ Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot
 
 ## Sizing the runtime
 
-`notebooks/03_tune_hardware.ipynb` measures, on synthetic cells and without Drive, what limits each
-hot path of the pipeline on the session's GPU, CPUs and disk. It times data loading, training, the
+`garimpo tune`, which `notebooks/03_tune_hardware.ipynb` runs, measures, on synthetic cells and
+without Drive, what limits each hot path of the pipeline on the session's GPU, CPUs and disk. It
+times data loading, training, the
 COMPASS searches, the eval batch size, the float32 precision and LightGBM's threads. Its verdict
 names the smallest setting that is enough and the full run's hours on that machine. A `Memo` score
 or a strict float32 result that loses a bit fails it; another candidate that moves a bit is

@@ -17,14 +17,14 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 4. If the session ends first, run Runtime > Run all again in a new session. The full runs'
    `last.pt`, restored from Drive, lets them continue: finished stages skip and training resumes
    from its last checkpoint. A new commit runs the tests and the pilot first.
-5. Section 6 merges the four runs' tables into `outputs/` with the command below; on your own
+5. Section 5 then merges the four runs' tables into `outputs/` with the command below; on your own
    machine, copy `runs/` from Drive first.
 
    ```bash
    garimpo merge --out outputs --scale full
    ```
 
-6. On Colab, section 6 copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit it
+6. On Colab, section 5 copies `outputs/` to `MyDrive/garimpo/outputs/`. Download it and commit it
    from your own machine: these are the final result tables.
 
 ## The run configs
@@ -39,7 +39,7 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 A run is one of these models at the `full` scale, `configs/scales/full.json`, with the values of
 `configs/base.json` that every run shares. Each value has its source in
 [decisions.md](decisions.md). `garimpo run` composes the three files and stops the run before
-any stage when a key is missing, null, empty, unknown or in another file, or when `SCORE_FLOOR_HA`
+any stage when a key is missing, null, empty (except `AUGMENTATIONS`, which may be `[]`), unknown or in another file, or when `SCORE_FLOOR_HA`
 is not a positive finite number. The run writes to `runs/<model>-f1.0`: the merge reads the runs
 from those paths. The `pilot` scale runs the same four models at 1% ([pilot.md](pilot.md)).
 
@@ -74,7 +74,8 @@ About the download:
 
 ## The run cell
 
-Section 5 of the notebook is one cell, "Run the pilot, then the full runs":
+Section 5 of the notebook is one cell, "Run the pilot, then the full runs, then merge each scale
+that ran", which calls `garimpo experiment`:
 
 1. For each of the four models, in order, it runs `garimpo run pilot <model>` until all four
    pilots passed on the commit checked out, then `garimpo run full <model>`. `--num-workers` defaults to the runtime's CPUs. The
@@ -83,13 +84,14 @@ Section 5 of the notebook is one cell, "Run the pilot, then the full runs":
    runs, its epochs, and a progress bar once a minute in the long loops. A failed stage adds its
    last 30 lines. `outputs/logs/<scale>-<model>.log` holds all that and every other line, each
    stage's command included, with the UTC time.
-2. Section 3's `FORCE_FROM` reaches every full job as `--force-from`. It stays set in the open
+2. Section 1's `FORCE_FROM` reaches every full job as `--force-from`. It stays set in the open
    tab, so clear it once the rerun passes; reopening the notebook from its link empties it.
-3. It ends with `garimpo status <scale> --since <session start>`, which prints one line per model:
-   the verdict of its last attempt.
+3. For each scale that ran, it prints `garimpo status <scale> --since <session start>`, one line
+   per model with the verdict of its last attempt, then runs `garimpo merge` for that scale when
+   all its runs passed; a scale with a failed or stopped run keeps its earlier tables.
 
 The copy of `runs/` and the logs to Drive every 30 minutes starts with the run cell and stops
-in section 7, which saves the runs and logs once more and releases the GPU.
+in section 6, which saves the runs and logs once more; section 7 releases the GPU.
 
 With the copy every 30 minutes, a session that ends mid-run keeps the finished stages and the
 last checkpoint in Drive. `tests/e2e/test_resume.py` kills training after
@@ -98,10 +100,11 @@ on a GPU within a tolerance, the generators still exactly. Rerun without
 `--force-from train` to resume: with it, `garimpo train` refuses to discard an unfinished training and says so. No `garimpo`
 command installs anything, so a run never changes the environment under itself.
 
-Outside Colab, one run is one job:
+Outside Colab, one run is one job, and `garimpo experiment` runs them as the notebook does:
 
 ```bash
 garimpo run full unet_scratch
+garimpo experiment
 ```
 
 ## Regenerate the tile lists

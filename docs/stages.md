@@ -27,6 +27,9 @@ Paths without a prefix are inside the run directory.
 | `garimpo merge` | any | small tables of each run, every stage `ok`, the other layers' included | `outputs/results.csv`, `outputs/width_comparisons.csv`, `outputs/coverage_comparisons.csv`, `outputs/q1_spearman.csv`, `outputs/coverage_by_stratum.csv`, `outputs/score_relation.csv`, `outputs/layer_diagnostics.csv`, `outputs/monotonicity_layer.csv`, `outputs/monotonicity_endpoint.csv`, `outputs/chosen_layers.csv`, `outputs/layer_results.csv` |
 | `garimpo check` | any | status files and tables | prints the debugging report |
 | `garimpo status` | any | `configs/`, each run's `last.pt`, `outputs/logs/` | prints the scale `auto` picks, each run's values and the verdict of its last attempt |
+| `garimpo experiment` | GPU | `configs/`, each pilot run's `verdict.json` | one `garimpo run` per model: the pilot until all four pass on the commit checked out, then the full runs; then `garimpo status` of each scale that ran, and `garimpo merge` of each whose runs all passed |
+| `garimpo figures` | any | finished run directories, or `--scale` and `--models` for the runs of `configs/` whose every stage is ok, or that have intervals for `qualitative_cells` alone | the figures of [figures.md](figures.md), into `--out`, or `<out>/<scale>` with `--scale` |
+| `garimpo tune` | GPU | synthetic cells it writes to `outputs/tuning/store/` | prints the findings and `TUNING: PASS` or `FAIL`; `outputs/tuning/results.json` |
 
 `garimpo run` runs the stages from `train` to `search_profile` in `STAGE_ORDER`
 (`garimpo_uncertainty/pipeline/runner.py`): `train`,

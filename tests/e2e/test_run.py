@@ -32,7 +32,7 @@ import pytest
 import garimpo_uncertainty.config
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 import garimpo_uncertainty.pipeline.run
 import garimpo_uncertainty.pipeline.runner
 from garimpo_uncertainty.stages.search_profile import PROFILE
@@ -79,6 +79,13 @@ FILLED = {
     "EPOCHS": 3,
     "STEPS_PER_EPOCH": int(support.STEPS_PER_EPOCH),
     "BATCH_SIZE": 8,
+    "NUM_CLASSES": 1,
+    "OPTIMIZER": "adamw",
+    "POSTPROCESS": "sigmoid_threshold",
+    "METRICS": ["dice", "precision", "recall"],
+    "AUGMENTATIONS": ["flips"],
+    # Never stops within the test's epochs; an object, so its JSON reaches train whole.
+    "CALLBACKS": [{"name": "early_stopping", "patience": 1000}, "checkpoint", "console_log"],
     "LR": 1e-3,
     # Not 0, which SEED holds, so a swap shows in the commands.
     "WEIGHT_DECAY": 1e-6,
@@ -95,7 +102,8 @@ FILLED = {
     "SWEEP_STEPS": 9,
     "SWEEP_CELLS": 6,
     # Few updates leave every Jacobian zero at the upstream 10,000 (docs/failure-modes.md, 40).
-    "DIRECTION_TEMPERATURE": 1,
+    # 4: NUM_CLASSES holds 1 and NUM_WORKERS 2, so a swap shows in the commands.
+    "DIRECTION_TEMPERATURE": 4,
     "SEARCH_THRESHOLD_FEATURES": 2e-3,
     # Not 0.01, which SEARCH_THRESHOLD_LOGITS holds in the base config.
     "SCORE_FLOOR_HA": 0.02,
@@ -262,6 +270,12 @@ def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
     assert "PIPELINE CHECK: PASS" in log
 
 
+def command_words(value: object) -> list[str]:
+    """Return the words a config value becomes after its flag: an object as JSON."""
+    items = value if isinstance(value, list) else [value]
+    return [json.dumps(item) if isinstance(item, dict) else str(item) for item in items]
+
+
 def expected_key(flag: str, script: str) -> str:
     """Return the config key a flag must receive: from its own name, never from the runner."""
     if flag == "--batch-size":
@@ -278,14 +292,15 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     config = garimpo_uncertainty.config.RunConfig.load(
         RUN_ROOT / "configs", SCALE, passed_job.model
     )
-    # RUNS_DIR reaches the stages only through RUN_DIR, which the runner derives from it.
-    listed = {key: value for key, value in config.values.items() if key != "RUNS_DIR"}
-    values = {key: str(value) for key, value in listed.items() if not isinstance(value, list)}
-    values |= {"RUN_DIR": config.run_dir, "NUM_WORKERS": NUM_WORKERS}
+    # RUNS_DIR reaches the stages only through RUN_DIR, which the runner derives from it; LAYERS
+    # is checked on its own below, as the runner passes it whole or one layer at a time.
+    listed = {k: v for k, v in config.values.items() if k not in {"RUNS_DIR", "LAYERS"}}
+    values = {key: command_words(value) for key, value in listed.items()}
+    values |= {"RUN_DIR": [config.run_dir], "NUM_WORKERS": [NUM_WORKERS]}
     # A wrong key holding the same value would pass, so no two may share one.
     by_value: dict[str, set[str]] = {}
     for name, value in values.items():
-        by_value.setdefault(value, set()).add(name)
+        by_value.setdefault(" ".join(value), set()).add(name)
     shared = {value: names for value, names in by_value.items() if len(names) > 1}
     assert not shared, shared
 
@@ -299,7 +314,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
                     continue  # a switch such as --force
                 name = expected_key(flag, script)
                 assert name in values, f"{script} {flag}: no config key {name}"
-                assert given == [values[name]], (script, flag, name)
+                assert given == values[name], (script, flag, name)
                 received.add(name)
     assert received == set(values), f"never passed to a stage: {sorted(set(values) - received)}"
 
@@ -540,13 +555,15 @@ def test_failed_stage_stops_the_job(run_root: Path) -> None:
     assert "PIPELINE CHECK: FAIL" in log
 
 
-def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None:
+@pytest.mark.parametrize("model", ["interrupted", "interrupted_twice"])
+def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path, model: str) -> None:
     """Colab's interrupt reaches the runner alone: the stage must stop too, and the check run.
 
     The signal comes once training prints, inside its stage; the stage's own traceback, printed
-    after the signal, must still reach the log.
+    after the signal, must still reach the log. Colab's SIGTERM, once the check has started, must
+    not cost the verdict.
     """
-    model = write_config("interrupted")
+    write_config(model)
     with subprocess.Popen(  # noqa: S603 - arguments come from the tests
         runner_command(SCALE, model, "--num-workers", NUM_WORKERS),
         cwd=RUN_ROOT,
@@ -560,8 +577,17 @@ def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None
             if " training on " in line:
                 process.send_signal(signal.SIGINT)
                 break
+        if model == "interrupted_twice":
+            deadline = time.monotonic() + 300
+            while time.monotonic() < deadline and "=== start pipeline_check" not in (
+                log_of(model).read_text(encoding="utf-8")
+            ):
+                time.sleep(0.05)
+            process.send_signal(signal.SIGTERM)
         process.communicate(timeout=300)
     assert process.returncode == 130
+    verdict = json.loads((run_dir_of(model) / "verdict.json").read_text(encoding="utf-8"))
+    assert verdict["verdict"] == "FAIL"
     log = log_of(model).read_text(encoding="utf-8")
     train = json.loads((run_dir_of(model) / "status" / "train.json").read_text())
     assert train["status"] == "interrupted", log[-8000:]
@@ -601,6 +627,26 @@ def test_config_refuses_a_misspelled_or_misplaced_key(tmp_path: Path) -> None:
         garimpo_uncertainty.config.RunConfig.load(tmp_path, SCALE, "model")
 
 
+@pytest.mark.parametrize("name", ["LAYERS", "METRICS", "AUGMENTATIONS", "CALLBACKS"])
+def test_config_refuses_a_list_given_as_text(tmp_path: Path, name: str) -> None:
+    assert f"{name}: must be a list, got ''" in refusal(tmp_path, **{name: ""})
+
+
+@pytest.mark.parametrize("classes", [2, True, {}, "1"])
+def test_config_refuses_more_classes_than_the_stages_after_train_read(
+    tmp_path: Path, classes: object
+) -> None:
+    assert f"NUM_CLASSES must be 1 for a run, got {classes!r}" in refusal(
+        tmp_path, NUM_CLASSES=classes
+    )
+
+
+def test_config_refuses_a_rule_other_than_the_one_infer_applies(tmp_path: Path) -> None:
+    assert "POSTPROCESS must be sigmoid_threshold for a run" in refusal(
+        tmp_path, POSTPROCESS="softmax_argmax"
+    )
+
+
 @pytest.mark.parametrize("floor", [0, -0.01, float("nan"), float("inf"), "0.01ha"])
 def test_config_refuses_a_bad_score_floor(tmp_path: Path, floor: object) -> None:
     """`calibrate.py` refuses these too, but only after training."""
@@ -628,8 +674,8 @@ def test_full_job_refuses_a_config_before_any_stage(run_root: Path) -> None:
 def test_versioned_configs_are_accepted_and_name_model_layers(scale: str, model: str) -> None:
     """A layer the model lacks would stop fit_directions only after the whole training."""
     config = garimpo_uncertainty.config.RunConfig.load(CONFIGS, scale, model)
-    built = garimpo_uncertainty.models.common.build(config["ARCH"], in_channels=6)
-    assert set(config["LAYERS"]) <= set(garimpo_uncertainty.models.common.feature_layers(built))
+    built = garimpo_uncertainty.models.build(config["ARCH"], in_channels=6)
+    assert set(config["LAYERS"]) <= set(built.feature_layers())
 
 
 @pytest.mark.parametrize("model", MODELS)

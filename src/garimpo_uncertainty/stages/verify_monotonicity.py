@@ -21,7 +21,7 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 import garimpo_uncertainty.pipeline.runner
 
 ROLES_BY_USE = {"layer": ("validation",), "endpoint": ("calibration", "test")}
@@ -82,7 +82,7 @@ def sweep_layer(
     args: argparse.Namespace,
 ) -> dict[str, Swept]:
     """Sweep one batch through one layer, one result per direction."""
-    z, decode = garimpo_uncertainty.models.common.split_at(model, layer, features)
+    z, decode = model.split_at(layer, features)
     jacobian = garimpo_uncertainty.compass_j.jacobian(decode, z, args.direction_temperature)
     soft = garimpo_uncertainty.compass_j.soft_area(args.temperature)
     return {
@@ -117,14 +117,14 @@ def sweep_role(
     fitted = {
         layer: compass2d.directions.Directions.load(run.directions(layer)) for layer in args.layers
     }
-    logits_layer = garimpo_uncertainty.models.common.LOGITS
+    logits_layer = garimpo_uncertainty.models.LOGITS
     swept: dict[tuple[str, str], list[Swept]] = {}
     loader = garimpo_uncertainty.cell_dataset.loader(
         root, cells, metadata["normalization"], args.batch_size, args.num_workers
     )
     for images, _, _ in garimpo_uncertainty.cell_dataset.batches(loader):
-        features = garimpo_uncertainty.models.common.encode(model, images.to(device))
-        logits, _ = garimpo_uncertainty.models.common.split_at(model, logits_layer, features)
+        features = model.encode(images.to(device))
+        logits, _ = model.split_at(logits_layer, features)
         swept.setdefault((logits_layer, "uniform"), []).append(
             sweep(
                 lambda z: z,
