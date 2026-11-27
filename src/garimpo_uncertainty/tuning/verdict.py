@@ -117,11 +117,18 @@ class Verdict:
                     f"batch {arch} {layer}: batch {reference} failed or changed its bits"
                 )
                 continue
+            self.failures.extend(
+                f"batch {arch} {layer}: batch {r['batch_size']} changed its bits between two runs"
+                for r in rows
+                if not r["stable"]
+            )
             state = (
                 f"batch {arch} {layer}: {reference} keeps the GPU {base['gpu_busy']:.0%} busy in "
                 f"{base['gpu_memory_gb']:.1f} of {memory} GB"
             )
-            roomy = [r for r in rows if r["gpu_memory_gb"] <= MEMORY_IN_USE * memory]
+            roomy = [
+                r for r in rows if r["stable"] and r["gpu_memory_gb"] <= MEMORY_IN_USE * memory
+            ]
             faster = [r for r in roomy if r["seconds"]["high"] < base["seconds"]["low"]]
             if base["gpu_busy"] >= GPU_BUSY or not faster:
                 self.findings.append(f"{state}; no larger batch is worth its memory")
@@ -131,7 +138,14 @@ class Verdict:
             self.findings.append(f"{state}; batch {pick['batch_size']} is faster{moves}")
 
     def precision(self, arch: str, rows: list[dict]) -> None:
-        for row in rows:
+        # Every other candidate is judged against strict float32, so without it nothing is.
+        for layer in dict.fromkeys(row["layer"] for row in rows):
+            if not any(
+                r["layer"] == layer and r["candidate"] == "strict_fp32" and "seconds" in r
+                for r in rows
+            ):
+                self.failures.append(f"precision {arch} {layer}: strict float32 failed")
+        for row in (r for r in rows if "seconds" in r):
             if row["candidate"] == "strict_fp32" and not row["stable"]:
                 self.failures.append(
                     f"precision {arch} {row['layer']}: strict float32 gave other bits twice"
@@ -193,5 +207,4 @@ def judge_arch(verdict: Verdict, results: dict, arch: str) -> None:
     if f"batch-{arch}" in results:
         verdict.batch(arch, results[f"batch-{arch}"], results["hardware"]["gpu_memory_gb"])
     if f"precision-{arch}" in results:
-        rows = [r for r in results[f"precision-{arch}"]["rows"] if "seconds" in r]
-        verdict.precision(arch, rows)
+        verdict.precision(arch, results[f"precision-{arch}"]["rows"])

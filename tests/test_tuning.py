@@ -50,6 +50,24 @@ def test_workers_that_move_the_weights_fail_the_tuning() -> None:
     assert verdict.failures == ["train unet: [2] workers end with other weights than 0 workers"]
 
 
+def test_a_lost_reference_or_an_unstable_batch_fails_the_tuning() -> None:
+    verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
+    verdict.precision(
+        "unet", [{"layer": "l", "candidate": "strict_fp32", "failed": "out of memory"}]
+    )
+    seconds = {"median": 1.0, "low": 0.9, "high": 1.1}
+    fast = {"median": 0.5, "low": 0.4, "high": 0.6}
+    batch = {"batch_size": 16, "seconds": seconds, "stable": True, "bitwise": True}
+    batch |= {"layer": "l", "gpu_busy": 0.5, "gpu_memory_gb": 1.0}
+    unstable = batch | {"batch_size": 32, "seconds": fast, "stable": False}
+    verdict.batch("unet", {"reference": 16, "rows": [batch, unstable]}, memory=24)
+    assert verdict.failures == [
+        "precision unet l: strict float32 failed",
+        "batch unet l: batch 32 changed its bits between two runs",
+    ]
+    assert verdict.findings[-1].endswith("no larger batch is worth its memory")
+
+
 def test_a_section_that_fails_is_noted_and_the_rest_still_run(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
