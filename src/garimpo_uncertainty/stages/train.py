@@ -384,9 +384,19 @@ def check_classes(args: argparse.Namespace) -> None:
         if part.multiclass != (args.num_classes > 1):
             wants = "two or more classes" if part.multiclass else "one logit per pixel"
             raise ValueError(f"{flag} wants {wants}, and --num-classes is {args.num_classes}")
-    loss = parts["--loss"](torch.zeros(1, args.num_classes, 2, 2), torch.zeros(1, 1, 2, 2))
-    if loss.ndim != 0:
-        raise ValueError(f"--loss must give one number per batch, not a {list(loss.shape)} tensor")
+    check_loss(parts["--loss"], args.num_classes)
+
+
+def check_loss(loss_fn: torch.nn.Module, num_classes: int) -> None:
+    """Raise unless the loss is one mean per batch, as the loop weighs it by the batch's cells."""
+    generator = torch.Generator().manual_seed(0)
+    logits = torch.randn(1, num_classes, 4, 4, generator=generator)
+    mask = torch.randint(0, 2, (1, 1, 4, 4), generator=generator).float()
+    one = loss_fn(logits, mask)
+    if one.ndim != 0:
+        raise ValueError(f"--loss must give one number per batch, not a {list(one.shape)} tensor")
+    if not torch.allclose(one, loss_fn(logits.repeat(2, 1, 1, 1), mask.repeat(2, 1, 1, 1))):
+        raise ValueError("--loss must average over the batch: twice the same cell changed it")
 
 
 def callback_names(args: argparse.Namespace) -> list[str]:

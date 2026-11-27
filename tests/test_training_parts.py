@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import torch
 
+import garimpo_uncertainty.config
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models
 import garimpo_uncertainty.postprocess
@@ -95,7 +96,9 @@ def test_early_stopping_resumes_from_what_last_pt_kept() -> None:
     assert resumed.stopped
 
 
-@pytest.mark.parametrize("options", [{"patience": 0}, {"patience": 2, "mode": "best"}])
+@pytest.mark.parametrize(
+    "options", [{"patience": 0}, {"patience": True}, {"patience": 2, "mode": "best"}]
+)
 def test_early_stopping_refuses_options_that_never_stop(options: dict) -> None:
     with pytest.raises(ValueError, match="early_stopping"):
         stopper(**options)
@@ -131,6 +134,28 @@ def test_two_classes_train_and_score_through_the_loop() -> None:
     assert record["updates"] == 2
     assert 0 <= record["val_dice"] <= 1
     assert np.isfinite(record["val_loss"])
+
+
+@pytest.mark.parametrize("transform", [{}, {"__class_fullname__": "Nope"}])
+def test_albumentations_refuses_what_is_not_a_serialized_pipeline(transform: dict) -> None:
+    with pytest.raises(ValueError, match="not a serialized pipeline"):
+        garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(
+            {"name": "albumentations", "transform": transform}
+        )
+
+
+def test_albumentations_refuses_a_pipeline_that_changes_the_dtype() -> None:
+    pipeline = albumentations.Compose([albumentations.FromFloat(dtype="uint8")])
+    with pytest.raises(ValueError, match="must give float32 cells"):
+        garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(
+            {"name": "albumentations", "transform": albumentations.to_dict(pipeline)["transform"]}
+        )
+
+
+def test_the_architectures_that_need_starting_weights_are_the_registry_s() -> None:
+    registry = garimpo_uncertainty.models.MODEL_REGISTRY
+    weighted = {arch for arch in registry.names() if registry[arch].variants}
+    assert weighted == set(garimpo_uncertainty.config.WEIGHTED_ARCHS)
 
 
 def test_albumentations_refuses_a_pipeline_that_returns_tensors() -> None:

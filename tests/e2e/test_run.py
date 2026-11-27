@@ -625,6 +625,12 @@ def test_config_refuses_more_classes_than_the_stages_after_train_read(
     )
 
 
+def test_config_refuses_a_rule_other_than_the_one_infer_applies(tmp_path: Path) -> None:
+    assert "POSTPROCESS must be sigmoid_threshold for a run" in refusal(
+        tmp_path, POSTPROCESS="softmax_argmax"
+    )
+
+
 @pytest.mark.parametrize("floor", [0, -0.01, float("nan"), float("inf"), "0.01ha"])
 def test_config_refuses_a_bad_score_floor(tmp_path: Path, floor: object) -> None:
     """`calibrate.py` refuses these too, but only after training."""

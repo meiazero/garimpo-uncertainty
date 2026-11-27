@@ -11,6 +11,7 @@ from typing import Any, override
 import numpy as np
 import torch
 
+import garimpo_uncertainty.data
 import garimpo_uncertainty.registry
 
 AUGMENTATION_REGISTRY = garimpo_uncertainty.registry.Registry("augmentation")
@@ -60,7 +61,26 @@ class Albumentations(Augmentation):
 
         if "ToTensorV2" in json.dumps(transform):
             raise ValueError("albumentations: leave out ToTensorV2; the loader makes the tensors")
-        self.pipeline = albumentations.from_dict({"transform": transform})
+        try:
+            self.pipeline = albumentations.from_dict({"transform": transform})
+        except KeyError as missing:  # from_dict names only the key it lacked
+            raise ValueError(f"albumentations: not a serialized pipeline, no {missing}") from None
+        self.check_output()
+
+    def check_output(self) -> None:
+        """Raise unless the pipeline gives a float32 cell with its mask, as the model reads one."""
+        side, bands = garimpo_uncertainty.data.CELL_PX, len(garimpo_uncertainty.data.BANDS)
+        image = np.zeros((bands, side, side), np.float32)
+        found, mask = self(image, np.zeros((1, side, side), np.float32), 0)
+        if (
+            found.dtype != np.float32
+            or found.ndim != image.ndim
+            or mask.shape[1:] != found.shape[1:]
+        ):
+            raise ValueError(
+                "albumentations: the pipeline must give float32 cells with their masks, "
+                f"not {found.dtype} {list(found.shape)} with a {list(mask.shape)} mask"
+            )
 
     @override
     def draw(self, generator: torch.Generator) -> int:

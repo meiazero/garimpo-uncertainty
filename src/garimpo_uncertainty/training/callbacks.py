@@ -99,7 +99,7 @@ class EarlyStopping(garimpo_uncertainty.training.loop.Callback):
     def __init__(
         self, patience: int, min_delta: float = 0.0, monitor: str = "val_dice", mode: str = "max"
     ) -> None:
-        if not isinstance(patience, int) or patience < 1:
+        if type(patience) is not int or patience < 1:
             raise ValueError(f"early_stopping: patience must be a positive integer, got {patience}")
         if mode not in {"max", "min"}:
             raise ValueError(f"early_stopping: mode must be max or min, got {mode!r}")
