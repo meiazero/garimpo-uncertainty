@@ -1,10 +1,13 @@
 """The parts a config swaps in training: registries, early stopping, two classes, Albumentations."""
 
 import albumentations
+import compass2d.directions
+import compass2d.metrics
 import numpy as np
 import pytest
 import torch
 
+import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models
 import garimpo_uncertainty.postprocess
 import garimpo_uncertainty.registry
@@ -155,3 +158,18 @@ def test_both_post_processings_mark_a_pixel_mined_from_a_probability_of_one_half
     # Two logits whose softmax gives class 1 the same probabilities; a tie goes to class 0.
     two = torch.cat([torch.zeros_like(logits), logits], dim=1)
     assert build("softmax_argmax")(two).tolist() == [[[[False, False, True]]]]
+
+
+def test_the_interval_methods_name_every_direction_compass2d_registers() -> None:
+    intervals = garimpo_uncertainty.intervals
+    assert tuple(compass2d.directions.DIRECTIONS) == intervals.DIRECTIONS
+    assert tuple(f"a_{m}" for m in intervals.COMPASS_METHODS) == intervals.ASYMMETRIC_METHODS
+    combined = {method for method, _ in intervals.COMBINATIONS}
+    assert {*intervals.COMPASS_METHODS, *intervals.ASYMMETRIC_METHODS} <= combined
+
+
+def test_compass2d_hard_area_counts_the_pixels_the_threshold_marks_mined() -> None:
+    logits = torch.tensor([-1.0, -0.0, 0.0, 2.0]).reshape(1, 1, 2, 2)
+    marked = garimpo_uncertainty.postprocess.POSTPROCESS_REGISTRY.build("sigmoid_threshold")(logits)
+    area = compass2d.metrics.hard_area(logits, pixel_area=1.0)
+    assert area.tolist() == [float(marked.sum())] == [3.0]

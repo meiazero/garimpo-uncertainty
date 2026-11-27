@@ -44,16 +44,15 @@ After each fix, before its push, one agent reviews the diff against two rules an
 
 ## Fixes: compass2d (on `dev`)
 
-- [ ] 6. Make each direction a strategy in a `DIRECTION_REGISTRY` (`pca`, `svm`) with `fit` and `deltas`, so a new direction is one class. (3 files + 2 in garimpo)
+- [x] 6. Register each direction's per-cell delta in compass2d's `DIRECTIONS` (`pca`, `svm`), and derive garimpo's direction and method names from it, so a new direction is one function. (2 files + 2 in garimpo)
   - `compass2d/directions.py:108-113` `cell_deltas` branches `if direction == "pca" / "svm"`.
-  - `compass2d/directions.py:15` `Directions` holds the fields of both strategies in one dataclass; `save`/`load` keep writing the same npz fields.
-- [ ] 7. Make the searches strategies in a `SEARCH_REGISTRY` (`symmetric`, `asymmetric`) with one signature, so garimpo picks one by method name. (2 files + 2 in garimpo)
-  - `compass2d/compass.py:60` and `:79` are two search functions with different return shapes.
+  - `intervals.py:69-71` types `DIRECTIONS` and the `compass_j_*` method names by hand. The names now derive from `DIRECTIONS`, which stays written out, as importing compass2d loads torch into `compute_metrics`; a test holds it equal to compass2d's.
+  - Fitting stays as is: `Directions` (`compass2d/directions.py:15`) is the persisted `directions.npz`, whose fields must not change.
+- [x] 7. Pick each calibration row's filler from a dict keyed by method, with one signature, instead of an `if/elif` on method families. (1 file)
   - `stages/calibrate.py:331-338` branches `if method == "independent_pixels" / in COMPASS_METHODS / in ASYMMETRIC_METHODS`.
-  - `compass_j.py:107` keeps its own memoized search "equal to the bit" to compass2d's: a copy that nothing links. It becomes a strategy in the same registry.
-- [ ] 8. Put the quantile rules and area metrics in `QUANTILE_RULE_REGISTRY` and `METRIC_REGISTRY` of compass2d, so garimpo names them in config. (3 files + 1 in garimpo)
-  - `stages/calibrate.py:65-73` picks the rule by `if situation == "external" / "own_region"` and `calibration == "external_weighted"`.
-  - `compass2d/metrics.py:9` and `:14` (`hard_area`, `soft_area`) are chosen by caller code.
+- [x] 8. Pick the quantile of each calibration situation from a dict keyed by situation (`external`, `external_weighted`, `own_region`), and link compass2d's hard area to garimpo's 0.5 rule by a test. (2 files)
+  - `stages/calibrate.py:65-73` branches `if situation == "external" / "own_region"` and `calibration == "external_weighted"`.
+  - `compass2d/metrics.py:11` decides `logits >= 0` apart from `postprocess.py`; compass2d cannot import garimpo, so a test holds them equal.
 
 ## Fixes: notebooks keep the Colab session, the package keeps the logic
 
@@ -70,6 +69,11 @@ After each fix, before its push, one agent reviews the diff against two rules an
   - 01 and 02 never update an existing clone; 03 fetches and checks out `BRANCH` (03, cell 4).
   - `release_runtime()` is copied in 01 and 02; 03 cell 23 releases without flushing Drive.
 - [ ] 12. Point `docs/` and `README.md` at the new registries, config keys and commands, and delete `notebooks/tuning.py`. (6 files, after 1-11)
+
+## Not applied, with the reason
+
+- A registry of compass2d's searches: no caller picks a search by name. `compass_scores` runs the symmetric and both one-sided searches in one memoized lockstep (`compass_j.py:104`), which `tests/test_search.py` holds equal to compass2d's two functions, to the bit.
+- A registry of compass2d's area metrics: each method's definition fixes its metric, the hard area for COMPASS-L and the soft area, whose Jacobian sets the direction, for COMPASS-J.
 
 ## Special cases kept
 
