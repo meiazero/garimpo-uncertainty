@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import garimpo_uncertainty.tuning.sections
 import garimpo_uncertainty.tuning.tune
 import garimpo_uncertainty.tuning.verdict
 
@@ -34,6 +35,20 @@ def test_results_json_holds_no_nan_for_a_gpu_use_never_sampled() -> None:
     results = {"train-unet": {"rows": [train_row(0, 0.0) | {"gpu_busy": float("nan")}]}}
     written = json.dumps(garimpo_uncertainty.tuning.tune.json_safe(results), allow_nan=False)
     assert json.loads(written)["train-unet"]["rows"][0]["gpu_busy"] is None
+
+
+def test_configs_that_cannot_be_read_fail_the_tuning_with_a_verdict(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    def unreadable() -> tuple[int, int]:
+        raise TypeError("unsupported operand type(s) for *: 'NoneType' and 'int'")
+
+    monkeypatch.setattr(garimpo_uncertainty.tuning.tune, "full_run_size", unreadable)
+    monkeypatch.setattr("sys.argv", ["garimpo tune"])
+    with pytest.raises(SystemExit) as exited:
+        garimpo_uncertainty.tuning.tune.main()
+    assert exited.value.code == 1
+    assert "TUNING: FAIL: the configs cannot be read: TypeError" in capsys.readouterr().out
 
 
 def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:

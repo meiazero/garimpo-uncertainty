@@ -8,7 +8,7 @@ import math
 
 STARVED = 0.10  # a loop waiting on data longer than this share of its time starves
 GPU_BUSY = 0.80  # below this busy share, the GPU waits on the CPU or on kernel launches
-MEMORY_IN_USE = 0.80  # a batch leaves this share of GPU memory free; use varies by layer and cell
+MEMORY_IN_USE = 0.80  # a batch may use this share of GPU memory; use varies by layer and cell
 
 
 def limit(gpu_busy: float, data_wait: float = 0.0) -> str:

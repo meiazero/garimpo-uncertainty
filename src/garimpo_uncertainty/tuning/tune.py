@@ -16,9 +16,10 @@ from pathlib import Path
 
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models
-import garimpo_uncertainty.tuning.sections
 import garimpo_uncertainty.tuning.verdict
-import garimpo_uncertainty.tuning.workloads
+
+# The sections and their workloads read the configs at import, so garimpo tune imports them only
+# once its arguments are read: --help works, and a config that cannot be read fails the verdict.
 
 OUT = garimpo_uncertainty.files.ROOT / "outputs" / "tuning"
 
@@ -75,6 +76,8 @@ def run_sections(chosen: dict, out: Path) -> tuple[dict, list[str]]:
     A section yields each architecture's result once it is done, so a later one that fails keeps
     the earlier ones.
     """
+    import garimpo_uncertainty.tuning.sections  # noqa: PLC0415 - reads the configs
+
     results, failed = {}, []
     for name, section in garimpo_uncertainty.tuning.sections.SECTIONS.items():
         print(f"\n===== {name} =====", flush=True)
@@ -100,6 +103,8 @@ def json_safe(value: object) -> object:
 
 def full_run_size() -> tuple[int, int]:
     """Return the full run's updates and the cells its search stages read."""
+    import garimpo_uncertainty.tuning.workloads  # noqa: PLC0415 - reads the configs
+
     full = garimpo_uncertainty.tuning.workloads.read_json(
         garimpo_uncertainty.files.ROOT / "configs" / "scales" / "full.json"
     )
@@ -130,13 +135,17 @@ def show(results: dict, verdict: garimpo_uncertainty.tuning.verdict.Verdict) -> 
 def main() -> None:
     chosen = form(parse_args())
     print("Choices as the sections read them:", json.dumps(chosen, indent=2), sep="\n")
+    try:  # every section reads the configs, so one that cannot be read leaves nothing to measure
+        updates, cells = full_run_size()
+    except Exception as error:  # noqa: BLE001 - any misread value; the verdict must still print
+        print(f"TUNING: FAIL: the configs cannot be read: {type(error).__name__}: {error}")
+        sys.exit(1)
     results, failed = run_sections(chosen, OUT)
     try:  # the verdict is the run's point, so a full disk must not cost it
         OUT.mkdir(parents=True, exist_ok=True)
         garimpo_uncertainty.files.write_json(OUT / "results.json", json_safe(results))
     except OSError as error:
         failed.append(f"results.json: {type(error).__name__}: {error}")
-    updates, cells = full_run_size()
     verdict = garimpo_uncertainty.tuning.verdict.judge(
         results, failed, chosen["archs"], updates, cells
     )
