@@ -53,7 +53,7 @@ ruff format --check . && ruff check .
 | `test_workers.py` | Two DataLoader workers: two trainings with one seed give one model and the band statistics of the shared run; every prediction equals those read without workers |
 | `../test_training_parts.py` | The registry refusing an unknown name, a name registered twice and a spec with no name; `dice_bce` equal to its Dice plus its BCE, to the bit; early stopping, its state across a resume, and its refusals; a two-class model trained with `cross_entropy` and `softmax_argmax`; an `albumentations` entry drawn from the sampler's generator; the 0.5 threshold of `postprocess`, of the hard area and of compass2d held equal; garimpo's directions, which name its interval methods, held equal to compass2d's `DIRECTIONS` |
 | `../test_tuning.py` | The tuning's verdict on rows written by hand: the fewest workers that keep training fed, a lost bit or a starved loop failing it, a crashed section noted while the rest run |
-| `../test_experiment.py` | `garimpo experiment` starting the full runs only once the pilot passed, and stopping after an interrupt; `garimpo figures --scale` drawing only the runs with intervals |
+| `../test_experiment.py` | `garimpo experiment` starting the full runs only once the pilot passed, and stopping after an interrupt; `garimpo figures --scale` drawing only the runs that hold what its figures read; the models in the order main ran them |
 
 ## On a GPU
 

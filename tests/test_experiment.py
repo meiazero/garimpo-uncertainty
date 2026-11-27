@@ -51,6 +51,11 @@ def test_the_full_runs_start_only_once_the_pilot_passed_on_this_code(
     assert code == result
 
 
+def test_the_models_run_in_main_s_order_with_a_new_one_last() -> None:
+    models = ["convnet", "new", "unet_imagenet", "unet_scratch", "unet_sentinel2"]
+    assert experiment.run_order(models) == [*experiment.ORDER, "new"]
+
+
 @pytest.mark.parametrize("ends_with", [130, 0])
 @pytest.mark.parametrize("whole_group", [False, True])
 def test_an_interrupt_reaches_the_job_once(

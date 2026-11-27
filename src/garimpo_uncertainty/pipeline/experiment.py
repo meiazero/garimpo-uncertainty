@@ -21,6 +21,13 @@ import garimpo_uncertainty.pipeline.status
 STOPPED = 130
 INTERRUPTED = {STOPPED, -2, -9, -15}
 TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
+# The order main ran them in: a session cut short has the reference U-Net done first.
+ORDER = ("unet_scratch", "unet_imagenet", "unet_sentinel2", "convnet")
+
+
+def run_order(models: list[str]) -> list[str]:
+    """Return `models` in ORDER, any other after them by name."""
+    return sorted(models, key=lambda m: (ORDER.index(m) if m in ORDER else len(ORDER), m))
 
 
 def run_model(command: list[str]) -> int:
@@ -47,7 +54,8 @@ def run_model(command: list[str]) -> int:
 def run_scale(scale: str, options: list[str]) -> int:
     """Run every model at `scale`; return STOPPED once one is interrupted, 1 if one failed."""
     failed = False
-    for model in garimpo_uncertainty.config.models(garimpo_uncertainty.pipeline.status.CONFIGS):
+    configs = garimpo_uncertainty.pipeline.status.CONFIGS
+    for model in run_order(garimpo_uncertainty.config.models(configs)):
         print(f"\n===== {scale} · {model} =====", flush=True)
         code = run_model(["garimpo", "run", scale, model, *options])
         if code in INTERRUPTED:
