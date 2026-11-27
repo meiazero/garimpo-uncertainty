@@ -131,8 +131,11 @@ def main() -> None:
     chosen = form(parse_args())
     print("Choices as the sections read them:", json.dumps(chosen, indent=2), sep="\n")
     results, failed = run_sections(chosen, OUT)
-    OUT.mkdir(parents=True, exist_ok=True)
-    garimpo_uncertainty.files.write_json(OUT / "results.json", json_safe(results))
+    try:  # the verdict is the run's point, so a full disk must not cost it
+        OUT.mkdir(parents=True, exist_ok=True)
+        garimpo_uncertainty.files.write_json(OUT / "results.json", json_safe(results))
+    except OSError as error:
+        failed.append(f"results.json: {type(error).__name__}: {error}")
     updates, cells = full_run_size()
     verdict = garimpo_uncertainty.tuning.verdict.judge(
         results, failed, chosen["archs"], updates, cells

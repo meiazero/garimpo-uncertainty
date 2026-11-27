@@ -616,7 +616,7 @@ def test_config_refuses_a_misspelled_or_misplaced_key(tmp_path: Path) -> None:
         garimpo_uncertainty.config.RunConfig.load(tmp_path, SCALE, "model")
 
 
-@pytest.mark.parametrize("name", garimpo_uncertainty.config.LISTS)
+@pytest.mark.parametrize("name", ["LAYERS", "METRICS", "AUGMENTATIONS", "CALLBACKS"])
 def test_config_refuses_a_list_given_as_text(tmp_path: Path, name: str) -> None:
     assert f"{name}: must be a list, got ''" in refusal(tmp_path, **{name: ""})
 
