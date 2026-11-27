@@ -18,13 +18,13 @@ tables go to `runs/pilot/`, never to `outputs/`.
 
 1. Put the data archive in Drive as `MyDrive/garimpo/data.tar.zst`
    ([full-run.md](full-run.md#download-the-store)). This is needed once.
-2. On a GPU runtime, run Runtime > Run all in `notebooks/01_run_experiment.ipynb`. Section 3's
-   `SCALE`, at `auto`, runs the pilot while no full run has a checkpoint; choose `pilot` to run it
-   after that.
+2. On a GPU runtime, run Runtime > Run all in `notebooks/01_run_experiment.ipynb`. Section 5 runs
+   the pilot until all four of its runs passed on the commit checked out, and only then the full
+   runs; a pilot trained on other commits redoes itself from `train`.
 3. Read the verdicts section 5 prints, then the pipeline check at the end of each model's log,
    `outputs/logs/pilot-<model>.log`, also copied to `logs/` in Drive.
 
-The models checked in section 3 run one after another on the one GPU. Each writes to
+The four models run one after another on the one GPU. Each writes to
 `runs/pilot/<model>-f0.01/`, and section 6 merges their tables into `runs/pilot/tables/`. The runs
 and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
 
@@ -55,9 +55,10 @@ fail the check: [stages.md](stages.md#statuses).
 
 1. Commit and push the fix from your machine. The session's clone cannot push, and the next
    session's clone picks the fix up.
-2. In a new session, set section 3's `FORCE_FROM` to the first stage the fix affects, check only
-   the models to redo, then run Runtime > Run all. The form stays set in the open tab, so clear
-   `FORCE_FROM` once the rerun passes; reopening the notebook from its link also clears it.
+2. In a new session, run Runtime > Run all: the pilot redoes itself from `train`, since its
+   training did not finish on the new commit. For the full runs, set section 3's `FORCE_FROM` to
+   the first stage the fix affects first; it stays set in the open tab, so clear it once the rerun
+   passes, and reopening the notebook from its link also clears it.
 
 Commits are recorded in the metadata but kept out of the fingerprint, so a code fix alone
 invalidates nothing; that is why the stage has to be named. The run cell passes `FORCE_FROM` to
@@ -65,8 +66,8 @@ invalidates nothing; that is why the stage has to be named. The run cell passes 
 every stage after it. Earlier stages skip, and `train` runs again only with `--force-from train`,
 which refuses while `last.pt` holds an
 unfinished training: drop it to resume, or delete `last.pt` to start over. The data validation is
-outside that order: redo it with `--force-validate`, the form's `FORCE_VALIDATE`. Both options work
-the same way for the full runs.
+outside that order: redo it with `garimpo run --force-validate`. Both options work the same way
+for the full runs, and the notebook's `FORCE_FROM` reaches the full runs only.
 
 A stage whose inputs or arguments changed without being forced stops with status `refused`, which
 fails the check. A run stopped midway keeps its finished stages, and they skip on the next start

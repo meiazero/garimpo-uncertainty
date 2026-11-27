@@ -51,18 +51,18 @@ Why the cells are written as they are: [docs/colab.md](docs/colab.md).
 
 ## Quick start
 
-Runtime > Run all runs the notebook's sections in order, on one GPU runtime. Its `SCALE` option
-runs the pilot, the same four models on 1%, until a full run has a checkpoint; choose `full` once
-the pilot passes, and later sessions continue the full runs on their own:
+Runtime > Run all runs the notebook's sections in order, on one GPU runtime, with nothing to set. It
+runs the tests once per commit, then the pilot, the same four models on 1%, until all four pass on
+the commit checked out, then the four full runs, which later sessions continue on their own:
 
 | Section | What it does |
 |---|---|
 | 1. Setup | Mounts Drive, clones the code, builds the environment |
 | 2. Data | Unpacks the data once and restores the earlier runs and logs |
-| 3. What to run | The form: the scale, the models, a stage to redo, the tests; then the values of every run |
-| 4. Tests | Runs the suite on the GPU, when the form asks for it |
-| 5. Runs | The chosen models, each trained and taken through every stage: on 1% of the training tiles for the pilot, on 100% for the full runs |
-| 6. Merge | Merges the four runs' tables, into `outputs/` for the full runs |
+| 3. Redo after a fix | The one option: a stage the full runs redo after a code fix |
+| 4. Tests | Runs the suite on the GPU, once per commit |
+| 5. Runs | The four models through every stage: the pilot on 1% of the training tiles until all four pass, then the full runs on 100% |
+| 6. Merge | Merges the four runs' tables of each scale that ran, into `outputs/` for the full runs |
 | 7. Release | Writes the pending files to Drive and releases the GPU |
 
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
@@ -87,7 +87,7 @@ on an L4 runtime at the latest runtime version, then run Runtime > Run all.
 
 | Document | Covers |
 |---|---|
-| [docs/colab.md](docs/colab.md) | Why the cells of the run notebook are written as they are: the Drive archive, cells that run again safely, the form, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
+| [docs/colab.md](docs/colab.md) | Why the cells of the run notebook are written as they are: the Drive archive, cells that run again safely, the gates, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
 | [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `--force-from` |
 | [docs/full-run.md](docs/full-run.md) | The full run step by step, the run configs, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
 | [docs/decisions.md](docs/decisions.md) | The values to fix before the full run, their sources, and where each is set |

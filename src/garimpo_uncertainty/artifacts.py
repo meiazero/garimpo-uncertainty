@@ -55,6 +55,11 @@ class RunPaths:
         return self.root / "last.pt"
 
     @property
+    def verdict(self) -> Path:
+        """The last job's verdict with the code it ran, which gates the full runs on the pilot."""
+        return self.root / "verdict.json"
+
+    @property
     def history(self) -> Path:
         return self.root / "history.csv"
 

@@ -69,13 +69,18 @@ SIGKILL: the runner kills the stage at once, then still runs the check, whose ve
 cell and the log, and the run cell starts no later model. Then run the cell of section 7 by
 hand.
 
-## The form
+## The gates
 
-Section 3 holds every choice a session makes: the scale, the models to run, `FORCE_FROM`,
-`FORCE_VALIDATE` and `RUN_TESTS`. `FORCE_FROM` applies to every model checked, so uncheck the
-others to redo one. Its defaults force nothing and skip the tests, so Runtime > Run all never
-redoes a stage by accident. The values stay set in the open tab; reopening the notebook from its
-link restores the defaults.
+A session needs no choice. Section 4 runs the tests on the GPU unless `MyDrive/garimpo/tested/`
+records a pass for the commit checked out, and no run starts after a failure. Section 5 then asks
+`garimpo status auto --next` for the scale: the pilot until each pilot run's `verdict.json` holds a
+`PASS` from the commits checked out, with no local edit, then the full scale, so no full run starts
+or goes on with code the pilot has not passed. A pilot trained on other commits redoes itself from
+`train` (`redo_from` in `pipeline/run.py`); the full runs are never redone on their own.
+
+Section 3's one option, `FORCE_FROM`, is for a code fix to a stage the full runs already finished:
+the four full runs redo that stage and every one after it. It stays set in the open tab; reopening
+the notebook from its link empties it.
 
 ## Job verdicts
 
@@ -91,7 +96,7 @@ verdict of the last attempt only:
 - `NO LOG`: the log does not exist yet or could not be read.
 - `NOT RUN`: this session wrote nothing to the log, which still has the time it had in Drive. The
   run died before its first line (an `argparse` or import error, or no environment), as the cell's
-  output shows, or the model was not checked in the form.
+  output shows, or a gate of section 4 or 5 kept it from starting.
 
 ## The copy every 30 minutes
 

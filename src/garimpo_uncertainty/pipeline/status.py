@@ -1,17 +1,21 @@
 """`garimpo status <scale>`: every model's run at a scale, its values, checkpoint and last verdict.
 
 `auto` is the full scale once any full run has saved a checkpoint, and the pilot before that, so a
-session after the first full epoch continues the full runs. Only files are read, and an unreadable
-one is reported, never raised: the notebook calls this between runs.
+session after the first full epoch continues the full runs. `--next` prints the scale to run next
+instead: the pilot until all of its runs passed on the code checked out now, then the full one, so
+no full run starts or goes on with code the pilot has not passed. Only files are read, and an
+unreadable one is reported, never raised: the notebook calls this between runs.
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
 
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.config
+import garimpo_uncertainty.files
 import garimpo_uncertainty.pipeline.runner
 
 CONFIGS = Path("configs")
@@ -42,6 +46,31 @@ def choose_scale(scale: str) -> str:
     if scale != AUTO:
         return scale
     return "full" if checkpointed("full") else "pilot"
+
+
+def passed_on_this_code(config: garimpo_uncertainty.config.RunConfig) -> bool:
+    """Tell whether the run's last job passed on the commits checked out now, with no local edit."""
+    path = garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir)).verdict
+    try:
+        recorded = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False  # its job never ended, or ran before verdicts were kept
+    except (OSError, ValueError) as error:
+        print(f"{config.log_name}: no verdict on record ({error})")
+        return False
+    now = garimpo_uncertainty.files.code_versions()
+    clean = not now["root_dirty"] and not now["compass_dirty"]
+    return (
+        clean and recorded.get("verdict") == "PASS" and all(recorded.get(k) == now[k] for k in now)
+    )
+
+
+def next_scale() -> str:
+    """Return the pilot until every pilot run passed on this code, then the full scale."""
+    pilots = [load("pilot", model) for model in garimpo_uncertainty.config.models(CONFIGS)]
+    if all(config is not None and passed_on_this_code(config) for config in pilots):
+        return "full"
+    return "pilot"
 
 
 def last_verdict(config: garimpo_uncertainty.config.RunConfig, since: float) -> str:
@@ -100,7 +129,15 @@ def main() -> None:
     parser.add_argument(
         "--choose", action="store_true", help="print only the scale, for the notebook to read"
     )
+    parser.add_argument(
+        "--next",
+        action="store_true",
+        help="print only the scale to run next: the pilot until all of it passed on this code",
+    )
     args = parser.parse_args()
+    if args.next:
+        print(next_scale())
+        return
     scale = choose_scale(args.scale)
     if args.choose:
         print(scale)

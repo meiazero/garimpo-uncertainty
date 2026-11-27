@@ -26,6 +26,7 @@ from typing import NoReturn
 import garimpo_uncertainty.artifacts
 import garimpo_uncertainty.config
 import garimpo_uncertainty.data
+import garimpo_uncertainty.files
 import garimpo_uncertainty.pipeline.commands
 import garimpo_uncertainty.pipeline.runner
 
@@ -181,7 +182,11 @@ def run_in_order(log: Log, stages: tuple[str, ...], values: dict, force_from: st
         forced = force_from is not None and (
             STAGE_ORDER.index(name) >= STAGE_ORDER.index(force_from)
         )
-        if code := log.run(name, command(name, values, *(["--force"] if forced else []))):
+        words = ["--force"] if forced else []
+        # A pilot's training only checks the code, so its forced redo drops even an unfinished one.
+        if forced and name == "train" and values["PILOT"]:
+            words.append("--discard-unfinished")
+        if code := log.run(name, command(name, values, *words)):
             return code
     return 0
 
@@ -281,16 +286,51 @@ def start_attempt(args: argparse.Namespace) -> tuple["Log", garimpo_uncertainty.
     return log, config
 
 
+# The pilot only checks the code, so a pilot not trained to the end by this code is redone whole.
+PILOT = "pilot"
+
+
+def trained_here(status: dict) -> bool:
+    """Tell whether train's status is a finished training by the code checked out, unedited."""
+    now = garimpo_uncertainty.files.code_versions()
+    clean = not any(now[key] or status.get(key) for key in ("root_dirty", "compass_dirty"))
+    commits = all(status.get(key) == now[key] for key in ("root_commit", "compass_commit"))
+    return status.get("status") == "ok" and clean and commits
+
+
+def redo_from(args: argparse.Namespace, config: garimpo_uncertainty.config.RunConfig) -> str | None:
+    """Return --force-from, or train for a pilot whose training did not finish on this code.
+
+    A stage that fails rewrites its status with the code of the moment, so only a finished
+    training's status names the code that trained it.
+    """
+    if args.force_from or args.scale != PILOT:
+        return args.force_from
+    status = garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir)).status
+    trained = garimpo_uncertainty.pipeline.runner.read_status(status, "train")
+    return None if trained_here(trained) else "train"
+
+
+def run_job(
+    log: Log, args: argparse.Namespace, config: garimpo_uncertainty.config.RunConfig, values: dict
+) -> int:
+    """Check the data, then run every stage; return the first nonzero exit code, or 0."""
+    force_from = redo_from(args, config)
+    if force_from != args.force_from:
+        log.write(f"the pilot's training did not finish on this code: running it from {force_from}")
+    validate = command("validate_data", values, *(["--force"] if args.force_validate else []))
+    return log.run("validate_data", validate) or run_stages(log, values, force_from)
+
+
 def main() -> None:
     # Colab's second interrupt is SIGTERM, and SIGKILL 0.5 s later: kill the stage before that.
     signal.signal(signal.SIGTERM, interrupt)
     args = parse_args()
     start = time.monotonic()
     log, config = start_attempt(args)
-    values = job_values(config, args.num_workers)
+    values = job_values(config, args.num_workers) | {"PILOT": args.scale == PILOT}
     try:
-        validate = command("validate_data", values, *(["--force"] if args.force_validate else []))
-        code = log.run("validate_data", validate) or run_stages(log, values, args.force_from)
+        code = run_job(log, args, config, values)
     except KeyboardInterrupt:
         log.write("interrupted by Ctrl+C; run again to resume")
         code = 130
@@ -299,5 +339,10 @@ def main() -> None:
     took = garimpo_uncertainty.pipeline.runner.duration(time.monotonic() - start)
     verdict = "PASS" if code == check == 0 else "FAIL"
     log.write(f"=== {args.model}: {log.passed}/{log.total} stages ok in {took} · {verdict}")
+    # Overwritten each attempt, never deleted: a deleted file comes back with the next restore.
+    garimpo_uncertainty.files.write_json(
+        garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir)).verdict,
+        {"verdict": verdict, **garimpo_uncertainty.files.code_versions()},
+    )
     # A stage's exit code wins; a failed check alone still fails the job.
     sys.exit(code or check)

@@ -14,6 +14,7 @@ The runner reads its configs and outputs from the working directory, so it runs 
 which holds configs of its own, a synthetic outputs/split.csv, a copy of the data root and the runs.
 """
 
+import argparse
 import json
 import os
 import shlex
@@ -21,6 +22,7 @@ import shutil
 import signal
 import subprocess
 import time
+import types
 from pathlib import Path
 from typing import NamedTuple
 
@@ -28,7 +30,9 @@ import pandas as pd
 import pytest
 
 import garimpo_uncertainty.config
+import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
+import garimpo_uncertainty.pipeline.run
 import garimpo_uncertainty.pipeline.runner
 from garimpo_uncertainty.stages.search_profile import PROFILE
 from tests.e2e import support
@@ -671,6 +675,65 @@ def test_status_chooses_the_scale_and_reads_each_last_verdict(tmp_path: Path) ->
     assert "full-unet_imagenet: NO VERDICT" in report
     assert "full-unet_scratch: NO LOG" in report
     assert "full-convnet: NOT RUN" in status("full", "--since", str(time.time() + 60))
+
+
+def test_full_runs_wait_until_every_pilot_passed_on_this_code(tmp_path: Path) -> None:
+    """`--next` stays on the pilot while one pilot run has no PASS from the commits checked out."""
+    shutil.copytree(CONFIGS, tmp_path / "configs")
+
+    def next_scale() -> str:
+        command = support.garimpo("status", "auto", "--next")
+        found = subprocess.run(  # noqa: S603 - arguments come from the test
+            command, check=True, cwd=tmp_path, capture_output=True, text=True
+        )
+        return found.stdout.splitlines()[-1]
+
+    now = garimpo_uncertainty.files.code_versions()
+    models = garimpo_uncertainty.config.models(tmp_path / "configs")
+    runs = [tmp_path / "runs" / "pilot" / f"{model}-f0.01" for model in models]
+    for run in runs:
+        run.mkdir(parents=True)
+        garimpo_uncertainty.files.write_json(run / "verdict.json", {"verdict": "PASS", **now})
+    # The suite runs from a checkout with local edits, whose commit does not name the code.
+    clean = not now["root_dirty"] and not now["compass_dirty"]
+    assert next_scale() == ("full" if clean else "pilot")
+    garimpo_uncertainty.files.write_json(
+        runs[0] / "verdict.json", {"verdict": "PASS", **now, "root_commit": "other"}
+    )
+    assert next_scale() == "pilot"
+    garimpo_uncertainty.files.write_json(runs[0] / "verdict.json", {"verdict": "FAIL", **now})
+    assert next_scale() == "pilot"
+    (runs[0] / "verdict.json").unlink()
+    assert next_scale() == "pilot", "a pilot whose job never ended"
+
+
+def test_a_pilot_is_redone_from_train_unless_this_code_finished_its_training(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed stage rewrites its status with the current code; only `ok` names the trainer."""
+    now = {"root_commit": "a", "root_dirty": False, "compass_commit": "b", "compass_dirty": False}
+    monkeypatch.setattr(garimpo_uncertainty.files, "code_versions", lambda: dict(now))
+    status = tmp_path / "status"
+    status.mkdir()
+    config = types.SimpleNamespace(run_dir=str(tmp_path))
+    pilot = argparse.Namespace(scale="pilot", force_from=None)
+    redo = garimpo_uncertainty.pipeline.run.redo_from
+
+    def trained(**record: object) -> None:
+        garimpo_uncertainty.files.write_json(status / "train.json", {"stage": "train", **record})
+
+    assert redo(pilot, config) == "train", "a pilot that never trained"
+    trained(status="ok", **now)
+    assert redo(pilot, config) is None
+    trained(status="failed", **now)
+    assert redo(pilot, config) == "train", "train refused or died on this very code"
+    trained(status="ok", **now | {"compass_commit": "other"})
+    assert redo(pilot, config) == "train"
+    trained(status="ok", **now | {"root_dirty": True})
+    assert redo(pilot, config) == "train", "trained with local edits"
+    trained(status="failed", **now)
+    assert redo(argparse.Namespace(scale="full", force_from=None), config) is None
+    assert redo(argparse.Namespace(scale="pilot", force_from="calibrate"), config) == "calibrate"
 
 
 def test_progress_shows_at_most_once_a_minute_with_the_time_left(

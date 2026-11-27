@@ -53,8 +53,8 @@ ruff format --check . && ruff check .
 
 ## On a GPU
 
-Run the suite on a Colab GPU runtime before the first paid run: check `RUN_TESTS` in section 3
-of `notebooks/01_run_experiment.ipynb`, and section 4 runs:
+Section 4 of `notebooks/01_run_experiment.ipynb` runs the suite on the Colab GPU once per commit,
+before any run, and records a pass in `MyDrive/garimpo/tested/`:
 
 ```python
 !GARIMPO_TEST_DEVICE=cuda pytest -q

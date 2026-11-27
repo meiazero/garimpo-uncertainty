@@ -9,14 +9,14 @@ Read when the pilot passes and the values in [decisions.md](decisions.md) are fi
 2. Each run reads every value from `configs/` ([below](#the-run-configs)). To
    change one, edit its file, then commit and push it from your machine: each session starts from a
    fresh clone, which cannot push.
-3. On a GPU runtime, choose `SCALE` `full` in section 3 of `notebooks/01_run_experiment.ipynb` and
-   run Runtime > Run all. Section 5 runs the models checked in section 3, all four by default, one
-   after another
+3. On a GPU runtime, run Runtime > Run all in `notebooks/01_run_experiment.ipynb`. Once the four
+   pilot runs passed on the commit checked out, section 5 runs the four full runs, one after
+   another
    ([below](#the-run-cell)). Each run chooses the layer from the validation role and continues;
    `chosen_layer.json` records why.
-4. If the session ends first, run Runtime > Run all again in a new session. `SCALE` at `auto` finds
-   the full runs' `last.pt` restored from Drive and continues them: finished stages skip and
-   training resumes from its last checkpoint. Section 3 prints which runs it found.
+4. If the session ends first, run Runtime > Run all again in a new session. The full runs'
+   `last.pt`, restored from Drive, lets them continue: finished stages skip and training resumes
+   from its last checkpoint. A new commit runs the tests and the pilot first.
 5. Section 6 merges the four runs' tables into `outputs/` with the command below; on your own
    machine, copy `runs/` from Drive first.
 
@@ -74,19 +74,17 @@ About the download:
 
 ## The run cell
 
-Section 5 of the notebook is one cell, "Run the chosen models":
+Section 5 of the notebook is one cell, "Run the pilot, then the full runs":
 
-1. For each model checked in section 3, in order, it runs
-   `garimpo run <scale> <model>`,
-   with `<scale>` `full` for the full runs. `--num-workers` defaults to the runtime's CPUs. The
+1. For each of the four models, in order, it runs `garimpo run pilot <model>` until all four
+   pilots passed on the commit checked out, then `garimpo run full <model>`. `--num-workers` defaults to the runtime's CPUs. The
    cell shows one line per stage with its duration and key numbers, such as
    `[ 3/28] infer  ok  39.7 s · test area error 0.042 ha/cell, bias -0.004 ha`; while a stage
    runs, its epochs, and a progress bar once a minute in the long loops. A failed stage adds its
    last 30 lines. `outputs/logs/<scale>-<model>.log` holds all that and every other line, each
    stage's command included, with the UTC time.
-2. Section 3's `FORCE_FROM` and `FORCE_VALIDATE` reach every one of those jobs as `--force-from`
-   and `--force-validate`. They stay set in the open tab, so clear them once the rerun passes.
-   Reopening the notebook from its link restores the values on `main`.
+2. Section 3's `FORCE_FROM` reaches every full job as `--force-from`. It stays set in the open
+   tab, so clear it once the rerun passes; reopening the notebook from its link empties it.
 3. It ends with `garimpo status <scale> --since <session start>`, which prints one line per model:
    the verdict of its last attempt.
 

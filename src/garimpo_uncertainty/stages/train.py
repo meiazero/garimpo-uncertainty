@@ -154,7 +154,7 @@ def read_resume(args: argparse.Namespace) -> dict | None:
     return resume
 
 
-def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
+def keep_unfinished_training(run_dir: Path, *, force: bool, discard_unfinished: bool) -> None:
     """Refuse --force over an unfinished run's last.pt, which training from scratch overwrites.
 
     --force-from train left in a Colab cell would otherwise restart after every lost session. A
@@ -170,7 +170,7 @@ def keep_unfinished_training(run_dir: Path, *, force: bool) -> None:
         return
     status = garimpo_uncertainty.pipeline.runner.read_status(run.status, "train")
     # Starting the work drops completed_fingerprint, so only a finished training still has it.
-    if "completed_fingerprint" not in status:
+    if "completed_fingerprint" not in status and not discard_unfinished:
         garimpo_uncertainty.pipeline.runner.fail_stage(
             run.status,
             "train",
@@ -549,6 +549,11 @@ def main() -> None:
         "--num-workers", type=int, default=garimpo_uncertainty.pipeline.runner.available_cpus()
     )
     parser.add_argument("--force", action="store_true", help="restart, ignoring last.pt")
+    parser.add_argument(
+        "--discard-unfinished",
+        action="store_true",
+        help="with --force, restart even over an unfinished last.pt; the pilot's job passes it",
+    )
     args = parser.parse_args()
     garimpo_uncertainty.pipeline.runner.log_to_stdout()
     try:
@@ -568,7 +573,9 @@ def main() -> None:
     identity = garimpo_uncertainty.data.tiles_identity(root, split, tile_ids)
     # In args, so a resume refuses tiles re-cut since last.pt, as it refuses other weights.
     args.tiles_sha256 = next(iter(identity.values()))
-    keep_unfinished_training(args.run_dir, force=args.force)
+    keep_unfinished_training(
+        args.run_dir, force=args.force, discard_unfinished=args.discard_unfinished
+    )
     run = garimpo_uncertainty.artifacts.RunPaths.of(args.run_dir)
     garimpo_uncertainty.pipeline.runner.run_stage(
         run.status,

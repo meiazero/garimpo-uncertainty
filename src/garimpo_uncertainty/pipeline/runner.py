@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # `layer_dir` holds the status itself, so no fingerprint is ever compared across two of them.
 IGNORED_ARGUMENTS = {
     "force",
+    "discard_unfinished",
     "device",
     "num_workers",
     "batch_size",
