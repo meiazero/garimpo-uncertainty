@@ -57,10 +57,12 @@ COMBINATIONS += tuple(
     (method, situation) for method in ASYMMETRIC_METHODS for situation in ("external", "own_region")
 )
 # Sensitivity analysis: the pooled external and own-region rows again, by repeated subsampling.
+# The weighted quantile has no subsampled form, so only these two calibrations get one.
+SUBSAMPLED_CALIBRATIONS = ("external", "own_region")
 COMBINATIONS += tuple(
     (method, f"{calibration}_subsampled")
     for method, calibration in COMBINATIONS
-    if calibration in {"external", "own_region"}
+    if calibration in SUBSAMPLED_CALIBRATIONS
 )
 SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
 DENSITY_RATIO_FOLDS = 5  # group folds of the cross-fitted domain classifier

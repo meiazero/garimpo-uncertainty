@@ -104,7 +104,10 @@ def quantile_per_cell(
     seed: int,
 ) -> np.ndarray:
     situation = calibration.removesuffix("_subsampled")
-    if situation not in SITUATIONS:
+    subsampled = situation != calibration
+    if situation not in SITUATIONS or (
+        subsampled and situation not in garimpo_uncertainty.intervals.SUBSAMPLED_CALIBRATIONS
+    ):
         raise ValueError(f"unknown calibration: {calibration!r}")
     populations = Populations(
         calibration_scores,
@@ -384,7 +387,6 @@ def fill_output_space_row(
     rows.n_scores[k] = len(problem.test if own_region else problem.calibration)
 
 
-# The filler of each method's rows; every other method is an output-space one.
 FILLERS = (
     {"independent_pixels": fill_independent_row}
     | dict.fromkeys(garimpo_uncertainty.intervals.COMPASS_METHODS, fill_compass_row)
