@@ -177,8 +177,9 @@ def draw_scores(
         x = np.geomspace(split[kept].min(), split[kept].max(), 50)
         ax.plot(x, np.exp(fit.intercept) * x**fit.slope, color="black", linewidth=0.8)
         ax.annotate(
-            f"inclinação {common.number(fit.slope)}\nn = {kept.sum()}, zeros = "
-            f"{((split == 0) | (score == 0)).sum()}, censuradas = {saturated.sum()}",
+            f"inclinação {common.number(fit.slope)}\nn = {common.number(kept.sum(), 0)}, zeros = "
+            f"{common.number(((split == 0) | (score == 0)).sum(), 0)}, "
+            f"censuradas = {common.number(saturated.sum(), 0)}",
             # Lower right: a large conformal score with a small COMPASS one is the rare case, and
             # censored scores fill the top.
             xy=(0.97, 0.04),
@@ -321,7 +322,7 @@ def draw_curves(ax: object, beta: np.ndarray, curves: np.ndarray) -> None:
     ax.plot(beta, curves[:, ascending], color=style.PALETTE["blue"], linewidth=0.5, alpha=0.6)
     ax.plot(beta, curves[:, ~ascending], color=style.PALETTE["red"], linewidth=0.8)
     ax.annotate(
-        f"crescentes: {ascending.sum()} de {len(ascending)}",
+        f"crescentes: {common.number(ascending.sum(), 0)} de {common.number(len(ascending), 0)}",
         xy=(0.03, 0.95),
         xycoords="axes fraction",
         va="top",
@@ -550,7 +551,12 @@ def draw_strata(ax: object, table: pd.DataFrame, methods: list[str], partition: 
         x = [100 * rows.loc[m, "picp"] for m in methods if m in rows.index]
         label = names.get(str(stratum.label), str(stratum.label))
         ax.plot(
-            x, y, marker, color=color, linestyle="none", label=f"{label} (n = {stratum.n_cells})"
+            x,
+            y,
+            marker,
+            color=color,
+            linestyle="none",
+            label=f"{label} (n = {common.number(stratum.n_cells, 0)})",
         )
     ax.set_yticks(range(len(methods)), [common.method_name(m) for m in methods])
     ax.tick_params(axis="y", length=0)

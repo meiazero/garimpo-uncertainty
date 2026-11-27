@@ -85,12 +85,12 @@ def split_composition(cells: pd.DataFrame, stem: Path) -> None:
         room = LABELED_SHARE * table.sum(axis=1).max()
         ax.bar_label(
             bars,
-            [str(n) if n >= room else "" for n in table[region]],
+            [common.number(n, 0) if n >= room else "" for n in table[region]],
             label_type="center",
             fontsize=6,
         )
     for row, total in zip(y, table.sum(axis=1), strict=True):
-        ax.text(total, row, f" {total}", va="center", fontsize=6)
+        ax.text(total, row, f" {common.number(total, 0)}", va="center", fontsize=6)
     ax.set_yticks(y, [ROLE_NAMES[r] for r in table.index])
     ax.invert_yaxis()
     ax.set_xlabel("Células")
@@ -111,7 +111,7 @@ def area_distribution(cells: pd.DataFrame, stem: Path) -> None:
     left.bar_label(
         bars,
         [
-            f"{common.number(share, 0)}%\nn = {(cells.role == r).sum()}"
+            f"{common.number(share, 0)}%\nn = {common.number((cells.role == r).sum(), 0)}"
             for share, r in zip(empty, roles, strict=True)
         ],
         fontsize=6,
@@ -128,7 +128,7 @@ def area_distribution(cells: pd.DataFrame, stem: Path) -> None:
                 np.arange(1, len(area) + 1) / len(area),
                 where="post",
                 color=color,
-                label=f"{ROLE_NAMES[role]} (n = {len(area)})",
+                label=f"{ROLE_NAMES[role]} (n = {common.number(len(area), 0)})",
             )
     right.set_xscale("log")
     right.set_xlabel("Área de referência das células com mineração (ha, log)")
@@ -205,7 +205,7 @@ def tile_map(tiles: pd.DataFrame, stem: Path) -> None:
                 color=color,
                 edgecolor="black",
                 linewidth=0.3,
-                label=f"{ROLE_NAMES[role]} (n = {len(shown)})",
+                label=f"{ROLE_NAMES[role]} (n = {common.number(len(shown), 0)})",
             )
     ax.set_xlim(-180, 180)
     ax.set_ylim(-60, 80)

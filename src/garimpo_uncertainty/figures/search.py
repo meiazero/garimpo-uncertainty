@@ -202,7 +202,7 @@ def search_convergence(runs: list[Run], stem: Path) -> None:
             loc="upper right",
             fontsize=6,
             title_fontsize=6,
-            title=f"n = {len(stored['cell_index'])} células",
+            title=f"n = {common.number(len(stored['cell_index']), 0)} células",
         )
     for ax in axes[-1]:
         ax.set_xlabel("Passo da bissecção")
