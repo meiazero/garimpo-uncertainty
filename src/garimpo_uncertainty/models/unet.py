@@ -1,13 +1,17 @@
 """The smp U-Net's fixed ResNet-18 encoder and the starting weights it may load."""
 
+import re
 from pathlib import Path
+from typing import Self
 
 import safetensors.torch
 import segmentation_models_pytorch
 import torch
 
 import garimpo_uncertainty.data
-import garimpo_uncertainty.models
+
+# A from-import, as garimpo_uncertainty.models imports this module while it initializes.
+from garimpo_uncertainty.models import ENCODER, LOGITS, MODEL_REGISTRY, Decode, SegmentationAdapter
 
 # Each choice names one model in every results table.
 UNET_VARIANTS = {
@@ -33,21 +37,56 @@ SENTINEL2_MOCO_BANDS = (
 )
 
 
-def build(
-    in_channels: int, encoder_weights: str, weights_file: Path | None
-) -> segmentation_models_pytorch.Unet:
-    """Build the U-Net, loading the chosen starting weights into its encoder."""
-    model = segmentation_models_pytorch.Unet(
-        encoder_name=garimpo_uncertainty.models.ENCODER,
-        encoder_weights=None,
-        in_channels=in_channels,
-        classes=1,
-    )
-    if encoder_weights == "imagenet":
-        load_imagenet(model, weights_file)
-    if encoder_weights == "sentinel2_moco":
-        load_sentinel2_moco(model, weights_file)
-    return model
+@MODEL_REGISTRY.register("unet")
+class UNet(SegmentationAdapter, segmentation_models_pytorch.Unet):
+    feature_layer = re.compile(r"decoder\.blocks\.\d+")
+    variants = UNET_VARIANTS
+
+    @classmethod
+    def create(
+        cls,
+        in_channels: int,
+        num_classes: int,
+        encoder_weights: str | None,
+        weights_file: Path | None,
+    ) -> Self:
+        """Build the U-Net, loading the chosen starting weights into its encoder."""
+        model = cls(
+            encoder_name=ENCODER,
+            encoder_weights=None,
+            in_channels=in_channels,
+            classes=num_classes,
+        )
+        if encoder_weights == "imagenet":
+            load_imagenet(model, weights_file)
+        if encoder_weights == "sentinel2_moco":
+            load_sentinel2_moco(model, weights_file)
+        return model
+
+    def split_at(self, layer: str, features: list[torch.Tensor]) -> tuple[torch.Tensor, Decode]:
+        total = len(self.decoder.blocks)
+        stage = total - 1 if layer == LOGITS else int(layer.rsplit(".", 1)[1])
+        with torch.no_grad():
+            z = self._run_blocks(features, self.decoder.center(features[-1]), range(stage + 1))
+            if layer == LOGITS:
+                return self.segmentation_head(z), lambda logits: logits
+
+        def decode(zi: torch.Tensor) -> torch.Tensor:
+            return self.segmentation_head(self._run_blocks(features, zi, range(stage + 1, total)))
+
+        return z, decode
+
+    def _run_blocks(
+        self, features: list[torch.Tensor], z: torch.Tensor, blocks: range
+    ) -> torch.Tensor:
+        # Mirrors UnetDecoder.forward of smp 0.6.0, which pyproject.toml pins for this reason.
+        shapes = [feature.shape[2:] for feature in features][::-1]
+        skips = features[1:-1][::-1]
+        for index in blocks:
+            height, width = shapes[index + 1]
+            skip = skips[index] if index < len(skips) else None
+            z = self.decoder.blocks[index](z, height, width, skip_connection=skip)
+        return z
 
 
 def load_imagenet(model: torch.nn.Module, path: Path) -> None:

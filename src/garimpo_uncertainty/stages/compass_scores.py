@@ -22,7 +22,6 @@ import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models.common
 import garimpo_uncertainty.pipeline.runner
 
 
@@ -85,7 +84,7 @@ def score_batch(
 ) -> BatchScores:
     """Search each method's scores on one batch, sharing one encoder pass; one row per method."""
     target = masks.to(torch.float64).flatten(1).sum(1) * garimpo_uncertainty.data.PIXEL_HA
-    features = garimpo_uncertainty.models.common.encode(model, x)
+    features = model.encode(x)
     spaces, jacobian, feature_sums = batch_spaces(model, features, fitted, args)
     found = [search_space(*space, target) for space in spaces]
     columns = [np.stack([row[c].cpu().numpy() for row in found]) for c in range(6)]

@@ -22,7 +22,6 @@ import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models.common
 import garimpo_uncertainty.pipeline.runner
 
 COMPASS_ROWS = (
@@ -124,7 +123,7 @@ def compass_endpoints(
     for images, _, _ in garimpo_uncertainty.cell_dataset.batches(loader):
         last = first + len(images)
         progress.advance(len(images))
-        features = garimpo_uncertainty.models.common.encode(model, images.to(device))
+        features = model.encode(images.to(device))
         spaces = garimpo_uncertainty.compass_j.spaces(
             garimpo_uncertainty.compass_j.split(model, features, args.layer),
             jacobians[first:last],

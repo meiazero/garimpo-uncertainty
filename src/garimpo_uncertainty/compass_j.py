@@ -16,7 +16,7 @@ import torch
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 
 
 def soft_area(temperature: float) -> Callable[[torch.Tensor], torch.Tensor]:
@@ -131,10 +131,8 @@ class Split(NamedTuple):
 
 def split(model: torch.nn.Module, features: list[torch.Tensor], layer: str) -> Split:
     """Split the batch at the logits, for COMPASS-L, and at `layer`, for COMPASS-J."""
-    logits, _ = garimpo_uncertainty.models.common.split_at(
-        model, garimpo_uncertainty.models.common.LOGITS, features
-    )
-    return Split(logits, *garimpo_uncertainty.models.common.split_at(model, layer, features))
+    logits, _ = model.split_at(garimpo_uncertainty.models.LOGITS, features)
+    return Split(logits, *model.split_at(layer, features))
 
 
 def spaces(

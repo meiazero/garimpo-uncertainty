@@ -20,8 +20,6 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models
-import garimpo_uncertainty.models.common
-import garimpo_uncertainty.models.unet
 import garimpo_uncertainty.pipeline.runner
 
 NO_BEST_DICE = -1.0
@@ -190,7 +188,7 @@ def new_metadata(
 ) -> dict:
     return {
         "arch": args.arch,
-        "variant": garimpo_uncertainty.models.common.variant_name(args.arch, args.encoder_weights),
+        "variant": garimpo_uncertainty.models.variant_name(args.arch, args.encoder_weights),
         "in_channels": len(garimpo_uncertainty.data.BANDS),
         "encoder": garimpo_uncertainty.models.ENCODER,
         "encoder_weights": args.encoder_weights,
@@ -227,7 +225,7 @@ def start_training(
     """Build the model and its optimizer, then restore both and the RNG from last.pt if resuming."""
     # A resume fills the model from last.pt, so only a fresh start reads pretrained weights.
     starting_weights = args.encoder_weights if resume is None else "none"
-    model = garimpo_uncertainty.models.common.build(
+    model = garimpo_uncertainty.models.build(
         args.arch,
         metadata["in_channels"],
         starting_weights,
@@ -509,13 +507,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "--arch",
-        choices=["convnet", "unet"],
+        choices=garimpo_uncertainty.models.MODEL_REGISTRY.names(),
         required=True,
         help="convnet is smp's DeepLabV3, with no skip connections; both use one ResNet-18 encoder",
     )
     parser.add_argument(
         "--encoder-weights",
-        choices=list(garimpo_uncertainty.models.unet.UNET_VARIANTS),
+        choices=sorted(
+            variant
+            for model in garimpo_uncertainty.models.MODEL_REGISTRY.entries.values()
+            for variant in model.variants
+        ),
         help="starting weights of the encoder; required for unet, invalid for convnet",
     )
     parser.add_argument("--run-dir", type=Path, required=True)
@@ -560,7 +562,7 @@ def main() -> None:
     args = parser.parse_args()
     garimpo_uncertainty.pipeline.runner.log_to_stdout()
     try:
-        garimpo_uncertainty.models.common.check_encoder_weights(args.arch, args.encoder_weights)
+        garimpo_uncertainty.models.check_encoder_weights(args.arch, args.encoder_weights)
     except ValueError as error:
         parser.error(str(error))
 

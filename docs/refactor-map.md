@@ -18,7 +18,7 @@ After each fix, before its push, one agent reviews the diff against two rules an
 
 ## Fixes: training pipeline
 
-- [ ] 1. Give each architecture an adapter registered by name (`@register_model("unet")`) that builds it from config, lists its COMPASS layers and splits it into f and g, so no caller branches on the architecture. (6 files)
+- [x] 1. Give each architecture an adapter registered by name (`@register_model("unet")`) that builds it from config, lists its COMPASS layers and splits it into f and g, so no caller branches on the architecture. (6 files)
   - `models/common.py:42` `build` branches `if arch == "convnet" / "unet"`.
   - `models/common.py:84` `split_at` branches on `isinstance(model, DeepLabV3)`.
   - `models/common.py:17` `FEATURE_LAYER` is one regex for both models, which must "never match the `decoder` both models have".

@@ -8,7 +8,7 @@ import torch
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def load_model(checkpoint: Path, cells: pd.DataFrame, device: str) -> tuple[torc
     metadata = content["meta"]
     garimpo_uncertainty.data.check_split(metadata, cells)
     warn_on_code_change(metadata)
-    model = garimpo_uncertainty.models.common.build(
+    model = garimpo_uncertainty.models.build(
         metadata["arch"],
         in_channels=metadata["in_channels"],
     )

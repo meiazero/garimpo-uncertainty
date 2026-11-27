@@ -12,7 +12,7 @@ import pandas as pd
 
 import garimpo_uncertainty.figures.orx_figstyle as style
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 from garimpo_uncertainty.figures import common
 from garimpo_uncertainty.figures.common import Run
 from garimpo_uncertainty.figures.results import (
@@ -296,7 +296,7 @@ def monotonicity_curves(runs: list[Run], stem: Path) -> None:
         with np.load(run.paths.monotonicity_curves("layer")) as stored:
             for ax, (direction, grid, _) in zip(row, SWEEPS, strict=True):
                 layer = (
-                    garimpo_uncertainty.models.common.LOGITS
+                    garimpo_uncertainty.models.LOGITS
                     if direction == "uniform"
                     else run.chosen_layer
                 )

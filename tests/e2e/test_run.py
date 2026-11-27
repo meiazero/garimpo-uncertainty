@@ -32,7 +32,7 @@ import pytest
 import garimpo_uncertainty.config
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 import garimpo_uncertainty.pipeline.run
 import garimpo_uncertainty.pipeline.runner
 from garimpo_uncertainty.stages.search_profile import PROFILE
@@ -628,8 +628,8 @@ def test_full_job_refuses_a_config_before_any_stage(run_root: Path) -> None:
 def test_versioned_configs_are_accepted_and_name_model_layers(scale: str, model: str) -> None:
     """A layer the model lacks would stop fit_directions only after the whole training."""
     config = garimpo_uncertainty.config.RunConfig.load(CONFIGS, scale, model)
-    built = garimpo_uncertainty.models.common.build(config["ARCH"], in_channels=6)
-    assert set(config["LAYERS"]) <= set(garimpo_uncertainty.models.common.feature_layers(built))
+    built = garimpo_uncertainty.models.build(config["ARCH"], in_channels=6)
+    assert set(config["LAYERS"]) <= set(built.feature_layers())
 
 
 @pytest.mark.parametrize("model", MODELS)

@@ -28,7 +28,7 @@ import garimpo_uncertainty.cell_dataset
 import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 import garimpo_uncertainty.stages.compass_scores
 import garimpo_uncertainty.stages.train
 
@@ -253,19 +253,19 @@ def benches(arch: str, layers: list[str], cells: int, seed: int) -> Iterator[Ben
     """Yield a Bench per decoder layer in `layers`, or per layer of the model when it is empty."""
     require_gpu()
     torch.manual_seed(CONFIG["SEED"])
-    model = garimpo_uncertainty.models.common.build(arch, BANDS)
+    model = garimpo_uncertainty.models.build(arch, BANDS)
     model = model.eval().requires_grad_(requires_grad=False).to("cuda")
-    known = garimpo_uncertainty.models.common.feature_layers(model)[:-1]
+    known = model.feature_layers()[:-1]
     if unknown := sorted(set(layers) - set(known)):
         raise SystemExit(f"{arch} has no layer {unknown}; its layers are {known}")
     generator = torch.Generator().manual_seed(seed)
     images = torch.randn((cells, BANDS, CELL_PX, CELL_PX), generator=generator)
     rate = torch.rand((cells, 1, 1, 1), generator=generator) * 0.3
     masks = (torch.rand((cells, 1, CELL_PX, CELL_PX), generator=generator) < rate).float()
-    features = garimpo_uncertainty.models.common.encode(model, images[:1].to("cuda"))
+    features = model.encode(images[:1].to("cuda"))
     rng = np.random.default_rng(seed)
     for layer in layers or known:
-        z, _ = garimpo_uncertainty.models.common.split_at(model, layer, features)
+        z, _ = model.split_at(layer, features)
         yield Bench(model, images, masks, layer, random_directions(z.shape[1], rng))
 
 
@@ -314,7 +314,7 @@ def training_run(
     bit: the model's build and the weights' copy are not the loop's.
     """
     torch.manual_seed(CONFIG["SEED"])
-    model = garimpo_uncertainty.models.common.build(arch, BANDS).to("cuda")
+    model = garimpo_uncertainty.models.build(arch, BANDS).to("cuda")
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=CONFIG["LR"], weight_decay=CONFIG["WEIGHT_DECAY"]
     )
@@ -383,7 +383,7 @@ def batch_inputs(bench: Bench, cells: slice) -> BatchInputs:
     """One batch's spaces, target, Jacobians and summed features, from the stage's batch_spaces."""
     stage_args = argparse.Namespace(**SEARCH, layer=bench.layer)
     images = bench.images[cells].to("cuda")
-    features = garimpo_uncertainty.models.common.encode(bench.model, images)
+    features = bench.model.encode(images)
     spaces, jacobians, feature_sums = garimpo_uncertainty.stages.compass_scores.batch_spaces(
         bench.model, features, bench.fitted, stage_args
     )

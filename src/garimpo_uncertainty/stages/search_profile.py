@@ -23,7 +23,6 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
-import garimpo_uncertainty.models.common
 import garimpo_uncertainty.pipeline.runner
 
 logger = logging.getLogger(__name__)
@@ -102,7 +101,7 @@ def profile_batch(
 ) -> dict[str, np.ndarray]:
     """Return every array of one batch, keyed layer:direction:name."""
     target = masks.to(torch.float64).flatten(1).sum(1) * garimpo_uncertainty.data.PIXEL_HA
-    features = garimpo_uncertainty.models.common.encode(model, images)
+    features = model.encode(images)
     found = {}
     for layer, fitted in layers.items():
         split = garimpo_uncertainty.compass_j.split(model, features, layer)

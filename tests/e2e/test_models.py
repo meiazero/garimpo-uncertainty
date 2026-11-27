@@ -6,7 +6,7 @@ import pytest
 import safetensors.torch
 import torch
 
-import garimpo_uncertainty.models.common
+import garimpo_uncertainty.models
 from tests.e2e import support
 
 IMAGENET_ARTIFACTS = support.ROOT / "tests" / "artifacts" / "imagenet"
@@ -27,17 +27,17 @@ def test_decomposition_reproduces_the_model(arch: str) -> None:
     """F then g must reproduce the model at every layer, and z must really drive the output."""
     torch.manual_seed(0)
     x = torch.randn(2, 6, support.CELL_PX, support.CELL_PX)
-    model = garimpo_uncertainty.models.common.build(arch, in_channels=6).eval()
-    layers = garimpo_uncertainty.models.common.feature_layers(model)
+    model = garimpo_uncertainty.models.build(arch, in_channels=6).eval()
+    layers = model.feature_layers()
     assert layers == EXPECTED_LAYERS[arch]
     encoder_passes = []
     model.encoder.conv1.register_forward_hook(lambda *_, passes=encoder_passes: passes.append(1))
     with torch.no_grad():
         expected = model(x)
         encoder_passes.clear()
-        features = garimpo_uncertainty.models.common.encode(model, x)
+        features = model.encode(x)
         for layer in layers:
-            z, decode = garimpo_uncertainty.models.common.split_at(model, layer, features)
+            z, decode = model.split_at(layer, features)
             assert torch.allclose(decode(z), expected, atol=1e-5), f"{arch}/{layer}"
             changed = decode(z + 1.0)
             assert not torch.allclose(changed, expected, atol=1e-3), f"{arch}/{layer} ignored z"
@@ -52,7 +52,7 @@ def test_renamed_decoder_modules_refuse_instead_of_offering_only_the_logits(
     arch: str, moved: list[str]
 ) -> None:
     """A library upgrade that renames the decoder's modules, simulated by moving each one."""
-    model = garimpo_uncertainty.models.common.build(arch, in_channels=6)
+    model = garimpo_uncertainty.models.build(arch, in_channels=6)
     for path in moved:
         parent_name, _, name = path.rpartition(".")
         parent = model.get_submodule(parent_name)
@@ -60,14 +60,14 @@ def test_renamed_decoder_modules_refuse_instead_of_offering_only_the_logits(
         delattr(parent, name)
         parent.add_module(f"renamed_{name}", module)
     with pytest.raises(ValueError, match="no decoder layer matches"):
-        garimpo_uncertainty.models.common.feature_layers(model)
+        model.feature_layers()
 
 
 @pytest.fixture(scope="module")
 def imagenet_file() -> tuple[Path, dict[str, torch.Tensor]]:
     IMAGENET_ARTIFACTS.mkdir(parents=True)
     path = IMAGENET_ARTIFACTS / "synthetic.safetensors"
-    encoder = garimpo_uncertainty.models.common.build("unet", 3).encoder
+    encoder = garimpo_uncertainty.models.build("unet", 3).encoder
     state = {key: value.clone() for key, value in encoder.state_dict().items()}
     safetensors.torch.save_file(state, path)
     return path, state
@@ -77,7 +77,7 @@ def test_imagenet_weights_cycle_and_rescale_rgb(
     imagenet_file: tuple[Path, dict[str, torch.Tensor]],
 ) -> None:
     path, state = imagenet_file
-    model = garimpo_uncertainty.models.common.build(
+    model = garimpo_uncertainty.models.build(
         "unet", 6, encoder_weights="imagenet", weights_file=path
     )
     loaded = model.encoder.state_dict()
@@ -95,9 +95,7 @@ def test_imagenet_weights_refuse_another_band_count(
     two_bands = state["conv1.weight"][:, :2].clone()
     safetensors.torch.save_file(state | {"conv1.weight": two_bands}, path)
     with pytest.raises(ValueError, match="3 bands"):
-        garimpo_uncertainty.models.common.build(
-            "unet", 6, encoder_weights="imagenet", weights_file=path
-        )
+        garimpo_uncertainty.models.build("unet", 6, encoder_weights="imagenet", weights_file=path)
 
 
 @pytest.fixture(scope="module")
@@ -107,7 +105,7 @@ def sentinel2_file() -> tuple[Path, dict[str, torch.Tensor]]:
 
 
 def build_from_sentinel2(path: Path) -> torch.nn.Module:
-    return garimpo_uncertainty.models.common.build(
+    return garimpo_uncertainty.models.build(
         "unet", 6, encoder_weights="sentinel2_moco", weights_file=path
     )
 
@@ -134,13 +132,9 @@ def test_layer_names_stay_valid_across_starting_weights(
 ) -> None:
     """RUN_ORDER relies on these two layers."""
     path, _ = sentinel2_file
-    scratch = garimpo_uncertainty.models.common.build("unet", 6)
-    assert garimpo_uncertainty.models.common.feature_layers(
-        build_from_sentinel2(path)
-    ) == garimpo_uncertainty.models.common.feature_layers(scratch)
-    assert {"decoder.blocks.3", "decoder.blocks.4"} <= set(
-        garimpo_uncertainty.models.common.feature_layers(scratch)
-    )
+    scratch = garimpo_uncertainty.models.build("unet", 6)
+    assert build_from_sentinel2(path).feature_layers() == scratch.feature_layers()
+    assert {"decoder.blocks.3", "decoder.blocks.4"} <= set(scratch.feature_layers())
 
 
 @pytest.mark.parametrize(
