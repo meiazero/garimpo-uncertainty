@@ -11,7 +11,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import segmentation_models_pytorch
 import torch
 
 import garimpo_uncertainty.artifacts
@@ -21,6 +20,11 @@ import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models
 import garimpo_uncertainty.pipeline.runner
+import garimpo_uncertainty.postprocess
+import garimpo_uncertainty.registry
+import garimpo_uncertainty.training.losses
+import garimpo_uncertainty.training.metrics
+import garimpo_uncertainty.training.optimizers
 
 NO_BEST_DICE = -1.0
 
@@ -55,62 +59,30 @@ def starting_weights_sha256(args: argparse.Namespace, root: Path) -> str | None:
     return garimpo_uncertainty.data.read_run_metadata(args.run_dir).get("encoder_weights_sha256")
 
 
-def build_loss(name: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
-    dice = segmentation_models_pytorch.losses.DiceLoss(mode="binary", from_logits=True)
-    bce = torch.nn.BCEWithLogitsLoss()
-    if name == "dice":
-        return dice
-    if name == "bce":
-        return bce
-    return lambda logits, mask: dice(logits, mask) + bce(logits, mask)
-
-
-def ratio(numerator: float, denominator: int) -> float:
-    return numerator / denominator if denominator else float("nan")
-
-
-def batch_scores(logits: torch.Tensor, masks: torch.Tensor) -> tuple[list[float], torch.Tensor]:
-    """Return the Dice of each cell with mining, and the batch's true, false and missed pixels."""
-    predictions = logits >= 0
-    references = masks > 0
-    intersection = (predictions & references).flatten(1).sum(1)
-    totals = predictions.flatten(1).sum(1) + references.flatten(1).sum(1)
-    has_mining = references.flatten(1).any(1)
-    dice = (2 * intersection / totals.clamp(min=1))[has_mining].tolist()
-    missed = (~predictions & references).sum()
-    return dice, torch.stack([intersection.sum(), (predictions & ~references).sum(), missed])
-
-
 @torch.no_grad()
 def validate(
-    model: torch.nn.Module,
-    loader: torch.utils.data.DataLoader,
-    device: str,
-    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
-    prefix: str,
+    state: "TrainingState", loader: torch.utils.data.DataLoader, device: str, prefix: str
 ) -> dict[str, float]:
-    """Return the Dice, loss, precision and recall in eval mode, in one pass over every cell.
+    """Return the loss and every chosen metric in eval mode, in one pass over every cell.
 
-    `val_dice`, the mean over cells with mining, picks the best checkpoint. The loss weighs each
-    batch by its cells; precision and recall count every pixel of every cell.
+    `val_dice` picks the best checkpoint. The loss weighs each batch by its cells.
     """
-    model.eval()
-    scores = []
+    state.model.eval()
+    metrics = {
+        name: garimpo_uncertainty.training.metrics.METRIC_REGISTRY.build(name)
+        for name in state.metric_names
+    }
     weighted_loss = 0.0
-    counted = torch.zeros(3, dtype=torch.long, device=device)
     for images, masks, _ in garimpo_uncertainty.cell_dataset.batches(loader):
-        logits = model(images.to(device))
+        logits = state.model(images.to(device))
         references = masks.to(device)
-        weighted_loss += loss_fn(logits, references).item() * len(images)
-        dice, pixels = batch_scores(logits, references)
-        scores += dice
-        counted += pixels
-    true_positive, false_positive, false_negative = counted.tolist()
-    return {
-        f"{prefix}_dice": float(np.mean(scores)) if scores else float("nan"),
-        f"{prefix}_loss": ratio(weighted_loss, len(loader.dataset)),
-        f"{prefix}_precision": ratio(true_positive, true_positive + false_positive),
-        f"{prefix}_recall": ratio(true_positive, true_positive + false_negative),
+        weighted_loss += state.loss_fn(logits, references).item() * len(images)
+        predictions = state.postprocess(logits)
+        for metric in metrics.values():
+            metric.update(predictions, references > 0)
+    loss = garimpo_uncertainty.training.metrics.ratio(weighted_loss, len(loader.dataset))
+    return {f"{prefix}_loss": loss} | {
+        f"{prefix}_{name}": metric.compute() for name, metric in metrics.items()
     }
 
 
@@ -120,7 +92,9 @@ class TrainingState:
 
     model: torch.nn.Module
     optimizer: torch.optim.Optimizer
-    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+    loss_fn: torch.nn.Module
+    postprocess: Callable[[torch.Tensor], torch.Tensor]
+    metric_names: list[str]
     metadata: dict
     arguments: dict[str, str]
     history: list[dict]
@@ -190,6 +164,7 @@ def new_metadata(
         "arch": args.arch,
         "variant": garimpo_uncertainty.models.variant_name(args.arch, args.encoder_weights),
         "in_channels": len(garimpo_uncertainty.data.BANDS),
+        "num_classes": args.num_classes,
         "encoder": garimpo_uncertainty.models.ENCODER,
         "encoder_weights": args.encoder_weights,
         "encoder_weights_sha256": args.encoder_weights_sha256,
@@ -224,33 +199,37 @@ def start_training(
 ) -> TrainingState:
     """Build the model and its optimizer, then restore both and the RNG from last.pt if resuming."""
     # A resume fills the model from last.pt, so only a fresh start reads pretrained weights.
-    starting_weights = args.encoder_weights if resume is None else "none"
     model = garimpo_uncertainty.models.build(
         args.arch,
         metadata["in_channels"],
-        starting_weights,
+        args.num_classes,
+        args.encoder_weights if resume is None else None,
         weights_file,
     ).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    loss_fn = build_loss(args.loss)
-    arguments = result_arguments(args)
+    state = TrainingState(
+        model=model,
+        optimizer=garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
+            args.optimizer, params=model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+        ),
+        loss_fn=garimpo_uncertainty.training.losses.LOSS_REGISTRY.build(args.loss),
+        postprocess=garimpo_uncertainty.postprocess.POSTPROCESS_REGISTRY.build(args.postprocess),
+        metric_names=args.metrics,
+        metadata=metadata,
+        arguments=result_arguments(args),
+        history=[],
+        best_dice=NO_BEST_DICE,
+        first_epoch=0,
+    )
     if resume is None:
-        return TrainingState(model, optimizer, loss_fn, metadata, arguments, [], NO_BEST_DICE, 0)
+        return state
     model.load_state_dict(resume["model"])
-    optimizer.load_state_dict(resume["optimizer"])
+    state.optimizer.load_state_dict(resume["optimizer"])
     torch.set_rng_state(resume["rng"])
     if resume["cuda_rng"] is not None:
         torch.cuda.set_rng_state(resume["cuda_rng"])
-    return TrainingState(
-        model,
-        optimizer,
-        loss_fn,
-        metadata,
-        arguments,
-        resume["history"],
-        resume["best_dice"],
-        resume["epoch"] + 1,
-    )
+    state.history, state.best_dice = resume["history"], resume["best_dice"]
+    state.first_epoch = resume["epoch"] + 1
+    return state
 
 
 def fit_epoch(
@@ -337,13 +316,13 @@ class Loaders:
 def evaluate_epoch(state: TrainingState, loaders: Loaders, device: str) -> dict:
     """Score the validation cells, then the training subset, both in eval mode, with their times."""
     validation_start = time.monotonic()
-    validated = validate(state.model, loaders.validation, device, state.loss_fn, "val")
+    validated = validate(state, loaders.validation, device, "val")
     validation_end = time.monotonic()
     validation_peak = garimpo_uncertainty.pipeline.runner.take_gpu_peak_bytes()
     # Each pass over a loader draws a seed from torch's CPU generator. Restoring it afterwards keeps
     # the training's random stream, and with it the trained weights, as they are without this pass.
     with torch.random.fork_rng(devices=[]):
-        scored = validate(state.model, loaders.train_eval, device, state.loss_fn, "train_eval")
+        scored = validate(state, loaders.train_eval, device, "train_eval")
     return {
         **validated,
         **scored,
@@ -503,6 +482,48 @@ def train(
     }
 
 
+def add_part_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the flags that pick a registered part: a name, or a JSON object with a name."""
+    optimizers = garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY
+    losses = garimpo_uncertainty.training.losses.LOSS_REGISTRY
+    parse = garimpo_uncertainty.registry.parse_spec
+    parser.add_argument("--num-classes", type=int, required=True, help="1: one logit per pixel")
+    parser.add_argument(
+        "--optimizer", type=parse, required=True, help=", ".join(optimizers.names())
+    )
+    parser.add_argument("--lr", type=float, required=True)
+    parser.add_argument("--weight-decay", type=float, required=True)
+    parser.add_argument("--loss", type=parse, required=True, help=", ".join(losses.names()))
+    parser.add_argument(
+        "--postprocess",
+        choices=garimpo_uncertainty.postprocess.POSTPROCESS_REGISTRY.names(),
+        required=True,
+    )
+    parser.add_argument(
+        "--metrics",
+        nargs="+",
+        choices=garimpo_uncertainty.training.metrics.METRIC_REGISTRY.names(),
+        required=True,
+    )
+
+
+def check_choices(args: argparse.Namespace) -> None:
+    """Raise when a chosen loss, optimizer or post-processing is unknown or misfits the classes."""
+    garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.entry(args.optimizer)
+    parts = {
+        "--loss": garimpo_uncertainty.training.losses.LOSS_REGISTRY.entry(args.loss),
+        "--postprocess": garimpo_uncertainty.postprocess.POSTPROCESS_REGISTRY.entry(
+            args.postprocess
+        ),
+    }
+    for flag, part in parts.items():
+        if part.multiclass != (args.num_classes > 1):
+            wants = "two or more classes" if part.multiclass else "one logit per pixel"
+            raise ValueError(f"{flag} wants {wants}, and --num-classes is {args.num_classes}")
+    if "dice" not in args.metrics:
+        raise ValueError("--metrics must include dice: val_dice picks the best checkpoint")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
@@ -545,9 +566,7 @@ def main() -> None:
         help="updates between validations, the same at every fraction (Bornschein et al., 2020)",
     )
     parser.add_argument("--batch-size", type=int, required=True)
-    parser.add_argument("--lr", type=float, required=True)
-    parser.add_argument("--weight-decay", type=float, required=True)
-    parser.add_argument("--loss", choices=["dice", "bce", "dice_bce"], required=True)
+    add_part_arguments(parser)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--device")
     parser.add_argument(
@@ -563,6 +582,7 @@ def main() -> None:
     garimpo_uncertainty.pipeline.runner.log_to_stdout()
     try:
         garimpo_uncertainty.models.check_encoder_weights(args.arch, args.encoder_weights)
+        check_choices(args)
     except ValueError as error:
         parser.error(str(error))
 

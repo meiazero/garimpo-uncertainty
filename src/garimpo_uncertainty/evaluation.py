@@ -15,9 +15,11 @@ import scipy.ndimage
 import scipy.stats
 
 import garimpo_uncertainty.intervals
+import garimpo_uncertainty.postprocess
 
 PROBABILITY_SCALE = 255
-HARD_THRESHOLD_U8 = 128  # round(0.5 * 255), so u8 >= 128 is p >= 0.5
+# 128, so u8 >= 128 is p >= 0.5, the decision of logits >= 0 in training.
+HARD_THRESHOLD_U8 = round(garimpo_uncertainty.postprocess.THRESHOLD * PROBABILITY_SCALE)
 CONFIDENCE = (2.5, 97.5)
 MIN_PAIRS_FOR_CORRELATION = 2
 

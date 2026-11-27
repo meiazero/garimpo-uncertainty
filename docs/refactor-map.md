@@ -25,12 +25,12 @@ After each fix, before its push, one agent reviews the diff against two rules an
   - `models/common.py:19` and `:30` (`check_encoder_weights`, `variant_name`) are two more `if arch ==` chains.
   - `stages/train.py:512` `--arch choices=["convnet", "unet"]` repeats the list by hand.
   - `NUM_CLASSES` comes from config (default 1); the COMPASS stages refuse anything but 1 with a clear error.
-- [ ] 2. Put losses, optimizers and training metrics in `LOSS_REGISTRY`, `OPTIMIZER_REGISTRY` and `METRIC_REGISTRY`, each loss an `nn.Module`, so `LOSS`, `OPTIMIZER` and the logged metrics come from config. (4 files)
+- [x] 2. Put losses, optimizers and training metrics in `LOSS_REGISTRY`, `OPTIMIZER_REGISTRY` and `METRIC_REGISTRY`, each loss an `nn.Module`, so `LOSS`, `OPTIMIZER` and the logged metrics come from config. (4 files)
   - `stages/train.py:60` `build_loss` is an `if name ==` chain, and `dice_bce` is a lambda.
   - `stages/train.py:548` `--loss choices=[...]` repeats the names by hand.
   - `stages/train.py:236` builds `AdamW` directly.
   - `stages/train.py:74` `batch_scores` computes Dice, precision and recall inline in `validate`.
-- [ ] 3. Put post-processing behind one `POSTPROCESS_REGISTRY` of pure `(logits: Tensor) -> Tensor` functions (`sigmoid_threshold` for 1 class, `softmax_argmax` for more), so the 0.5 decision is written once. (5 files)
+- [x] 3. Put post-processing behind one `POSTPROCESS_REGISTRY` of pure `(logits: Tensor) -> Tensor` functions (`sigmoid_threshold` for 1 class, `softmax_argmax` for more), so the 0.5 decision is written once. (5 files)
   - `stages/train.py:76` decides `logits >= 0`, `evaluation.py:20` decides `u8 >= 128`, `stages/infer.py:108` calls `torch.sigmoid`, and `compass2d/metrics.py:11` decides `logits >= 0` again.
 - [ ] 4. Make `CellDataset` only read `(image, mask)` as reflectance and take a `transform` built from config (`TRANSFORMS: [normalize, flips]`), with an optional `albumentations` entry. (4 files)
   - `cell_dataset.py:69-88` reads, converts DN to reflectance, z-scores and flips in one `__getitem__`.

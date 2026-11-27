@@ -3,9 +3,11 @@
 Each flag names the value it takes: a key of the run's config, or one of the job's own values in
 capitals too, such as CHECKPOINT or LAYER. Every name must be given, so a misspelled one fails
 instead of leaving the stage at its default; None leaves the flag out, as the ConvNet's
-ENCODER_WEIGHTS, and a list becomes one word per item.
+ENCODER_WEIGHTS, a list becomes one word per item, and an object, such as a loss with options,
+one word of JSON.
 """
 
+import json
 from dataclasses import dataclass
 
 Flags = tuple[tuple[str, str], ...]
@@ -65,9 +67,13 @@ STAGES = {
             ("--epochs", "EPOCHS"),
             ("--steps-per-epoch", "STEPS_PER_EPOCH"),
             ("--batch-size", "BATCH_SIZE"),
+            ("--num-classes", "NUM_CLASSES"),
+            ("--optimizer", "OPTIMIZER"),
             ("--lr", "LR"),
             ("--weight-decay", "WEIGHT_DECAY"),
             ("--loss", "LOSS"),
+            ("--postprocess", "POSTPROCESS"),
+            ("--metrics", "METRICS"),
             ("--seed", "SEED"),
             ("--num-workers", "NUM_WORKERS"),
         ),
@@ -154,5 +160,9 @@ def arguments(stage: str, values: dict) -> list[str]:
         value = values[name]
         if value is None:
             continue
-        words += [flag, *map(str, value)] if isinstance(value, list) else [flag, str(value)]
+        items = value if isinstance(value, list) else [value]
+        words += [
+            flag,
+            *(json.dumps(item) if isinstance(item, dict) else str(item) for item in items),
+        ]
     return words

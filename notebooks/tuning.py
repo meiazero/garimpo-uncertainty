@@ -29,8 +29,11 @@ import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models
+import garimpo_uncertainty.postprocess
 import garimpo_uncertainty.stages.compass_scores
 import garimpo_uncertainty.stages.train
+import garimpo_uncertainty.training.losses
+import garimpo_uncertainty.training.optimizers
 
 # Every section measures what `garimpo` runs, which turns these on for every command that loads
 # torch. cuBLAS reads CUBLAS_WORKSPACE_CONFIG at its first call, which comes later than this.
@@ -315,12 +318,24 @@ def training_run(
     """
     torch.manual_seed(CONFIG["SEED"])
     model = garimpo_uncertainty.models.build(arch, BANDS).to("cuda")
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=CONFIG["LR"], weight_decay=CONFIG["WEIGHT_DECAY"]
-    )
-    loss = garimpo_uncertainty.stages.train.build_loss(CONFIG["LOSS"])
     state = garimpo_uncertainty.stages.train.TrainingState(
-        model, optimizer, loss, {}, {}, [], math.nan, 0
+        model=model,
+        optimizer=garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
+            CONFIG["OPTIMIZER"],
+            params=model.parameters(),
+            lr=CONFIG["LR"],
+            weight_decay=CONFIG["WEIGHT_DECAY"],
+        ),
+        loss_fn=garimpo_uncertainty.training.losses.LOSS_REGISTRY.build(CONFIG["LOSS"]),
+        postprocess=garimpo_uncertainty.postprocess.POSTPROCESS_REGISTRY.build(
+            CONFIG["POSTPROCESS"]
+        ),
+        metric_names=CONFIG["METRICS"],
+        metadata={},
+        arguments={},
+        history=[],
+        best_dice=math.nan,
+        first_epoch=0,
     )
     batches = garimpo_uncertainty.cell_dataset.loader(
         store,

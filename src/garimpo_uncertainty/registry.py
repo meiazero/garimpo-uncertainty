@@ -1,5 +1,6 @@
 """A config names a model, a loss or any other swappable part; its registry builds it."""
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -28,7 +29,21 @@ class Registry:
     def names(self) -> list[str]:
         return sorted(self.entries)
 
+    def entry(self, spec: str | dict[str, Any]) -> Callable:
+        """Return what `spec` names, without building it."""
+        return self[spec if isinstance(spec, str) else spec["name"]]
+
     def build(self, spec: str | dict[str, Any], **arguments: Any) -> Any:
         """Build what `spec` names: a bare name, or {"name": ..., **options} from a config."""
         options = {"name": spec} if isinstance(spec, str) else dict(spec)
         return self[options.pop("name")](**options, **arguments)
+
+
+def parse_spec(text: str) -> str | dict[str, Any]:
+    """Read a command-line spec: a bare name, or a JSON object with a name and options."""
+    if not text.startswith("{"):
+        return text
+    spec = json.loads(text)
+    if not isinstance(spec, dict) or not isinstance(spec.get("name"), str):
+        raise ValueError(f"a spec object needs a name: {text}")  # noqa: TRY004 - argparse reads ValueError
+    return spec

@@ -79,6 +79,10 @@ FILLED = {
     "EPOCHS": 3,
     "STEPS_PER_EPOCH": int(support.STEPS_PER_EPOCH),
     "BATCH_SIZE": 8,
+    "NUM_CLASSES": 1,
+    "OPTIMIZER": "adamw",
+    "POSTPROCESS": "sigmoid_threshold",
+    "METRICS": ["dice", "precision", "recall"],
     "LR": 1e-3,
     # Not 0, which SEED holds, so a swap shows in the commands.
     "WEIGHT_DECAY": 1e-6,

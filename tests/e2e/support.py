@@ -342,9 +342,13 @@ def train_args(
         "EPOCHS": epochs,
         "STEPS_PER_EPOCH": STEPS_PER_EPOCH,
         "BATCH_SIZE": batch_size,
+        "NUM_CLASSES": "1",
+        "OPTIMIZER": "adamw",
         "LR": lr,
         "WEIGHT_DECAY": "0",
         "LOSS": "dice_bce",
+        "POSTPROCESS": "sigmoid_threshold",
+        "METRICS": ["dice", "precision", "recall"],
         "SEED": "0",
         "NUM_WORKERS": NUM_WORKERS,
     }
