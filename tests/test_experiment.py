@@ -58,18 +58,19 @@ def test_an_interrupt_reaches_the_job_once(
 ) -> None:
     """Colab interrupts garimpo experiment alone, a terminal its whole group; the job sees one.
 
-    The job ends `ends_with` on its first SIGINT and 3 on a second, which would kill a stage
-    mid-stop. A job that finished 0 just then still stops the models after it.
+    The job counts the SIGINTs it got, as a second would kill a stage mid-stop, and ends
+    `ends_with`: a job that finished 0 just then still stops the models after it.
     """
-    ready = tmp_path / "ready"
+    ready, seen = tmp_path / "ready", tmp_path / "seen"
     job = (
         "import pathlib, signal, sys, time\n"
         "seen = []\n"
-        "signal.signal(signal.SIGINT, lambda *_: sys.exit(3) if seen else seen.append(1))\n"
+        "signal.signal(signal.SIGINT, lambda *_: seen.append(1))\n"
         f"pathlib.Path({str(ready)!r}).touch()\n"
         "while not seen:\n"
         "    time.sleep(0.01)\n"
         "time.sleep(0.5)\n"
+        f"pathlib.Path({str(seen)!r}).write_text(str(len(seen)))\n"
         f"sys.exit({ends_with})\n"
     )
     parent = (
@@ -86,6 +87,7 @@ def test_an_interrupt_reaches_the_job_once(
     else:
         os.kill(process.pid, signal.SIGINT)
     assert process.wait(timeout=30) == 130
+    assert seen.read_text() == "1"
 
 
 def test_figures_at_a_scale_draw_only_the_runs_with_intervals(
@@ -101,6 +103,11 @@ def test_figures_at_a_scale_draw_only_the_runs_with_intervals(
     monkeypatch.setattr(
         garimpo_uncertainty.pipeline.status, "load", lambda scale, model: configs[model]
     )
-    found = garimpo_uncertainty.figures.make.runs_at("pilot", ["unet_scratch", "convnet"])
+    found = garimpo_uncertainty.figures.make.runs_at(
+        "pilot", ["unet_scratch", "convnet"], finished=False
+    )
     assert found == [done]
     assert "Left out convnet" in capsys.readouterr().out
+    # The other figures read the stages after the intervals, which this run has not done.
+    assert garimpo_uncertainty.figures.make.runs_at("pilot", ["unet_scratch"], finished=True) == []
+    assert "has no every stage ok yet" in capsys.readouterr().out
