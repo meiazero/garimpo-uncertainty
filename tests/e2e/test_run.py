@@ -616,6 +616,11 @@ def test_config_refuses_a_misspelled_or_misplaced_key(tmp_path: Path) -> None:
         garimpo_uncertainty.config.RunConfig.load(tmp_path, SCALE, "model")
 
 
+@pytest.mark.parametrize("name", garimpo_uncertainty.config.LISTS)
+def test_config_refuses_a_list_given_as_text(tmp_path: Path, name: str) -> None:
+    assert f"{name}: must be a list, got ''" in refusal(tmp_path, **{name: ""})
+
+
 @pytest.mark.parametrize("classes", [2, True, {}, "1"])
 def test_config_refuses_more_classes_than_the_stages_after_train_read(
     tmp_path: Path, classes: object

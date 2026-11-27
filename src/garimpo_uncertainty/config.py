@@ -55,6 +55,7 @@ BASE_KEYS = (
 # A list present in every run, and [] on purpose when a run takes no augmentation. null still
 # refuses, as a value left out rather than chosen.
 MAY_BE_EMPTY = ("AUGMENTATIONS",)
+LISTS = ("LAYERS", "METRICS", "AUGMENTATIONS", "CALLBACKS")
 REQUIRED = (*MODEL_KEYS, *SCALE_KEYS, *BASE_KEYS)
 # The architectures whose adapter takes starting weights; written out, as importing the models
 # loads torch, and tests/test_training_parts.py holds it equal to the registry.
@@ -114,8 +115,12 @@ def problems(values: dict, misplaced: list[str]) -> list[str]:
         or (key not in MAY_BE_EMPTY and is_empty(values[key]))
     ]
     found += beyond_train(values)
-    if not isinstance(values.get("LAYERS", []), list):
-        found.append("LAYERS: must be a list of layer names")
+    # "" is empty too, so only this tells it from the [] a run may choose.
+    found += [
+        f"{key}: must be a list, got {values[key]!r}"
+        for key in LISTS
+        if values.get(key) is not None and not isinstance(values[key], list)
+    ]
     floor = values.get("SCORE_FLOOR_HA")
     # calibrate checks the floor too, but only after training.
     is_number = isinstance(floor, int | float) and not isinstance(floor, bool)
