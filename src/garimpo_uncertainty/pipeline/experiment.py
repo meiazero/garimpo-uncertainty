@@ -26,10 +26,11 @@ TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
 def run_model(command: list[str]) -> int:
     """Run one `garimpo run` and return its exit code, passing on each interrupt to it.
 
-    Colab's interrupt reaches this process alone, and `garimpo run` needs it to stop its stage and
-    still run the check; the second, Colab's SIGTERM, makes it kill the stage at once.
+    `garimpo run` needs the interrupt to stop its stage and still run the check; the second,
+    Colab's SIGTERM, makes it kill the stage at once. The job gets a process group of its own, so
+    a terminal's Ctrl+C, sent to the whole group, reaches it once, through here, as Colab's does.
     """
-    with subprocess.Popen(command) as process:  # noqa: S603 - garimpo run with checked words
+    with subprocess.Popen(command, process_group=0) as process:  # noqa: S603 - checked words
         try:
             return process.wait()
         except KeyboardInterrupt:

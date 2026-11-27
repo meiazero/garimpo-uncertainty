@@ -4,6 +4,7 @@ import os
 import signal
 import sys
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -50,15 +51,22 @@ def test_the_full_runs_start_only_once_the_pilot_passed_on_this_code(
     assert code == result
 
 
-def test_an_interrupt_reaches_the_job_which_ends_on_its_own() -> None:
+def test_an_interrupt_reaches_the_job_which_ends_on_its_own(tmp_path: Path) -> None:
     """Colab interrupts this process alone; the job must get the SIGINT and stop its own way."""
+    ready = tmp_path / "ready"
     job = (
-        "import signal, sys, time\n"
+        "import pathlib, signal, sys, time\n"
         "signal.signal(signal.SIGINT, lambda *_: sys.exit(130))\n"
-        "print('ready', flush=True)\n"
+        f"pathlib.Path({str(ready)!r}).touch()\n"
         "time.sleep(60)\n"
     )
-    threading.Timer(2.0, os.kill, (os.getpid(), signal.SIGINT)).start()
+
+    def interrupt_once_ready() -> None:
+        while not ready.exists():
+            time.sleep(0.05)
+        os.kill(os.getpid(), signal.SIGINT)
+
+    threading.Thread(target=interrupt_once_ready, daemon=True).start()
     assert experiment.run_model([sys.executable, "-c", job]) == 130
 
 
