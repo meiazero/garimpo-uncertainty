@@ -1,6 +1,7 @@
 """Validation metrics by name, each accumulated over batches of predicted and reference masks.
 
-The masks are boolean (B, 1, H, W). A metric over no cell, or over cells with no mining, is NaN.
+The masks are boolean (B, 1, H, W). A metric with nothing to measure is NaN: Dice and recall
+without reference mining, precision without predicted mining.
 """
 
 import numpy as np

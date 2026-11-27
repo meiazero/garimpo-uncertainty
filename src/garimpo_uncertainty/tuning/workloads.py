@@ -52,13 +52,17 @@ SEARCH = {
     "temperature": compass2d.metrics.UPSTREAM_TEMPERATURE,
     "direction_temperature": float(CONFIG["DIRECTION_TEMPERATURE"]),
 }
-AUGMENTATIONS = tuple(
-    garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(spec)
-    for spec in CONFIG["AUGMENTATIONS"]
-)
 NORMALIZATION = {"mean": [0.1] * BANDS, "std": [0.05] * BANDS}
 SCORES = garimpo_uncertainty.stages.compass_scores.BatchScores._fields[:6]
 COMPASS_METHODS = garimpo_uncertainty.intervals.COMPASS_METHODS
+
+
+def augmentations() -> tuple:
+    """Build the config's augmentations when a section needs them, so a bad one fails only it."""
+    return tuple(
+        garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(spec)
+        for spec in CONFIG["AUGMENTATIONS"]
+    )
 
 
 def synthetic_store(root: Path, cells: int, seed: int) -> pd.DataFrame:
@@ -152,7 +156,7 @@ def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool
         CONFIG["BATCH_SIZE" if as_train else "EVAL_BATCH_SIZE"],
         workers,
         samples=len(cells) if as_train else None,
-        augmentations=AUGMENTATIONS if as_train else (),
+        augmentations=augmentations() if as_train else (),
     )
     sums = [
         torch.cat([checksum(tensor) for tensor in batch[:2]])
@@ -198,7 +202,7 @@ def training_run(
         CONFIG["BATCH_SIZE"],
         workers,
         samples=steps * CONFIG["BATCH_SIZE"],
-        augmentations=AUGMENTATIONS,
+        augmentations=augmentations(),
     )
     evict(store)
     with garimpo_uncertainty.tuning.measure.Usage() as usage:
