@@ -622,7 +622,9 @@ def test_coverage_by_stratum_matches_one_computation_per_cell(evaluation: Evalua
     define, with the cells without mining apart; and by
     what the model predicts, the only stratum known when an interval is used.
     """
-    table = pd.read_csv(evaluation.run_dir / "metrics" / "coverage_by_stratum.csv")
+    # pandas' default parser can miss the last bit, as 0.35000000000000003 read as 0.35.
+    path = evaluation.run_dir / "metrics" / "coverage_by_stratum.csv"
+    table = pd.read_csv(path, float_precision="round_trip")
     v, vhat, groups = evaluation.v, evaluation.vhat, evaluation.groups
     lower, upper = evaluation.lower, evaluation.upper
     edges = np.quantile(v[v > 0], [0.2, 0.4, 0.6, 0.8]).tolist()
