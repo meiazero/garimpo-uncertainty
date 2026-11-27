@@ -97,7 +97,13 @@ def test_early_stopping_resumes_from_what_last_pt_kept() -> None:
 
 
 @pytest.mark.parametrize(
-    "options", [{"patience": 0}, {"patience": True}, {"patience": 2, "mode": "best"}]
+    "options",
+    [
+        {"patience": 0},
+        {"patience": True},
+        {"patience": 2, "mode": "best"},
+        {"patience": 2, "monitor": None},
+    ],
 )
 def test_early_stopping_refuses_options_that_never_stop(options: dict) -> None:
     with pytest.raises(ValueError, match="early_stopping"):
@@ -144,9 +150,18 @@ def test_albumentations_refuses_what_is_not_a_serialized_pipeline(transform: dic
         )
 
 
-def test_albumentations_refuses_a_pipeline_that_changes_the_dtype() -> None:
-    pipeline = albumentations.Compose([albumentations.FromFloat(dtype="uint8")])
-    with pytest.raises(ValueError, match="must give float32 cells"):
+@pytest.mark.parametrize(
+    "step",
+    [
+        albumentations.FromFloat(dtype="uint8"),
+        albumentations.FromFloat(dtype="uint8", p=0.5),
+        albumentations.CenterCrop(510, 510, p=0.5),
+    ],
+    ids=["dtype", "dtype on some draws", "shape on some draws"],
+)
+def test_albumentations_refuses_a_pipeline_that_changes_the_cell(step: object) -> None:
+    pipeline = albumentations.Compose([step])
+    with pytest.raises(ValueError, match="must keep a float32 cell"):
         garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(
             {"name": "albumentations", "transform": albumentations.to_dict(pipeline)["transform"]}
         )

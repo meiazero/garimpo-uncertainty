@@ -18,6 +18,8 @@ AUGMENTATION_REGISTRY = garimpo_uncertainty.registry.Registry("augmentation")
 FLIP_PROBABILITY = 0.5
 # Albumentations seeds numpy's and Python's generators, which take any non-negative 32-bit int.
 SEED_BOUND = 2**32
+# A transform with p=0.5 escapes this many probes once in 2**16 configs; __call__ still refuses it.
+PROBES = 16
 
 
 class Augmentation:
@@ -68,19 +70,11 @@ class Albumentations(Augmentation):
         self.check_output()
 
     def check_output(self) -> None:
-        """Raise unless the pipeline gives a float32 cell with its mask, as the model reads one."""
+        """Run a few draws on a blank cell, so a wrong pipeline fails before training starts."""
         side, bands = garimpo_uncertainty.data.CELL_PX, len(garimpo_uncertainty.data.BANDS)
         image = np.zeros((bands, side, side), np.float32)
-        found, mask = self(image, np.zeros((1, side, side), np.float32), 0)
-        if (
-            found.dtype != np.float32
-            or found.ndim != image.ndim
-            or mask.shape[1:] != found.shape[1:]
-        ):
-            raise ValueError(
-                "albumentations: the pipeline must give float32 cells with their masks, "
-                f"not {found.dtype} {list(found.shape)} with a {list(mask.shape)} mask"
-            )
+        for seed in range(PROBES):
+            self(image, np.zeros((1, side, side), np.float32), seed)
 
     @override
     def draw(self, generator: torch.Generator) -> int:
@@ -93,7 +87,15 @@ class Albumentations(Augmentation):
         self.pipeline.set_random_seed(drawn)
         # Albumentations reads channels last, and a mask without channels.
         found = self.pipeline(image=image.transpose(1, 2, 0), mask=mask[0])
-        return found["image"].transpose(2, 0, 1), found["mask"][None]
+        cell, label = found["image"].transpose(2, 0, 1), found["mask"][None]
+        # The loader stacks cells of one shape, and the model reads float32.
+        if cell.dtype != np.float32 or cell.shape != image.shape or label.shape != mask.shape:
+            raise ValueError(
+                "albumentations: the pipeline must keep a float32 cell and its mask as they came, "
+                f"{list(image.shape)} and {list(mask.shape)}, not {cell.dtype} "
+                f"{list(cell.shape)} and {list(label.shape)}"
+            )
+        return cell, label
 
 
 class Transform:

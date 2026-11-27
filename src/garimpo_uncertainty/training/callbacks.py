@@ -101,6 +101,8 @@ class EarlyStopping(garimpo_uncertainty.training.loop.Callback):
     ) -> None:
         if type(patience) is not int or patience < 1:
             raise ValueError(f"early_stopping: patience must be a positive integer, got {patience}")
+        if type(monitor) is not str or not monitor:
+            raise ValueError(f"early_stopping: monitor must name a column, got {monitor!r}")
         if mode not in {"max", "min"}:
             raise ValueError(f"early_stopping: mode must be max or min, got {mode!r}")
         if not min_delta >= 0:
