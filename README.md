@@ -39,11 +39,12 @@ cd garimpo-uncertainty
 uv sync
 ```
 
-To move to a newer Colab runtime, lock against its published pip freeze, with the latest commit of
-github.com/googlecolab/backend-info in place of `0cadcd7`, then export:
+To move to a newer Colab runtime, lock against the pip freeze of the image it serves: the commit
+of github.com/googlecolab/backend-info whose freeze the runtime matches, not the newest, in place
+of `6e5e98c`. Then export:
 
 ```bash
-uv add --upgrade -c https://raw.githubusercontent.com/googlecolab/backend-info/0cadcd7/pip-freeze.gpu.txt --group dev --bounds exact pytest pytest-xdist ruff
+uv add --upgrade -c https://raw.githubusercontent.com/googlecolab/backend-info/6e5e98c/pip-freeze.gpu.txt --group dev --bounds exact pytest pytest-xdist ruff
 uv export --format requirements-txt --no-hashes --group dev -o requirements.txt
 ```
 

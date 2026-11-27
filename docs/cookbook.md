@@ -95,11 +95,12 @@ verdict before the last cell releases the runtime.
 
 1. If Colab moved to another CUDA, change the `cu130` index in `pyproject.toml` and in
    `.github/workflows/ci.yml` to match its torch build.
-2. Lock against the pip freeze Colab publishes, with the latest commit of
-   github.com/googlecolab/backend-info in place of `0cadcd7`, then export:
+2. Lock against the pip freeze of the image Colab serves: the commit of
+   github.com/googlecolab/backend-info whose freeze the runtime matches, not the newest, in place
+   of `6e5e98c`. Then export:
 
    ```bash
-   uv add --upgrade -c https://raw.githubusercontent.com/googlecolab/backend-info/0cadcd7/pip-freeze.gpu.txt --group dev --bounds exact pytest pytest-xdist ruff
+   uv add --upgrade -c https://raw.githubusercontent.com/googlecolab/backend-info/6e5e98c/pip-freeze.gpu.txt --group dev --bounds exact pytest pytest-xdist ruff
    uv export --format requirements-txt --no-hashes --group dev -o requirements.txt
    ```
 
