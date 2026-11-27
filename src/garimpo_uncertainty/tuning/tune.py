@@ -1,0 +1,121 @@
+"""`garimpo tune`: size the run to this GPU on synthetic cells, then judge what was measured.
+
+Every section runs even when one before it failed, so one run reports every finding; the command
+exits 1 when any section failed or lost a bit. outputs/tuning/results.json keeps the rows.
+"""
+
+import argparse
+import json
+import os
+import sys
+import traceback
+from pathlib import Path
+
+import garimpo_uncertainty.files
+import garimpo_uncertainty.tuning.sections
+import garimpo_uncertainty.tuning.verdict
+import garimpo_uncertainty.tuning.workloads
+
+OUT = garimpo_uncertainty.files.ROOT / "outputs" / "tuning"
+ARCHS = ("unet", "convnet")
+
+
+def worker_counts(chosen: list[int] | None) -> list[int]:
+    """Return the chosen counts with 0, the reference, or a spread up to every CPU."""
+    if chosen is not None:
+        return sorted({0, *chosen})
+    cpus = len(os.sched_getaffinity(0))
+    return sorted({0, 2, 4, cpus // 2, cpus} & set(range(cpus + 1)))
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("--archs", nargs="+", choices=ARCHS, default=list(ARCHS))
+    parser.add_argument("--cells", type=int, default=64, help="cells each search and batch reads")
+    parser.add_argument(
+        "--search-unet-layers", nargs="*", default=[], help="none: every decoder layer"
+    )
+    parser.add_argument(
+        "--timed-unet-layers", nargs="*", default=["decoder.blocks.0", "decoder.blocks.4"]
+    )
+    parser.add_argument("--loader-cells", type=int, default=256)
+    parser.add_argument("--workers", nargs="+", type=int, help="default: a spread up to every CPU")
+    parser.add_argument("--batch-sizes", nargs="+", type=int, default=[16, 32, 64])
+    parser.add_argument("--steps", type=int, default=20, help="updates per timed training run")
+    parser.add_argument("--repeats", type=int, default=3)
+    return parser.parse_args()
+
+
+def form(args: argparse.Namespace) -> dict:
+    """Return the choices as the sections read them, spelled out."""
+    workers = worker_counts(args.workers)
+    return {
+        "seed": 0,
+        "archs": args.archs,
+        "cells": args.cells,
+        "search_layers": {"unet": args.search_unet_layers, "convnet": []},
+        "timed_layers": {"unet": args.timed_unet_layers, "convnet": []},
+        "loader_cells": args.loader_cells,
+        "workers": workers,
+        "threads": sorted({1, *(count for count in workers if count > 0)}),
+        "batch_sizes": args.batch_sizes,
+        "steps": args.steps,
+        "repeats": args.repeats,
+    }
+
+
+def run_sections(chosen: dict, out: Path) -> tuple[dict, list[str]]:
+    """Run every section in order; a failure is noted and the later sections still run."""
+    results, failed = {}, []
+    for name, section in garimpo_uncertainty.tuning.sections.SECTIONS.items():
+        print(f"\n===== {name} =====", flush=True)
+        try:
+            results |= section(chosen, out)
+        except (Exception, SystemExit) as error:  # noqa: BLE001 - every section must get its turn
+            traceback.print_exc()
+            failed.append(f"{name}: {type(error).__name__}: {error}")
+    return results, failed
+
+
+def full_run_size() -> tuple[int, int]:
+    """Return the full run's updates and the cells its search stages read."""
+    full = garimpo_uncertainty.tuning.workloads.read_json(
+        garimpo_uncertainty.files.ROOT / "configs" / "scales" / "full.json"
+    )
+    tiles = garimpo_uncertainty.tuning.workloads.SPLIT["tiles_by_scale_role"]
+    evaluated = sum(
+        tiles.get(f"Artisanal/{role}", 0) for role in ("validation", "calibration", "test")
+    )
+    cells = garimpo_uncertainty.tuning.workloads.CELLS_PER_TILE * evaluated
+    return full["EPOCHS"] * full["STEPS_PER_EPOCH"], cells
+
+
+def show(results: dict, verdict: garimpo_uncertainty.tuning.verdict.Verdict) -> None:
+    if hardware := results.get("hardware"):
+        print(
+            f"{hardware['gpu']}, {hardware['gpu_memory_gb']} GB; {hardware['cpus']} CPUs; "
+            f"{hardware['ram_gb']} GB RAM"
+        )
+        print("Stack:", ", ".join(f"{key} {value}" for key, value in hardware["stack"].items()))
+    print("Findings:", *(f"- {line}" for line in verdict.findings), sep="\n")
+    print("Failures:", *(f"- {line}" for line in verdict.failures or ["none"]), sep="\n")
+    print(
+        "TUNING: FAIL"
+        if verdict.failures
+        else "TUNING: PASS: every section ran, and nothing lost a bit"
+    )
+
+
+def main() -> None:
+    chosen = form(parse_args())
+    print("Choices as the sections read them:", json.dumps(chosen, indent=2), sep="\n")
+    results, failed = run_sections(chosen, OUT)
+    OUT.mkdir(parents=True, exist_ok=True)
+    garimpo_uncertainty.files.write_json(OUT / "results.json", results)
+    updates, cells = full_run_size()
+    verdict = garimpo_uncertainty.tuning.verdict.judge(
+        results, failed, chosen["archs"], updates, cells
+    )
+    print("\n===== verdict =====")
+    show(results, verdict)
+    sys.exit(1 if verdict.failures else 0)

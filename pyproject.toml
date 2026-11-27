@@ -178,5 +178,6 @@ ban-relative-imports = "all"
 "scripts/*" = ["T201"]
 "src/garimpo_uncertainty/stages/*" = ["T201"]
 "src/garimpo_uncertainty/pipeline/*" = ["T201"]
+"src/garimpo_uncertainty/tuning/*" = ["T201"]
 # A Colab form line cannot wrap, and the notebook's prints are its output.
 "notebooks/*.ipynb" = ["E501", "T201"]
