@@ -1,0 +1,97 @@
+"""Training augmentations by name, and the transform that applies them after normalization.
+
+An augmentation draws its randomness in `draw`, in the main process with the sampler's generator,
+and applies it in `__call__`, in a worker. So a cell gets the same augmentation whatever worker
+loads it, and the number of workers leaves the trained weights alone.
+"""
+
+from typing import Any, override
+
+import numpy as np
+import torch
+
+import garimpo_uncertainty.registry
+
+AUGMENTATION_REGISTRY = garimpo_uncertainty.registry.Registry("augmentation")
+FLIP_PROBABILITY = 0.5
+# Albumentations seeds numpy's and Python's generators, which take any non-negative 32-bit int.
+SEED_BOUND = 2**32
+
+
+class Augmentation:
+    def draw(self, generator: torch.Generator) -> Any:
+        raise NotImplementedError
+
+    def __call__(
+        self, image: np.ndarray, mask: np.ndarray, drawn: Any
+    ) -> tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError
+
+
+@AUGMENTATION_REGISTRY.register("flips")
+class Flips(Augmentation):
+    """A horizontal and a vertical flip, each with probability one half."""
+
+    @override
+    def draw(self, generator: torch.Generator) -> tuple[bool, bool]:
+        horizontal, vertical = (torch.rand(2, generator=generator) > FLIP_PROBABILITY).tolist()
+        return horizontal, vertical
+
+    @override
+    def __call__(
+        self, image: np.ndarray, mask: np.ndarray, drawn: tuple[bool, bool]
+    ) -> tuple[np.ndarray, np.ndarray]:
+        horizontal, vertical = drawn
+        if horizontal:
+            image, mask = image[..., ::-1], mask[..., ::-1]
+        if vertical:
+            image, mask = image[..., ::-1, :], mask[..., ::-1, :]
+        return image, mask
+
+
+@AUGMENTATION_REGISTRY.register("albumentations")
+class Albumentations(Augmentation):
+    """A pipeline in Albumentations' serialized form, `A.to_dict(pipeline)["transform"]`."""
+
+    def __init__(self, transform: dict[str, Any]) -> None:
+        # Imported here, so only a config that names it loads OpenCV into every worker.
+        import albumentations  # noqa: PLC0415
+
+        self.pipeline = albumentations.from_dict({"transform": transform})
+
+    @override
+    def draw(self, generator: torch.Generator) -> int:
+        return int(torch.randint(SEED_BOUND, (), generator=generator))
+
+    @override
+    def __call__(
+        self, image: np.ndarray, mask: np.ndarray, drawn: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        self.pipeline.set_random_seed(drawn)
+        # Albumentations reads channels last, and a mask without channels.
+        found = self.pipeline(image=image.transpose(1, 2, 0), mask=mask[0])
+        return found["image"].transpose(2, 0, 1), found["mask"][None]
+
+
+class Transform:
+    """Z-scores a cell's reflectance when statistics are given, then applies each augmentation."""
+
+    def __init__(
+        self,
+        normalization: dict[str, list[float]] | None,
+        augmentations: tuple[Augmentation, ...] = (),
+    ) -> None:
+        self.augmentations = augmentations
+        self.mean, self.std = None, None
+        if normalization is not None:
+            self.mean = np.array(normalization["mean"], dtype=np.float32).reshape(-1, 1, 1)
+            self.std = np.array(normalization["std"], dtype=np.float32).reshape(-1, 1, 1)
+
+    def __call__(
+        self, image: np.ndarray, mask: np.ndarray, draws: tuple = ()
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if self.mean is not None:
+            image = (image - self.mean) / self.std
+        for augmentation, drawn in zip(self.augmentations, draws, strict=True):
+            image, mask = augmentation(image, mask, drawn)
+        return image, mask

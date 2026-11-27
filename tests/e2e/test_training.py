@@ -233,6 +233,37 @@ def test_encoder_weights_refusals(data_root: Path, tmp_path: Path, case: str, me
     assert message in result.stderr
 
 
+def replaced(args: list[str], flag: str, *values: str) -> list[str]:
+    """Return `args` with the words after `flag`, up to the next flag, replaced by `values`."""
+    start = args.index(flag) + 1
+    end = next((i for i in range(start, len(args)) if args[i].startswith("--")), len(args))
+    return [*args[:start], *values, *args[end:]]
+
+
+@pytest.mark.parametrize(
+    ("flag", "values", "message"),
+    [
+        ("--num-classes", ["2"], "--loss wants one logit per pixel"),
+        ("--loss", ["focal"], "unknown loss 'focal'"),
+        ("--loss", ['{"name": "dice_bce", "weight": 2}'], "unexpected keyword argument 'weight'"),
+        ("--optimizer", ["lion"], "unknown optimizer 'lion'"),
+        ("--metrics", ["precision"], "--metrics must include dice"),
+        (
+            "--callbacks",
+            ['{"name": "early_stopping", "patience": 2, "monitor": "val_iou"}'],
+            "monitors val_iou",
+        ),
+    ],
+)
+def test_parts_that_cannot_train_are_refused_before_any_epoch(
+    data_root: Path, tmp_path: Path, flag: str, values: list[str], message: str
+) -> None:
+    args = replaced(support.train_args("unet", tmp_path / "run"), flag, *values)
+    result = support.run("train", *args, data_root=data_root, check=False)
+    assert result.returncode == 2, result.stderr
+    assert message in result.stderr
+
+
 def test_imagenet_absent_file_names_the_command(data_root: Path, tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     args = [*support.train_args("unet", run_dir, epochs="1"), "--encoder-weights", "imagenet"]

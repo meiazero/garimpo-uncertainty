@@ -83,6 +83,8 @@ FILLED = {
     "OPTIMIZER": "adamw",
     "POSTPROCESS": "sigmoid_threshold",
     "METRICS": ["dice", "precision", "recall"],
+    "AUGMENTATIONS": ["flips"],
+    "CALLBACKS": [],
     "LR": 1e-3,
     # Not 0, which SEED holds, so a swap shows in the commands.
     "WEIGHT_DECAY": 1e-6,

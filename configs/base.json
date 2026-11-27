@@ -13,6 +13,10 @@
     "precision",
     "recall"
   ],
+  "AUGMENTATIONS": [
+    "flips"
+  ],
+  "CALLBACKS": [],
   "SEED": 0,
   "SVM_C": 1.0,
   "SVM_CLASS_WEIGHT": "balanced",

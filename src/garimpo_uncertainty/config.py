@@ -34,6 +34,8 @@ BASE_KEYS = (
     "LOSS",
     "POSTPROCESS",
     "METRICS",
+    "AUGMENTATIONS",
+    "CALLBACKS",
     "SEED",
     "SVM_C",
     "SVM_CLASS_WEIGHT",
@@ -50,6 +52,8 @@ BASE_KEYS = (
     "BOUNDARY_TOLERANCE_PX",
     "CELL_PX",
 )
+# Present in every run, but empty on purpose when a run takes none: no augmentation, no early stop.
+MAY_BE_EMPTY = ("AUGMENTATIONS", "CALLBACKS")
 REQUIRED = (*MODEL_KEYS, *SCALE_KEYS, *BASE_KEYS)
 
 
@@ -82,7 +86,11 @@ def layer_files(configs: Path, scale: str, model: str) -> dict[Path, tuple[str, 
 def problems(values: dict, misplaced: list[str]) -> list[str]:
     """Return why the composed values cannot run, one line per key."""
     found = list(misplaced)
-    found += [f"{key}: missing or empty" for key in REQUIRED if is_empty(values.get(key))]
+    found += [
+        f"{key}: missing or empty"
+        for key in REQUIRED
+        if key not in values or (key not in MAY_BE_EMPTY and is_empty(values[key]))
+    ]
     if values.get("ARCH") == "unet" and is_empty(values.get(ENCODER_WEIGHTS)):
         found.append(f"{ENCODER_WEIGHTS}: missing or empty, and the U-Net needs it")
     if not isinstance(values.get("LAYERS", []), list):

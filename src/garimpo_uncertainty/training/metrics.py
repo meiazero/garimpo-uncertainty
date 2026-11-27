@@ -15,8 +15,16 @@ def ratio(numerator: float, denominator: int) -> float:
     return numerator / denominator if denominator else float("nan")
 
 
+class Metric:
+    def update(self, predictions: torch.Tensor, references: torch.Tensor) -> None:
+        raise NotImplementedError
+
+    def compute(self) -> float:
+        raise NotImplementedError
+
+
 @METRIC_REGISTRY.register("dice")
-class MeanCellDice:
+class MeanCellDice(Metric):
     """The mean Dice over cells with mining; an empty cell has no Dice to average."""
 
     def __init__(self) -> None:
@@ -32,7 +40,7 @@ class MeanCellDice:
         return float(np.mean(self.scores)) if self.scores else float("nan")
 
 
-class PooledPixels:
+class PooledPixels(Metric):
     """Counts every pixel of every cell, so a large cell weighs more than a small one."""
 
     def __init__(self) -> None:

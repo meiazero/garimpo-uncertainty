@@ -349,6 +349,8 @@ def train_args(
         "LOSS": "dice_bce",
         "POSTPROCESS": "sigmoid_threshold",
         "METRICS": ["dice", "precision", "recall"],
+        "AUGMENTATIONS": ["flips"],
+        "CALLBACKS": [],
         "SEED": "0",
         "NUM_WORKERS": NUM_WORKERS,
     }

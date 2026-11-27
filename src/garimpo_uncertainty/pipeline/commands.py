@@ -74,6 +74,8 @@ STAGES = {
             ("--loss", "LOSS"),
             ("--postprocess", "POSTPROCESS"),
             ("--metrics", "METRICS"),
+            ("--augmentations", "AUGMENTATIONS"),
+            ("--callbacks", "CALLBACKS"),
             ("--seed", "SEED"),
             ("--num-workers", "NUM_WORKERS"),
         ),

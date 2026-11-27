@@ -31,7 +31,8 @@ import garimpo_uncertainty.intervals
 import garimpo_uncertainty.models
 import garimpo_uncertainty.postprocess
 import garimpo_uncertainty.stages.compass_scores
-import garimpo_uncertainty.stages.train
+import garimpo_uncertainty.training.augmentations
+import garimpo_uncertainty.training.loop
 import garimpo_uncertainty.training.losses
 import garimpo_uncertainty.training.optimizers
 
@@ -59,6 +60,10 @@ SEARCH = {
     "temperature": compass2d.metrics.UPSTREAM_TEMPERATURE,
     "direction_temperature": float(CONFIG["DIRECTION_TEMPERATURE"]),
 }
+AUGMENTATIONS = tuple(
+    garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(spec)
+    for spec in CONFIG["AUGMENTATIONS"]
+)
 NORMALIZATION = {"mean": [0.1] * BANDS, "std": [0.05] * BANDS}
 SCORES = garimpo_uncertainty.stages.compass_scores.BatchScores._fields[:6]
 COMPASS_METHODS = garimpo_uncertainty.intervals.COMPASS_METHODS
@@ -300,6 +305,7 @@ def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool
         CONFIG["BATCH_SIZE" if as_train else "EVAL_BATCH_SIZE"],
         workers,
         samples=len(cells) if as_train else None,
+        augmentations=AUGMENTATIONS if as_train else (),
     )
     sums = [
         torch.cat([checksum(tensor) for tensor in batch[:2]])
@@ -318,7 +324,7 @@ def training_run(
     """
     torch.manual_seed(CONFIG["SEED"])
     model = garimpo_uncertainty.models.build(arch, BANDS).to("cuda")
-    state = garimpo_uncertainty.stages.train.TrainingState(
+    state = garimpo_uncertainty.training.loop.TrainingState(
         model=model,
         optimizer=garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
             CONFIG["OPTIMIZER"],
@@ -344,11 +350,13 @@ def training_run(
         CONFIG["BATCH_SIZE"],
         workers,
         samples=steps * CONFIG["BATCH_SIZE"],
+        augmentations=AUGMENTATIONS,
     )
     evict(store)
     with Usage() as usage:
         started = time.monotonic()
-        fitted, _ = garimpo_uncertainty.stages.train.fit_epoch(state, batches, "cuda", started)
+        trainer = garimpo_uncertainty.training.loop.Trainer(state, "cuda", 1, [])
+        fitted, _ = trainer.fit_epoch(batches, started)
         torch.cuda.synchronize()
         seconds = time.monotonic() - started
     loops.append((seconds, fitted["train_data_wait_seconds"], usage.found))

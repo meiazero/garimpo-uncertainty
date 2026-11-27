@@ -32,11 +32,11 @@ After each fix, before its push, one agent reviews the diff against two rules an
   - `stages/train.py:74` `batch_scores` computes Dice, precision and recall inline in `validate`.
 - [x] 3. Put post-processing behind one `POSTPROCESS_REGISTRY` of pure `(logits: Tensor) -> Tensor` functions (`sigmoid_threshold` for 1 class, `softmax_argmax` for more), so the 0.5 decision is written once. (5 files)
   - `stages/train.py:76` decides `logits >= 0`, `evaluation.py:20` decides `u8 >= 128`, `stages/infer.py:108` calls `torch.sigmoid`, and `compass2d/metrics.py:11` decides `logits >= 0` again.
-- [ ] 4. Make `CellDataset` only read `(image, mask)` as reflectance and take a `transform` built from config (`TRANSFORMS: [normalize, flips]`), with an optional `albumentations` entry. (4 files)
+- [x] 4. Make `CellDataset` only read `(image, mask)` as reflectance and take a `transform` built from config (`TRANSFORMS: [normalize, flips]`), with an optional `albumentations` entry. (4 files)
   - `cell_dataset.py:69-88` reads, converts DN to reflectance, z-scores and flips in one `__getitem__`.
   - The `augment` flag (`cell_dataset.py:52`) and `normalization=None` (`:50`) select steps inside the reader.
   - `flips` keeps drawing in `FlippedDraws`, in the main process (`cell_dataset.py:17`, commit `5fcfc42`). `albumentations` draws inside the workers, so its weights change with the worker count; a run that picks it records that in `run_meta.json`.
-- [ ] 5. Make training a fixed loop (`train_step`, `val_step`, `on_epoch_end`) that calls callbacks built from config: `CheckpointCallback` (best by `val_dice` plus `last.pt`), `ConsoleLogCallback` (history.csv and the epoch line), `EarlyStoppingCallback` (`EARLY_STOPPING: null` by default). (4 files, after 2)
+- [x] 5. Make training a fixed loop (`train_step`, `val_step`, `on_epoch_end`) that calls callbacks built from config: `CheckpointCallback` (best by `val_dice` plus `last.pt`), `ConsoleLogCallback` (history.csv and the epoch line), `EarlyStoppingCallback` (`EARLY_STOPPING: null` by default). (4 files, after 2)
   - `stages/train.py:258` `fit_epoch` mixes the update with the data-wait clock and the gradient norms.
   - `stages/train.py:298` `save_epoch` writes history, `best_model.pt` and `last.pt` inside the epoch loop.
   - `stages/train.py:382` `run_epochs` builds the log line inside the loop.
