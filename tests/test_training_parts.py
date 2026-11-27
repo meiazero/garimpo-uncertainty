@@ -32,6 +32,15 @@ def test_registry_names_what_it_knows_and_refuses_a_second_entry() -> None:
         garimpo_uncertainty.registry.parse_spec('{"size": 3}')
 
 
+def test_a_spec_reads_the_same_whatever_order_its_keys_were_typed_in() -> None:
+    """A resume compares a spec's text with last.pt's, so the order must not refuse one."""
+    parse = garimpo_uncertainty.registry.parse_spec
+    typed = parse('{"name": "early_stopping", "patience": 2, "monitor": "val_loss"}')
+    assert str(typed) == str(
+        parse('{"monitor": "val_loss", "patience": 2, "name": "early_stopping"}')
+    )
+
+
 def test_dice_bce_is_the_sum_of_its_two_losses_to_the_bit() -> None:
     torch.manual_seed(0)
     logits, mask = torch.randn(2, 1, 8, 8), (torch.rand(2, 1, 8, 8) > 0.5).float()

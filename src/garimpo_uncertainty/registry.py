@@ -46,4 +46,5 @@ def parse_spec(text: str) -> str | dict[str, Any]:
     spec = json.loads(text)
     if not isinstance(spec, dict) or not isinstance(spec.get("name"), str):
         raise ValueError(f"a spec object needs a name: {text}")  # noqa: TRY004 - argparse reads ValueError
-    return spec
+    # Sorted keys, so the order a config typed them in leaves a run's identity in last.pt alone.
+    return json.loads(json.dumps(spec, sort_keys=True))
