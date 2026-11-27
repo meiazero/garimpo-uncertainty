@@ -22,7 +22,7 @@ import garimpo_uncertainty.pipeline.status
 STOPPED = 130
 INTERRUPTED = {STOPPED, -2, -9, -15}
 TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
-# How soon an interrupt reaches the job.
+# How soon an interrupt reaches the job, and the least time between two.
 FORWARD_SECONDS = 0.1
 # This interpreter, so each job runs the code loaded here whatever PATH holds.
 GARIMPO = [sys.executable, "-m", "garimpo_uncertainty"]
@@ -53,7 +53,8 @@ def run_model(command: list[str]) -> int:
         process = subprocess.Popen(command, process_group=0)  # noqa: S603 - checked words
         sent = 0
         while True:
-            while sent < len(interrupts):
+            # One per step: garimpo run's stop must be under way before a second kills the stage.
+            if sent < len(interrupts):
                 sent += 1
                 process.send_signal(signal.SIGINT if sent == 1 else signal.SIGTERM)
             try:

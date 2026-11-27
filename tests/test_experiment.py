@@ -155,6 +155,35 @@ def test_a_second_interrupt_reaches_the_job_as_sigterm(tmp_path: Path) -> None:
     assert seen.read_text() == "int,term"
 
 
+def test_two_interrupts_at_once_reach_the_job_apart(tmp_path: Path) -> None:
+    """A SIGTERM right after SIGINT would cut garimpo run's stop short, before the stage dies."""
+    ready, seen = tmp_path / "ready", tmp_path / "seen"
+    job = (
+        "import pathlib, signal, sys, time\n"
+        "seen = []\n"
+        "signal.signal(signal.SIGINT, lambda *_: seen.append(time.monotonic()))\n"
+        "signal.signal(signal.SIGTERM, lambda *_: seen.append(time.monotonic()))\n"
+        f"pathlib.Path({str(ready)!r}).touch()\n"
+        "deadline = time.monotonic() + 10\n"
+        "while len(seen) < 2 and time.monotonic() < deadline:\n"
+        "    time.sleep(0.001)\n"
+        f"pathlib.Path({str(seen)!r}).write_text(str(seen[1] - seen[0]))\n"
+    )
+    parent = (
+        "import sys\n"
+        "import garimpo_uncertainty.pipeline.experiment as experiment\n"
+        f"sys.exit(experiment.run_model([sys.executable, '-c', {job!r}]))\n"
+    )
+    process = subprocess.Popen([sys.executable, "-c", parent], start_new_session=True)  # noqa: S603
+    deadline = time.monotonic() + 30
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    os.kill(process.pid, signal.SIGINT)
+    os.kill(process.pid, signal.SIGTERM)
+    assert process.wait(timeout=30) == 130
+    assert float(seen.read_text()) >= 0.9 * experiment.FORWARD_SECONDS
+
+
 def test_an_interrupt_while_the_job_starts_still_reaches_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
