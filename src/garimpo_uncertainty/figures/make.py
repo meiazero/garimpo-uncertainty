@@ -91,7 +91,7 @@ def main() -> None:
         run_dirs, out = runs_at(scale, args.models, finished=finished), out / scale
         print(f"Scale {scale}; runs {', '.join(map(str, run_dirs)) or 'none'}.")
     if not run_dirs:
-        print("Skipped: no chosen model has a run with intervals.")
+        print("Skipped: no chosen model has a run that holds what these figures read.")
         return
     style.use_style()
     runs = [Run.of(run_dir) for run_dir in run_dirs]

@@ -28,7 +28,7 @@ Paths without a prefix are inside the run directory.
 | `garimpo check` | any | status files and tables | prints the debugging report |
 | `garimpo status` | any | `configs/`, each run's `last.pt`, `outputs/logs/` | prints the scale `auto` picks, each run's values and the verdict of its last attempt |
 | `garimpo experiment` | GPU | `configs/`, each pilot run's `verdict.json` | one `garimpo run` per model: the pilot until all four pass on the commit checked out, then the full runs; then `garimpo status` and `garimpo merge` of each scale that ran |
-| `garimpo figures` | any | finished run directories, or `--scale` and `--models` for the runs of `configs/` that have intervals | the figures of [figures.md](figures.md), into `--out`, or `<out>/<scale>` with `--scale` |
+| `garimpo figures` | any | finished run directories, or `--scale` and `--models` for the runs of `configs/` whose every stage is ok, or that have intervals for `qualitative_cells` alone | the figures of [figures.md](figures.md), into `--out`, or `<out>/<scale>` with `--scale` |
 | `garimpo tune` | GPU | synthetic cells it writes to `outputs/tuning/store/` | prints the findings and `TUNING: PASS` or `FAIL`; `outputs/tuning/results.json` |
 
 `garimpo run` runs the stages from `train` to `search_profile` in `STAGE_ORDER`
