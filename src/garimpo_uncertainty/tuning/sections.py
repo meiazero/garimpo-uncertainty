@@ -128,7 +128,8 @@ def time_searches(bench: work.Bench, form: dict, batches: int, size: int) -> Sea
             for name, searcher in work.SEARCHERS.items()
         }
         timed = measure.time_candidates(runs, form["repeats"])
-        bitwise &= measure.same(timed["memo"], timed["separate"]) and timed["memo"].stable
+        stable = all(found.stable for found in timed.values())
+        bitwise &= measure.same(timed["memo"], timed["separate"]) and stable
         usage += timed["memo"].usage
         for name, found in timed.items():
             runs_so_far = zip(seconds[name], found.seconds, strict=True)

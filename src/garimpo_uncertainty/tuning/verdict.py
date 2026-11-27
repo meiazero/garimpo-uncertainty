@@ -27,7 +27,7 @@ def overlap(first: dict, second: dict) -> bool:
 
 def cheapest_tied(rows: list[dict], cost: str) -> dict | None:
     """Return the safe row of least `cost` whose timed range overlaps the fastest safe row's."""
-    safe = [row for row in rows if "seconds" in row and row["bitwise"]]
+    safe = [row for row in rows if "seconds" in row and row["bitwise"] and row["stable"]]
     if not safe:
         return None
     fastest = min(safe, key=lambda row: row["seconds"]["median"])
@@ -46,8 +46,9 @@ class Verdict:
         # train's flips follow its draws, so no worker count may change what either read gives.
         self.failures.extend(
             f"loader: {r['reads_as']} at {r['workers']} workers read other bytes"
+            + ("" if r["stable"] else " between two runs")
             for r in rows
-            if not r["bitwise"]
+            if not (r["bitwise"] and r["stable"])
         )
         stages = [row for row in rows if row["reads_as"] == "stages"]
         best = max(stages, key=lambda row: row["cells_per_second"])
@@ -170,8 +171,9 @@ class Verdict:
             width = [row for row in rows if row["channels"] == channels]
             self.failures.extend(
                 f"lightgbm {channels} channels: {r['jobs']} threads gave other ratios"
+                + ("" if r["stable"] else " between two runs")
                 for r in width
-                if not r["bitwise"]
+                if not (r["bitwise"] and r["stable"])
             )
             pick = cheapest_tied(width, "jobs")
             self.findings.append(

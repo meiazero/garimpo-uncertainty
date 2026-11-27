@@ -33,8 +33,20 @@ def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:
     verdict.train("unet", [train_row(0, 0.5, stable=False), train_row(2, 0.4)])
     verdict.loader(
         [
-            {"reads_as": "stages", "workers": 0, "bitwise": True, "cells_per_second": 10.0},
-            {"reads_as": "train", "workers": 2, "bitwise": False, "cells_per_second": 20.0},
+            {
+                "reads_as": "stages",
+                "workers": 0,
+                "bitwise": True,
+                "stable": True,
+                "cells_per_second": 10.0,
+            },
+            {
+                "reads_as": "train",
+                "workers": 2,
+                "bitwise": False,
+                "stable": True,
+                "cells_per_second": 20.0,
+            },
         ]
     )
     assert verdict.failures == [
@@ -79,6 +91,19 @@ def test_an_unstable_candidate_or_a_failed_worker_count_fails_the_tuning() -> No
     assert verdict.failures == [
         "precision unet l strict_fp32_autotuned: other bits twice",
         "train unet: 2 workers failed, so their weights went unchecked",
+    ]
+
+
+def test_a_loader_or_lightgbm_row_that_differs_between_two_runs_fails_the_tuning() -> None:
+    verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
+    read = {"reads_as": "stages", "workers": 0, "bitwise": True, "stable": False}
+    verdict.loader([read | {"cells_per_second": 10.0}])
+    seconds = {"median": 1.0, "low": 0.9, "high": 1.1}
+    ratio = {"channels": 16, "jobs": 1, "bitwise": True, "stable": False, "seconds": seconds}
+    verdict.lightgbm([ratio])
+    assert verdict.failures == [
+        "loader: stages at 0 workers read other bytes between two runs",
+        "lightgbm 16 channels: 1 threads gave other ratios between two runs",
     ]
 
 
