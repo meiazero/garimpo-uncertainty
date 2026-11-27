@@ -1,6 +1,10 @@
 """`garimpo figures`: the dissertation's figures, drawn from finished runs.
 
     garimpo figures runs/full/*-f1.0 --out outputs/figures
+    garimpo figures --scale auto --out outputs/figures
+
+With --scale, the runs are those of configs/models/ at that scale that have intervals, and the
+figures go to <out>/<scale>, the scale `auto` resolves to.
 
 Each figure is a function of FIGURES, whose docstring says what claim it makes and which section of
 the dissertation it serves; docs/figures.md lists them. Every number comes from the runs' files,
@@ -11,12 +15,15 @@ import argparse
 from collections.abc import Callable
 from pathlib import Path
 
+import garimpo_uncertainty.artifacts
+import garimpo_uncertainty.config
 import garimpo_uncertainty.figures.diagnostics
 import garimpo_uncertainty.figures.latent
 import garimpo_uncertainty.figures.maps
 import garimpo_uncertainty.figures.orx_figstyle as style
 import garimpo_uncertainty.figures.results
 import garimpo_uncertainty.figures.search
+import garimpo_uncertainty.pipeline.status
 from garimpo_uncertainty.figures.common import Run
 
 Figure = Callable[[list[Run], Path], None]
@@ -29,17 +36,51 @@ FIGURES: dict[str, Figure] = (
 )
 
 
+def runs_at(scale: str, models: list[str]) -> list[Path]:
+    """Return the run of each model at `scale` that has intervals, naming the ones left out."""
+    found = []
+    for model in models:
+        config = garimpo_uncertainty.pipeline.status.load(scale, model)
+        if config is None:
+            continue
+        run = Path(config.run_dir)
+        if garimpo_uncertainty.artifacts.RunPaths.of(run).intervals.exists():
+            found.append(run)
+        else:
+            print(f"Left out {model}: {run} has no intervals yet.")
+    return found
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        allow_abbrev=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("runs", nargs="*", type=Path, help="finished run directories")
+    parser.add_argument("--scale", help="instead of runs: a file of configs/scales/, or auto")
     parser.add_argument(
-        "runs", nargs="+", type=Path, help="finished run directories, one per model"
+        "--models",
+        nargs="+",
+        default=garimpo_uncertainty.config.models(garimpo_uncertainty.pipeline.status.CONFIGS),
+        help="with --scale, the models to draw; default: every file of configs/models/",
     )
     parser.add_argument("--out", type=Path, required=True, help="where the PDF and SVG files go")
     parser.add_argument(
         "--only", nargs="+", choices=list(FIGURES), help="draw these figures; default: all"
     )
     args = parser.parse_args()
+    if bool(args.runs) == bool(args.scale):
+        parser.error("give either run directories or --scale")
+    run_dirs, out = args.runs, args.out
+    if args.scale:
+        scale = garimpo_uncertainty.pipeline.status.choose_scale(args.scale)
+        run_dirs, out = runs_at(scale, args.models), out / scale
+        print(f"Scale {scale}; runs {', '.join(map(str, run_dirs)) or 'none'}.")
+    if not run_dirs:
+        print("Skipped: no chosen model has a run with intervals.")
+        return
     style.use_style()
-    runs = [Run.of(run_dir) for run_dir in args.runs]
+    runs = [Run.of(run_dir) for run_dir in run_dirs]
     for name in args.only or FIGURES:
-        FIGURES[name](runs, args.out / name)
+        FIGURES[name](runs, out / name)
