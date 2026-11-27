@@ -22,6 +22,8 @@ import garimpo_uncertainty.pipeline.status
 STOPPED = 130
 INTERRUPTED = {STOPPED, -2, -9, -15}
 TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
+# This interpreter, so each job runs the code loaded here whatever PATH holds.
+GARIMPO = [sys.executable, "-m", "garimpo_uncertainty"]
 # The order main ran them in: a session cut short has the reference U-Net done first.
 ORDER = ("unet_scratch", "unet_imagenet", "unet_sentinel2", "convnet")
 
@@ -58,7 +60,7 @@ def run_scale(scale: str, options: list[str]) -> int:
     configs = garimpo_uncertainty.pipeline.status.CONFIGS
     for model in run_order(garimpo_uncertainty.config.models(configs)):
         print(f"\n===== {scale} · {model} =====", flush=True)
-        code = run_model(["garimpo", "run", scale, model, *options])
+        code = run_model([*GARIMPO, "run", scale, model, *options])
         if code in INTERRUPTED:
             print("Interrupted: the models after this one did not run.")
             return STOPPED
@@ -111,7 +113,7 @@ def main() -> None:
                 f"Not merged: a {scale} run failed or stopped, so {TABLES[scale]} keeps its tables."
             )
             continue
-        merge = ["garimpo", "merge", "--out", str(TABLES[scale]), "--scale", scale]
+        merge = [*GARIMPO, "merge", "--out", str(TABLES[scale]), "--scale", scale]
         merged = subprocess.run(merge, check=False)  # noqa: S603
         code = code or (1 if merged.returncode else 0)
     sys.exit(code)

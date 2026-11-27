@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import garimpo_uncertainty.config
 import garimpo_uncertainty.figures.make
 import garimpo_uncertainty.pipeline.experiment
 import garimpo_uncertainty.pipeline.status
@@ -67,6 +68,15 @@ def test_only_a_scale_whose_runs_all_passed_is_merged(monkeypatch: pytest.Monkey
         experiment.main()
     assert merged == ["pilot"]
     assert exited.value.code == 1
+
+
+def test_each_job_runs_the_code_this_interpreter_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A `garimpo` found on PATH may be another install, or none."""
+    commands = []
+    monkeypatch.setattr(experiment, "run_model", lambda command: commands.append(command) or 0)
+    monkeypatch.setattr(garimpo_uncertainty.config, "models", lambda configs: ["convnet"])
+    assert experiment.run_scale("pilot", []) == 0
+    assert commands == [[sys.executable, "-m", "garimpo_uncertainty", "run", "pilot", "convnet"]]
 
 
 def test_the_models_run_in_main_s_order_with_a_new_one_last() -> None:
