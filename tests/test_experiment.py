@@ -1,5 +1,9 @@
 """Which scales `garimpo experiment` runs, and which runs `garimpo figures --scale` draws."""
 
+import os
+import signal
+import sys
+import threading
 import types
 from pathlib import Path
 
@@ -13,35 +17,49 @@ experiment = garimpo_uncertainty.pipeline.experiment
 
 
 @pytest.mark.parametrize(
-    ("passes", "interrupted", "expected_runs", "ran"),
+    ("passes", "codes", "expected_runs", "result"),
     [
         # The pilot passes on this code, so the full runs follow, forced from calibrate.
-        (["pilot", "full"], False, [("pilot", []), ("full", ["--force-from", "calibrate"])], 2),
-        # A pilot that does not pass keeps the full runs waiting.
-        (["pilot", "pilot"], False, [("pilot", [])], 1),
+        (["pilot", "full"], [0, 0], [("pilot", []), ("full", ["--force-from", "calibrate"])], 0),
+        # A pilot that does not pass keeps the full runs waiting, and fails the command.
+        (["pilot", "pilot"], [0], [("pilot", [])], 1),
         # An interrupted pilot stops everything after it.
-        (["pilot"], True, [("pilot", [])], 1),
-        # A pilot already passed: only the full runs.
-        (["full"], False, [("full", ["--force-from", "calibrate"])], 1),
+        (["pilot"], [130], [("pilot", [])], 130),
+        # A pilot already passed: only the full runs, whose failure is the command's.
+        (["full"], [1], [("full", ["--force-from", "calibrate"])], 1),
     ],
 )
 def test_the_full_runs_start_only_once_the_pilot_passed_on_this_code(
     monkeypatch: pytest.MonkeyPatch,
     passes: list[str],
-    interrupted: bool,
+    codes: list[int],
     expected_runs: list,
-    ran: int,
+    result: int,
 ) -> None:
-    answers, runs = iter(passes), []
+    answers, ends, runs = iter(passes), iter(codes), []
     monkeypatch.setattr(garimpo_uncertainty.pipeline.status, "next_scale", lambda: next(answers))
 
-    def run_scale(scale: str, options: list[str]) -> bool:
+    def run_scale(scale: str, options: list[str]) -> int:
         runs.append((scale, options))
-        return not interrupted
+        return next(ends)
 
     monkeypatch.setattr(experiment, "run_scale", run_scale)
-    assert len(experiment.run_scales("calibrate")) == ran
+    ran, code = experiment.run_scales("calibrate")
     assert runs == expected_runs
+    assert ran == [scale for scale, _ in expected_runs]
+    assert code == result
+
+
+def test_an_interrupt_reaches_the_job_which_ends_on_its_own() -> None:
+    """Colab interrupts this process alone; the job must get the SIGINT and stop its own way."""
+    job = (
+        "import signal, sys, time\n"
+        "signal.signal(signal.SIGINT, lambda *_: sys.exit(130))\n"
+        "print('ready', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    threading.Timer(2.0, os.kill, (os.getpid(), signal.SIGINT)).start()
+    assert experiment.run_model([sys.executable, "-c", job]) == 130
 
 
 def test_figures_at_a_scale_draw_only_the_runs_with_intervals(

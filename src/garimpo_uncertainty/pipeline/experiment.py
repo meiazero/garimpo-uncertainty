@@ -3,51 +3,77 @@
 Each model runs as its own `garimpo run`, and an interrupted one stops the models after it. Each
 scale that ran is then reported and merged: the pilot's tables into runs/pilot/tables, the full
 ones into outputs. --force-from reaches only the full runs, as the pilot redoes itself until it
-passes.
+passes. Exits 130 after an interrupt, 1 when a job or a merge failed, else 0.
 """
 
 import argparse
+import signal
 import subprocess
+import sys
 from pathlib import Path
 
 import garimpo_uncertainty.config
+import garimpo_uncertainty.pipeline.run
 import garimpo_uncertainty.pipeline.runner
 import garimpo_uncertainty.pipeline.status
 
 # garimpo run answers an interrupt with 130; a process killed by a signal ends with its negative.
-INTERRUPTED = {130, -2, -9, -15}
+STOPPED = 130
+INTERRUPTED = {STOPPED, -2, -9, -15}
 TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
 
 
-def run_scale(scale: str, options: list[str]) -> bool:
-    """Run every model at `scale`; False once one is interrupted, which stops the rest."""
+def run_model(command: list[str]) -> int:
+    """Run one `garimpo run` and return its exit code, passing on each interrupt to it.
+
+    Colab's interrupt reaches this process alone, and `garimpo run` needs it to stop its stage and
+    still run the check; the second, Colab's SIGTERM, makes it kill the stage at once.
+    """
+    with subprocess.Popen(command) as process:  # noqa: S603 - garimpo run with checked words
+        try:
+            return process.wait()
+        except KeyboardInterrupt:
+            process.send_signal(signal.SIGINT)
+        try:
+            return process.wait()
+        except KeyboardInterrupt:
+            process.send_signal(signal.SIGTERM)
+            return process.wait()
+
+
+def run_scale(scale: str, options: list[str]) -> int:
+    """Run every model at `scale`; return STOPPED once one is interrupted, 1 if one failed."""
+    failed = False
     for model in garimpo_uncertainty.config.models(garimpo_uncertainty.pipeline.status.CONFIGS):
         print(f"\n===== {scale} · {model} =====", flush=True)
-        ended = subprocess.run(["garimpo", "run", scale, model, *options], check=False)  # noqa: S603, S607
-        if ended.returncode in INTERRUPTED:
+        code = run_model(["garimpo", "run", scale, model, *options])
+        if code in INTERRUPTED:
             print("Interrupted: the models after this one did not run.")
-            return False
-    return True
+            return STOPPED
+        failed = failed or code != 0
+    return 1 if failed else 0
 
 
-def run_scales(force_from: str | None) -> list[str]:
-    """Run the pilot when it has not passed on this code, then the full runs once it has."""
-    ran = []
+def run_scales(force_from: str | None) -> tuple[list[str], int]:
+    """Run the pilot when it has not passed on this code, then the full runs once it has.
+
+    Return the scales that ran and the worst exit code among them.
+    """
     scale = garimpo_uncertainty.pipeline.status.next_scale()
-    if scale == "pilot":
-        ran.append("pilot")
-        if not run_scale("pilot", []):
-            return ran
-        scale = garimpo_uncertainty.pipeline.status.next_scale()
-        if scale == "pilot":
-            print("A pilot did not pass on this commit, so the full runs wait: read its log above.")
-    if scale == "full":
-        ran.append("full")
-        run_scale("full", ["--force-from", force_from] if force_from else [])
-    return ran
+    if scale != "pilot":
+        return ["full"], run_scale("full", ["--force-from", force_from] if force_from else [])
+    code = run_scale("pilot", [])
+    if code == STOPPED:
+        return ["pilot"], code
+    if garimpo_uncertainty.pipeline.status.next_scale() == "pilot":
+        print("A pilot did not pass on this commit, so the full runs wait: read its log above.")
+        return ["pilot"], code or 1
+    full = run_scale("full", ["--force-from", force_from] if force_from else [])
+    return ["pilot", "full"], max(code, full)
 
 
 def main() -> None:
+    signal.signal(signal.SIGTERM, garimpo_uncertainty.pipeline.run.interrupt)
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "--force-from",
@@ -61,7 +87,10 @@ def main() -> None:
         help="the session's start: a log not written after it counts as not run",
     )
     args = parser.parse_args()
-    for scale in run_scales(args.force_from):
+    ran, code = run_scales(args.force_from)
+    for scale in ran:
         garimpo_uncertainty.pipeline.status.print_status(scale, args.since)
         merge = ["garimpo", "merge", "--out", str(TABLES[scale]), "--scale", scale]
-        subprocess.run(merge, check=False)  # noqa: S603
+        merged = subprocess.run(merge, check=False)  # noqa: S603
+        code = code or (1 if merged.returncode else 0)
+    sys.exit(code)
