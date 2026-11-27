@@ -56,6 +56,11 @@ class Verdict:
         )
 
     def train(self, arch: str, rows: list[dict]) -> None:
+        self.failures.extend(
+            f"train {arch}: {row['workers']} workers failed, so their weights went unchecked"
+            for row in rows
+            if "seconds" not in row
+        )
         rows = [row for row in rows if "seconds" in row]
         for row in rows:
             speed = f"{1e3 * row['seconds_per_update']:.0f} ms per update"
@@ -146,9 +151,9 @@ class Verdict:
             ):
                 self.failures.append(f"precision {arch} {layer}: strict float32 failed")
         for row in (r for r in rows if "seconds" in r):
-            if row["candidate"] == "strict_fp32" and not row["stable"]:
+            if not row["stable"]:
                 self.failures.append(
-                    f"precision {arch} {row['layer']}: strict float32 gave other bits twice"
+                    f"precision {arch} {row['layer']} {row['candidate']}: other bits twice"
                 )
             bits = (
                 "the bits of strict float32"

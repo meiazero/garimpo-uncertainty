@@ -68,6 +68,20 @@ def test_a_lost_reference_or_an_unstable_batch_fails_the_tuning() -> None:
     assert verdict.findings[-1].endswith("no larger batch is worth its memory")
 
 
+def test_an_unstable_candidate_or_a_failed_worker_count_fails_the_tuning() -> None:
+    verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
+    seconds = {"median": 1.0, "low": 0.9, "high": 1.1}
+    strict = {"layer": "l", "candidate": "strict_fp32", "seconds": seconds, "stable": True}
+    strict |= {"bitwise_with_strict_fp32": True}
+    tuned = strict | {"candidate": "strict_fp32_autotuned", "stable": False}
+    verdict.precision("unet", [strict, tuned])
+    verdict.train("unet", [train_row(0, 0.0), {"workers": 2, "failed": "out of memory"}])
+    assert verdict.failures == [
+        "precision unet l strict_fp32_autotuned: other bits twice",
+        "train unet: 2 workers failed, so their weights went unchecked",
+    ]
+
+
 def test_a_section_that_fails_is_noted_and_the_rest_still_run(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
