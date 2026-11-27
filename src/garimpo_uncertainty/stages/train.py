@@ -386,6 +386,9 @@ def check_callbacks(args: argparse.Namespace) -> None:
     if "dice" not in args.metrics:
         raise ValueError("--metrics must include dice: val_dice picks the best checkpoint")
     columns = {"val_loss", *(f"val_{name}" for name in args.metrics)}
+    names = [spec if isinstance(spec, str) else spec["name"] for spec in args.callbacks]
+    if twice := sorted({name for name in names if names.count(name) > 1}):
+        raise ValueError(f"--callbacks names {', '.join(twice)} twice: a run keeps one state each")
     for spec in args.callbacks:
         callback = garimpo_uncertainty.training.callbacks.CALLBACK_REGISTRY.build(spec)
         monitor = getattr(callback, "monitor", None)

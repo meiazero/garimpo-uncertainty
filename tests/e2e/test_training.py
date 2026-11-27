@@ -253,6 +253,11 @@ def replaced(args: list[str], flag: str, *values: str) -> list[str]:
             ['{"name": "early_stopping", "patience": 2, "monitor": "val_iou"}'],
             "monitors val_iou",
         ),
+        (
+            "--callbacks",
+            ['{"name": "early_stopping", "patience": 2}', "early_stopping"],
+            "names early_stopping twice",
+        ),
     ],
 )
 def test_parts_that_cannot_train_are_refused_before_any_epoch(
