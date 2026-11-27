@@ -1,9 +1,10 @@
 """`garimpo experiment`: the pilot until every model passed it on this code, then the full runs.
 
 Each model runs as its own `garimpo run`, and an interrupted one stops the models after it. Each
-scale that ran is then reported and merged: the pilot's tables into runs/pilot/tables, the full
-ones into outputs. --force-from reaches only the full runs, as the pilot redoes itself until it
-passes. Exits 130 after an interrupt, 1 when a job or a merge failed, else 0.
+scale that ran is then reported, and merged when all its runs passed: the pilot's tables into
+runs/pilot/tables, the full ones into outputs. --force-from reaches only the full runs, as the
+pilot redoes itself until it passes. Exits 130 after an interrupt, 1 when a job or a merge
+failed, else 0.
 """
 
 import argparse
@@ -65,22 +66,24 @@ def run_scale(scale: str, options: list[str]) -> int:
     return 1 if failed else 0
 
 
-def run_scales(force_from: str | None) -> tuple[list[str], int]:
+def run_scales(force_from: str | None) -> dict[str, int]:
     """Run the pilot when it has not passed on this code, then the full runs once it has.
 
-    Return the scales that ran and the worst exit code among them.
+    Return the exit code of each scale that ran, in the order they ran.
     """
     scale = garimpo_uncertainty.pipeline.status.next_scale()
     if scale != "pilot":
-        return ["full"], run_scale("full", ["--force-from", force_from] if force_from else [])
+        return {"full": run_scale("full", ["--force-from", force_from] if force_from else [])}
     code = run_scale("pilot", [])
     if code == STOPPED:
-        return ["pilot"], code
+        return {"pilot": code}
     if garimpo_uncertainty.pipeline.status.next_scale() == "pilot":
         print("A pilot did not pass on this commit, so the full runs wait: read its log above.")
-        return ["pilot"], code or 1
-    full = run_scale("full", ["--force-from", force_from] if force_from else [])
-    return ["pilot", "full"], max(code, full)
+        return {"pilot": code or 1}
+    return {
+        "pilot": code,
+        "full": run_scale("full", ["--force-from", force_from] if force_from else []),
+    }
 
 
 def main() -> None:
@@ -98,9 +101,16 @@ def main() -> None:
         help="the session's start: a log not written after it counts as not run",
     )
     args = parser.parse_args()
-    ran, code = run_scales(args.force_from)
-    for scale in ran:
+    codes = run_scales(args.force_from)
+    code = max(codes.values())
+    for scale, ended in codes.items():
         garimpo_uncertainty.pipeline.status.print_status(scale, args.since)
+        # A run refused before it wrote a status leaves an earlier attempt's ok, which would merge.
+        if ended != 0:
+            print(
+                f"Not merged: a {scale} run failed or stopped, so {TABLES[scale]} keeps its tables."
+            )
+            continue
         merge = ["garimpo", "merge", "--out", str(TABLES[scale]), "--scale", scale]
         merged = subprocess.run(merge, check=False)  # noqa: S603
         code = code or (1 if merged.returncode else 0)

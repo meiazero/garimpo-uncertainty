@@ -45,15 +45,34 @@ def test_the_full_runs_start_only_once_the_pilot_passed_on_this_code(
         return next(ends)
 
     monkeypatch.setattr(experiment, "run_scale", run_scale)
-    ran, code = experiment.run_scales("calibrate")
+    codes = experiment.run_scales("calibrate")
     assert runs == expected_runs
-    assert ran == [scale for scale, _ in expected_runs]
-    assert code == result
+    assert list(codes) == [scale for scale, _ in expected_runs]
+    assert max(codes.values()) == result
+
+
+def test_only_a_scale_whose_runs_all_passed_is_merged(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(experiment, "run_scales", lambda force_from: {"pilot": 0, "full": 1})
+    monkeypatch.setattr(garimpo_uncertainty.pipeline.status, "print_status", lambda *_: None)
+    monkeypatch.setattr(signal, "signal", lambda *_: None)
+    monkeypatch.setattr(sys, "argv", ["garimpo experiment"])
+    merged = []
+
+    def merge(words: list[str], check: bool) -> types.SimpleNamespace:
+        merged.append(words[-1])
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(experiment.subprocess, "run", merge)
+    with pytest.raises(SystemExit) as exited:
+        experiment.main()
+    assert merged == ["pilot"]
+    assert exited.value.code == 1
 
 
 def test_the_models_run_in_main_s_order_with_a_new_one_last() -> None:
     models = ["convnet", "new", "unet_imagenet", "unet_scratch", "unet_sentinel2"]
-    assert experiment.run_order(models) == [*experiment.ORDER, "new"]
+    expected = ["unet_scratch", "unet_imagenet", "unet_sentinel2", "convnet", "new"]
+    assert experiment.run_order(models) == expected
 
 
 @pytest.mark.parametrize("ends_with", [130, 0])

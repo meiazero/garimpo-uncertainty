@@ -87,7 +87,8 @@ that ran", which calls `garimpo experiment`:
 2. Section 1's `FORCE_FROM` reaches every full job as `--force-from`. It stays set in the open
    tab, so clear it once the rerun passes; reopening the notebook from its link empties it.
 3. For each scale that ran, it prints `garimpo status <scale> --since <session start>`, one line
-   per model with the verdict of its last attempt, then runs `garimpo merge` for that scale.
+   per model with the verdict of its last attempt, then runs `garimpo merge` for that scale when
+   all its runs passed; a scale with a failed or stopped run keeps its earlier tables.
 
 The copy of `runs/` and the logs to Drive every 30 minutes starts with the run cell and stops
 in section 6, which saves the runs and logs once more; section 7 releases the GPU.

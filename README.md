@@ -65,7 +65,7 @@ the commit checked out, then the four full runs, which later sessions continue o
 | 2. Setup | Clones the code and builds the environment |
 | 3. Drive and data | Mounts Drive, unpacks the data once and restores the earlier runs and logs |
 | 4. Tests | Runs the suite on the GPU, once per commit |
-| 5. Runs | `garimpo experiment`: the four models through every stage, the pilot on 1% of the training tiles and one tile per evaluation group until all four pass, then the full runs on 100%; then the merge of each scale that ran, into `outputs/` for the full runs |
+| 5. Runs | `garimpo experiment`: the four models through every stage, the pilot on 1% of the training tiles and one tile per evaluation group until all four pass, then the full runs on 100%; then the merge of each scale whose runs all passed, into `outputs/` for the full runs |
 | 6. Save | Copies the runs and logs to Drive one last time |
 | 7. Release | Writes the pending files to Drive and releases the GPU |
 
