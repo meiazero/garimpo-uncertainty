@@ -155,6 +155,33 @@ def test_a_second_interrupt_reaches_the_job_as_sigterm(tmp_path: Path) -> None:
     assert seen.read_text() == "int,term"
 
 
+def test_an_interrupt_while_the_job_starts_still_reaches_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen = tmp_path / "seen"
+    job = (
+        "import pathlib, signal, sys, time\n"
+        "seen = []\n"
+        "signal.signal(signal.SIGINT, lambda *_: seen.append('int'))\n"
+        "deadline = time.monotonic() + 10\n"
+        "while not seen and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        f"pathlib.Path({str(seen)!r}).write_text(','.join(seen))\n"
+    )
+    start = subprocess.Popen
+
+    def interrupted_start(*args: object, **kwargs: object) -> subprocess.Popen:
+        # The handler is in place; the interrupt lands before the job can be signalled.
+        signal.raise_signal(signal.SIGINT)
+        process = start(*args, **kwargs)
+        time.sleep(1)  # the job installs its handler first, as garimpo run does
+        return process
+
+    monkeypatch.setattr(experiment.subprocess, "Popen", interrupted_start)
+    assert experiment.run_model([sys.executable, "-c", job]) == experiment.STOPPED
+    assert seen.read_text() == "int"
+
+
 def test_figures_at_a_scale_draw_only_the_runs_with_intervals(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

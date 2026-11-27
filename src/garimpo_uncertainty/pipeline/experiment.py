@@ -22,6 +22,8 @@ import garimpo_uncertainty.pipeline.status
 STOPPED = 130
 INTERRUPTED = {STOPPED, -2, -9, -15}
 TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
+# How soon an interrupt reaches the job.
+FORWARD_SECONDS = 0.1
 # This interpreter, so each job runs the code loaded here whatever PATH holds.
 GARIMPO = [sys.executable, "-m", "garimpo_uncertainty"]
 # The order main ran them in: a session cut short has the reference U-Net done first.
@@ -40,19 +42,25 @@ def run_model(command: list[str]) -> int:
     Colab's SIGTERM, makes it kill the stage at once. The job gets a process group of its own, so
     a terminal's Ctrl+C, sent to the whole group, reaches it once, through here, as Colab's does.
     """
-    job: list[subprocess.Popen] = []
+    # The handler only counts, and returns rather than raise, so no interrupt is lost: the loop
+    # below sends each one, including one that came while the job was starting.
     interrupts: list[int] = []
-
-    def forward(signum: int, _frame: object) -> None:
-        # A handler that returns, unlike a raise, leaves wait() running, so no second one is lost.
-        interrupts.append(signum)
-        for process in job:
-            process.send_signal(signal.SIGINT if len(interrupts) == 1 else signal.SIGTERM)
-
-    previous = {kind: signal.signal(kind, forward) for kind in (signal.SIGINT, signal.SIGTERM)}
+    kinds = (signal.SIGINT, signal.SIGTERM)
+    previous = {
+        kind: signal.signal(kind, lambda signum, _: interrupts.append(signum)) for kind in kinds
+    }
     try:
-        job.append(subprocess.Popen(command, process_group=0))  # noqa: S603 - checked words
-        code = job[0].wait()
+        process = subprocess.Popen(command, process_group=0)  # noqa: S603 - checked words
+        sent = 0
+        while True:
+            while sent < len(interrupts):
+                sent += 1
+                process.send_signal(signal.SIGINT if sent == 1 else signal.SIGTERM)
+            try:
+                code = process.wait(timeout=FORWARD_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                continue
     finally:
         for kind, handler in previous.items():
             signal.signal(kind, handler)
