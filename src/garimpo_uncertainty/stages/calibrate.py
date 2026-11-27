@@ -83,7 +83,7 @@ def own_region_quantiles(rule: Rule, populations: Populations, alpha: float) -> 
     )
 
 
-# Each calibration situation by name; a _subsampled one swaps the rule, not the situation.
+# A _subsampled calibration swaps the rule, not the function, so it has no entry of its own.
 SITUATIONS: dict[str, Callable[[Rule, Populations, float], np.ndarray]] = {
     "external": external_quantiles,
     "external_weighted": weighted_quantiles,
