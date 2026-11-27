@@ -1,0 +1,197 @@
+Choices as the sections read them:
+{
+  "seed": 0,
+  "archs": [
+    "convnet",
+    "unet"
+  ],
+  "cells": 64,
+  "search_layers": {
+    "convnet": [],
+    "unet": []
+  },
+  "timed_layers": {
+    "convnet": [],
+    "unet": [
+      "decoder.blocks.0",
+      "decoder.blocks.4"
+    ]
+  },
+  "loader_cells": 256,
+  "workers": [
+    0,
+    2,
+    4,
+    6,
+    12
+  ],
+  "threads": [
+    1,
+    2,
+    4,
+    6,
+    12
+  ],
+  "batch_sizes": [
+    16,
+    32,
+    64
+  ],
+  "steps": 20,
+  "repeats": 3
+}
+
+===== hardware =====
+{
+  "gpu": "NVIDIA L4",
+  "capability": [
+    8,
+    9
+  ],
+  "gpu_memory_gb": 22.0,
+  "cpus": 12,
+  "ram_gb": 53.0,
+  "stack": {
+    "colab_release": "unknown",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "cudnn": "92800",
+    "driver": "580.82.07"
+  },
+  "defaults": {
+    "cudnn_tf32": true,
+    "matmul_tf32": false,
+    "benchmark": false,
+    "deterministic": false,
+    "deterministic_algorithms": true
+  }
+}
+
+===== loader =====
+stages  0 workers:    80 cells/s, CPU busy 16%, I/O wait 0%, same bytes as 0 workers True
+stages  2 workers:   109 cells/s, CPU busy 20%, I/O wait 1%, same bytes as 0 workers True
+stages  4 workers:   168 cells/s, CPU busy 33%, I/O wait 2%, same bytes as 0 workers True
+stages  6 workers:   186 cells/s, CPU busy 42%, I/O wait 2%, same bytes as 0 workers True
+stages 12 workers:   161 cells/s, CPU busy 45%, I/O wait 4%, same bytes as 0 workers True
+train   0 workers:    78 cells/s, CPU busy 15%, I/O wait 0%, same bytes as 0 workers True
+train   2 workers:   110 cells/s, CPU busy 24%, I/O wait 0%, same bytes as 0 workers True
+train   4 workers:   159 cells/s, CPU busy 35%, I/O wait 2%, same bytes as 0 workers True
+train   6 workers:   179 cells/s, CPU busy 44%, I/O wait 2%, same bytes as 0 workers True
+train  12 workers:   160 cells/s, CPU busy 44%, I/O wait 4%, same bytes as 0 workers True
+
+===== train =====
+convnet  0 workers: 680 ms/update, data wait 26%, GPU busy 72%, CPU busy 12%
+convnet  2 workers: 536 ms/update, data wait 4%, GPU busy 94%, CPU busy 14%
+convnet  4 workers: 546 ms/update, data wait 6%, GPU busy 92%, CPU busy 15%
+convnet  6 workers: 554 ms/update, data wait 6%, GPU busy 91%, CPU busy 16%
+convnet 12 workers: 567 ms/update, data wait 9%, GPU busy 89%, CPU busy 18%
+unet  0 workers: 580 ms/update, data wait 32%, GPU busy 66%, CPU busy 12%
+unet  2 workers: 423 ms/update, data wait 5%, GPU busy 92%, CPU busy 16%
+unet  4 workers: 432 ms/update, data wait 7%, GPU busy 90%, CPU busy 17%
+unet  6 workers: 445 ms/update, data wait 9%, GPU busy 88%, CPU busy 16%
+unet 12 workers: 466 ms/update, data wait 13%, GPU busy 85%, CPU busy 19%
+
+===== search =====
+convnet decoder.aspp: same bits True, decodes per batch 480 -> 218, 7.0 ms per decode, GPU busy 90%
+convnet decoder.relu: same bits True, decodes per batch 480 -> 244, 3.0 ms per decode, GPU busy 79%
+unet decoder.blocks.0: same bits True, decodes per batch 480 -> 218, 72.0 ms per decode, GPU busy 99%
+unet decoder.blocks.1: same bits True, decodes per batch 480 -> 218, 66.8 ms per decode, GPU busy 98%
+unet decoder.blocks.2: same bits True, decodes per batch 480 -> 221, 57.0 ms per decode, GPU busy 99%
+unet decoder.blocks.3: same bits True, decodes per batch 480 -> 218, 35.5 ms per decode, GPU busy 97%
+unet decoder.blocks.4: same bits True, decodes per batch 480 -> 233, 7.2 ms per decode, GPU busy 87%
+
+===== batch =====
+convnet decoder.aspp batch  16: 7.1 s, GPU busy 92%, 2.1 GB, same bits as 16 True
+convnet decoder.aspp batch  32: 7.8 s, GPU busy 95%, 4.1 GB, same bits as 16 False
+convnet decoder.aspp batch  64: 8.0 s, GPU busy 97%, 6.8 GB, same bits as 16 False
+convnet decoder.relu batch  16: 3.8 s, GPU busy 86%, 1.8 GB, same bits as 16 True
+convnet decoder.relu batch  32: 4.5 s, GPU busy 92%, 3.5 GB, same bits as 16 False
+convnet decoder.relu batch  64: 4.8 s, GPU busy 94%, 6.8 GB, same bits as 16 False
+unet decoder.blocks.0 batch  16: 63.9 s, GPU busy 99%, 5.0 GB, same bits as 16 True
+unet decoder.blocks.0 batch  32: 66.5 s, GPU busy 99%, 10.0 GB, same bits as 16 False
+unet decoder.blocks.0 batch  64: 66.6 s, GPU busy 100%, 19.9 GB, same bits as 16 False
+unet decoder.blocks.4 batch  16: 7.7 s, GPU busy 93%, 3.4 GB, same bits as 16 True
+unet decoder.blocks.4 batch  32: 7.8 s, GPU busy 96%, 5.7 GB, same bits as 16 False
+unet decoder.blocks.4 batch  64: 8.0 s, GPU busy 96%, 9.4 GB, same bits as 16 False
+
+===== precision =====
+convnet decoder.aspp strict_fp32           : 9.2 s, same bits as strict float32 True
+convnet decoder.aspp strict_fp32_autotuned : 9.2 s, same bits as strict float32 True
+convnet decoder.aspp defaults              : 7.1 s, same bits as strict float32 False
+convnet decoder.aspp tf32                  : 7.1 s, same bits as strict float32 False
+convnet decoder.relu strict_fp32           : 5.0 s, same bits as strict float32 True
+convnet decoder.relu strict_fp32_autotuned : 5.0 s, same bits as strict float32 True
+convnet decoder.relu defaults              : 3.8 s, same bits as strict float32 False
+convnet decoder.relu tf32                  : 3.8 s, same bits as strict float32 False
+unet decoder.blocks.0 strict_fp32           : 67.2 s, same bits as strict float32 True
+unet decoder.blocks.0 strict_fp32_autotuned : 67.2 s, same bits as strict float32 True
+unet decoder.blocks.0 defaults              : 64.0 s, same bits as strict float32 False
+unet decoder.blocks.0 tf32                  : 63.9 s, same bits as strict float32 False
+unet decoder.blocks.4 strict_fp32           : 9.7 s, same bits as strict float32 True
+unet decoder.blocks.4 strict_fp32_autotuned : 9.6 s, same bits as strict float32 True
+unet decoder.blocks.4 defaults              : 7.6 s, same bits as strict float32 False
+unet decoder.blocks.4 tf32                  : 7.6 s, same bits as strict float32 False
+
+===== lightgbm =====
+ 16 channels,  1 threads: 0.74 s, CPU busy 9%, same ratios as 1 thread True
+ 16 channels,  2 threads: 0.49 s, CPU busy 18%, same ratios as 1 thread True
+ 16 channels,  4 threads: 0.35 s, CPU busy 29%, same ratios as 1 thread True
+ 16 channels,  6 threads: 0.34 s, CPU busy 42%, same ratios as 1 thread True
+ 16 channels, 12 threads: 0.41 s, CPU busy 95%, same ratios as 1 thread True
+256 channels,  1 threads: 13.20 s, CPU busy 10%, same ratios as 1 thread True
+256 channels,  2 threads: 6.65 s, CPU busy 20%, same ratios as 1 thread True
+256 channels,  4 threads: 3.53 s, CPU busy 33%, same ratios as 1 thread True
+256 channels,  6 threads: 2.59 s, CPU busy 49%, same ratios as 1 thread True
+256 channels, 12 threads: 4.64 s, CPU busy 96%, same ratios as 1 thread True
+
+===== verdict =====
+NVIDIA L4, 22.0 GB; 12 CPUs; 53.0 GB RAM
+Stack: colab_release unknown, torch 2.14.1+cu130, cuda 13.0, cudnn 92800, driver 580.82.07
+Findings:
+- loader: the stages read up to 186 cells/s from disk
+- lightgbm 16 channels: 6 threads are enough
+- lightgbm 256 channels: 6 threads are enough
+- train convnet 0 workers: 680 ms per update, limited by data loading, waiting 26% of the time
+- train convnet 2 workers: 536 ms per update, limited by the GPU, busy 94%: the machine is put to use
+- train convnet 4 workers: 546 ms per update, limited by the GPU, busy 92%: the machine is put to use
+- train convnet 6 workers: 554 ms per update, limited by the GPU, busy 91%: the machine is put to use
+- train convnet 12 workers: 567 ms per update, limited by the GPU, busy 89%: the machine is put to use
+- train convnet: 2 workers keep it fed; 25000 updates take ~3.7 h
+- search convnet decoder.aspp: 480 -> 218 decodes per batch, 7.0 ms each, limited by the GPU, busy 90%: the machine is put to use
+- search convnet decoder.relu: 480 -> 244 decodes per batch, 3.0 ms each, limited by the CPU or kernel launches: the GPU is busy only 79%
+- search convnet: these layers take ~0.1 h over the full run's 2816 cells [estimate: a trained model's searches stop at other steps]
+- batch convnet decoder.aspp: 16 keeps the GPU 92% busy in 2.1 of 22.0 GB; no larger batch is worth its memory
+- batch convnet decoder.relu: 16 keeps the GPU 86% busy in 1.8 of 22.0 GB; no larger batch is worth its memory
+- precision convnet decoder.aspp strict_fp32: 9.2 s, the bits of strict float32
+- precision convnet decoder.aspp strict_fp32_autotuned: 9.2 s, the bits of strict float32
+- precision convnet decoder.aspp defaults: 7.1 s, other bits than strict float32
+- precision convnet decoder.aspp tf32: 7.1 s, other bits than strict float32
+- precision convnet decoder.relu strict_fp32: 5.0 s, the bits of strict float32
+- precision convnet decoder.relu strict_fp32_autotuned: 5.0 s, the bits of strict float32
+- precision convnet decoder.relu defaults: 3.8 s, other bits than strict float32
+- precision convnet decoder.relu tf32: 3.8 s, other bits than strict float32
+- train unet 0 workers: 580 ms per update, limited by data loading, waiting 32% of the time
+- train unet 2 workers: 423 ms per update, limited by the GPU, busy 92%: the machine is put to use
+- train unet 4 workers: 432 ms per update, limited by the GPU, busy 90%: the machine is put to use
+- train unet 6 workers: 445 ms per update, limited by the GPU, busy 88%: the machine is put to use
+- train unet 12 workers: 466 ms per update, limited by data loading, waiting 13% of the time
+- train unet: 2 workers keep it fed; 25000 updates take ~2.9 h
+- search unet decoder.blocks.0: 480 -> 218 decodes per batch, 72.0 ms each, limited by the GPU, busy 99%: the machine is put to use
+- search unet decoder.blocks.1: 480 -> 218 decodes per batch, 66.8 ms each, limited by the GPU, busy 98%: the machine is put to use
+- search unet decoder.blocks.2: 480 -> 221 decodes per batch, 57.0 ms each, limited by the GPU, busy 99%: the machine is put to use
+- search unet decoder.blocks.3: 480 -> 218 decodes per batch, 35.5 ms each, limited by the GPU, busy 97%: the machine is put to use
+- search unet decoder.blocks.4: 480 -> 233 decodes per batch, 7.2 ms each, limited by the GPU, busy 87%: the machine is put to use
+- search unet: these layers take ~2.6 h over the full run's 2816 cells [estimate: a trained model's searches stop at other steps]
+- batch unet decoder.blocks.0: 16 keeps the GPU 99% busy in 5.0 of 22.0 GB; no larger batch is worth its memory
+- batch unet decoder.blocks.4: 16 keeps the GPU 93% busy in 3.4 of 22.0 GB; no larger batch is worth its memory
+- precision unet decoder.blocks.0 strict_fp32: 67.2 s, the bits of strict float32
+- precision unet decoder.blocks.0 strict_fp32_autotuned: 67.2 s, the bits of strict float32
+- precision unet decoder.blocks.0 defaults: 64.0 s, other bits than strict float32
+- precision unet decoder.blocks.0 tf32: 63.9 s, other bits than strict float32
+- precision unet decoder.blocks.4 strict_fp32: 9.7 s, the bits of strict float32
+- precision unet decoder.blocks.4 strict_fp32_autotuned: 9.6 s, the bits of strict float32
+- precision unet decoder.blocks.4 defaults: 7.6 s, other bits than strict float32
+- precision unet decoder.blocks.4 tf32: 7.6 s, other bits than strict float32
+Failures:
+- none
+TUNING: PASS: every section ran, and every reference kept its bits
