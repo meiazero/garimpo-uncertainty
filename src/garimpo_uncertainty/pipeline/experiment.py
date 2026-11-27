@@ -35,7 +35,7 @@ def run_order(models: list[str]) -> list[str]:
 
 
 def run_model(command: list[str]) -> int:
-    """Run one `garimpo run` and return its exit code, or STOPPED once it was interrupted.
+    """Run one `garimpo run` and return its exit code, STOPPED after any interrupt.
 
     `garimpo run` needs the interrupt to stop its stage and still run the check; the second,
     Colab's SIGTERM, makes it kill the stage at once. The job gets a process group of its own, so

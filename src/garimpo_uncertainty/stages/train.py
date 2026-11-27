@@ -58,6 +58,9 @@ def starting_weights_sha256(args: argparse.Namespace, root: Path) -> str | None:
 
 # What a forced redo leaves in place of a finished run's last.pt.
 DISCARDED = {"discarded": True}
+# MoCo's filters saw reflectance / 10000; ImageNet's statistics do not fit our bands, so any other
+# start normalizes by the training cells' band statistics.
+FIXED_NORMALIZATIONS = {"sentinel2_moco": garimpo_uncertainty.cell_dataset.identity_normalization}
 
 
 def read_resume(args: argparse.Namespace) -> dict | None:
@@ -123,10 +126,9 @@ def new_metadata(
         "encoder_weights": args.encoder_weights,
         "encoder_weights_sha256": args.encoder_weights_sha256,
         "seed": args.seed,
-        # MoCo's filters saw reflectance / 10000; ImageNet's statistics do not fit our bands.
         "normalization": (
-            garimpo_uncertainty.cell_dataset.identity_normalization()
-            if args.encoder_weights == "sentinel2_moco"
+            FIXED_NORMALIZATIONS[args.encoder_weights]()
+            if args.encoder_weights in FIXED_NORMALIZATIONS
             else garimpo_uncertainty.cell_dataset.band_statistics(
                 root, train_cells, args.batch_size, args.num_workers
             )

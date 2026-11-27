@@ -29,8 +29,8 @@ is `main` in the run notebook.
 
 Every notebook installs `requirements.txt` with `scripts/colab_install.py`. It stops, naming the
 package, when pip would replace Colab's torch, torchvision, triton or an `nvidia-*` or `cuda-*`
-library, which pick the GPU's kernels and so its bits: a runtime version with another torch, such
-as 2026.10, stops there. A runtime a day or two behind its published versions differs in a few
+library, which pick the GPU's kernels and so its bits: a runtime version with another torch
+stops there. A runtime a day or two behind its published versions differs in a few
 other packages, which pip aligns to the pins.
 
 ## Every cell runs again safely

@@ -14,8 +14,8 @@ width.
   satellite code: `stages/` the stages, each one a `garimpo <stage>` command; `pipeline/` the
   job, `garimpo run`, that chains them, and `garimpo experiment`, that runs the pilot and then the
   full runs; `models/` and `training/` the parts that `configs/base.json` picks by name; `tuning/`
-  the hardware measurements of `garimpo tune`. The notebooks only hold the Colab session and
-  call these commands. `outputs/` holds
+  the hardware measurements of `garimpo tune`. The notebooks only hold the Colab session, and
+  call these commands and the test suite. `outputs/` holds
   the versioned tables, including `split.csv`, the split used, and `tiles/`, the tiles each
   training fraction downloads.
 - No model result exists yet. The code has run only under pytest, on synthetic data; the pipeline

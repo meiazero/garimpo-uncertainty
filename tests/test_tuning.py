@@ -133,6 +133,22 @@ def test_a_lost_reference_or_an_unstable_batch_fails_the_tuning() -> None:
     assert verdict.findings[-1].endswith("no larger batch is worth its memory")
 
 
+def test_a_candidate_out_of_memory_is_named_in_the_verdict() -> None:
+    verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
+    seconds = {"median": 1.0, "low": 0.9, "high": 1.1}
+    out = "out of GPU memory"
+    strict = {"layer": "l", "candidate": "strict_fp32", "seconds": seconds, "stable": True}
+    strict |= {"bitwise_with_strict_fp32": True}
+    verdict.precision("unet", [strict, {"layer": "l", "candidate": "tf32", "failed": out}])
+    batch = {"layer": "l", "batch_size": 16, "seconds": seconds, "stable": True, "bitwise": True}
+    batch |= {"gpu_busy": 0.5, "gpu_memory_gb": 1.0}
+    larger = {"layer": "l", "batch_size": 64, "failed": out}
+    verdict.batch("unet", {"reference": 16, "rows": [batch, larger]}, memory=24)
+    assert verdict.failures == []
+    assert f"precision unet l tf32: failed: {out}" in verdict.findings
+    assert f"batch unet l: batch 64 failed: {out}" in verdict.findings
+
+
 def test_an_unstable_candidate_or_a_failed_worker_count_fails_the_tuning() -> None:
     verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
     seconds = {"median": 1.0, "low": 0.9, "high": 1.1}

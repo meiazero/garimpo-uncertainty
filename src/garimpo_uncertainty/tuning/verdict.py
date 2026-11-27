@@ -136,6 +136,11 @@ class Verdict:
                 for r in rows
                 if not r["stable"]
             )
+            self.findings.extend(
+                f"batch {arch} {layer}: batch {r['batch_size']} failed: {r['failed']}"
+                for r in section["rows"]
+                if r["layer"] == layer and "failed" in r
+            )
             state = (
                 f"batch {arch} {layer}: {reference} keeps the GPU {base['gpu_busy']:.0%} busy in "
                 f"{base['gpu_memory_gb']:.1f} of {memory} GB"
@@ -159,6 +164,11 @@ class Verdict:
                 for r in rows
             ):
                 self.failures.append(f"precision {arch} {layer}: strict float32 failed")
+        self.findings.extend(
+            f"precision {arch} {r['layer']} {r['candidate']}: failed: {r['failed']}"
+            for r in rows
+            if "failed" in r and r["candidate"] != "strict_fp32"
+        )
         for row in (r for r in rows if "seconds" in r):
             if not row["stable"]:
                 self.failures.append(
