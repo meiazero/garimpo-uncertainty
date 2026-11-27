@@ -19,7 +19,8 @@ the other four is a bare name, such as `"dice_bce"`, or an object with a name an
 such as `{"name": "early_stopping", "patience": 10}`. `AUGMENTATIONS` may be `[]`, but not null.
 `CALLBACKS` runs in its order and must hold `checkpoint`, whose `best_model.pt` the later stages
 read, after any callback that changes the training state, such as `early_stopping`, so `last.pt`
-keeps what it decided. `NUM_CLASSES` must be 1 for a run.
+keeps what it decided. A run needs `NUM_CLASSES` 1 and `POSTPROCESS` `sigmoid_threshold`, as the
+stages after training read one logit per pixel, mined where it is at least 0.
 
 ## Decided
 
