@@ -33,7 +33,7 @@ class CheckpointCallback(garimpo_uncertainty.training.loop.Callback):
         # Every epoch, so a job killed at its limit still reports what it measured.
         with garimpo_uncertainty.files.atomic(run.history) as temporary:
             pd.DataFrame(state.history).to_csv(temporary, index=False)
-        score = garimpo_uncertainty.training.loop.NO_BEST_DICE if np.isnan(dice) else dice
+        score = garimpo_uncertainty.training.loop.dice_score(record)
         weights = {k: v.cpu() for k, v in state.model.state_dict().items()}
         if score > state.best_dice:
             state.best_dice = score
@@ -69,8 +69,10 @@ class ConsoleLogCallback(garimpo_uncertainty.training.loop.Callback):
         self.epochs, self.previous_best = trainer.epochs, trainer.state.best_dice
 
     def on_epoch_end(self, state: TrainingState, record: dict) -> None:
-        improved = state.best_dice > self.previous_best
-        self.previous_best = state.best_dice
+        # Judged here, not read from state.best_dice, so the mark holds before checkpoint too.
+        score = garimpo_uncertainty.training.loop.dice_score(record)
+        improved = score > self.previous_best
+        self.previous_best = max(self.previous_best, score)
         remaining = self.epochs - record["epoch"] - 1
         eta = remaining * np.mean([epoch["seconds"] for epoch in state.history])
         peak = record["train_peak_gpu_bytes"]

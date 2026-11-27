@@ -19,6 +19,11 @@ import garimpo_uncertainty.training.metrics
 NO_BEST_DICE = -1.0
 
 
+def dice_score(record: dict) -> float:
+    """Return the epoch's val_dice as the best checkpoint ranks it: a NaN never wins."""
+    return NO_BEST_DICE if np.isnan(record["val_dice"]) else record["val_dice"]
+
+
 @dataclass
 class TrainingState:
     """What the epochs share, and what last.pt restores after an interruption."""

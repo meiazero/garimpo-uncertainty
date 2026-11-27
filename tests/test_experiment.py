@@ -2,8 +2,8 @@
 
 import os
 import signal
+import subprocess
 import sys
-import threading
 import time
 import types
 from pathlib import Path
@@ -51,23 +51,37 @@ def test_the_full_runs_start_only_once_the_pilot_passed_on_this_code(
     assert code == result
 
 
-def test_an_interrupt_reaches_the_job_which_ends_on_its_own(tmp_path: Path) -> None:
-    """Colab interrupts this process alone; the job must get the SIGINT and stop its own way."""
+@pytest.mark.parametrize("whole_group", [False, True])
+def test_an_interrupt_reaches_the_job_once(tmp_path: Path, whole_group: bool) -> None:
+    """Colab interrupts garimpo experiment alone, a terminal its whole group; the job sees one.
+
+    The job ends 130 on its first SIGINT and 3 on a second, which would kill a stage mid-stop.
+    """
     ready = tmp_path / "ready"
     job = (
         "import pathlib, signal, sys, time\n"
-        "signal.signal(signal.SIGINT, lambda *_: sys.exit(130))\n"
+        "seen = []\n"
+        "signal.signal(signal.SIGINT, lambda *_: sys.exit(3) if seen else seen.append(1))\n"
         f"pathlib.Path({str(ready)!r}).touch()\n"
-        "time.sleep(60)\n"
+        "while not seen:\n"
+        "    time.sleep(0.01)\n"
+        "time.sleep(0.5)\n"
+        "sys.exit(130)\n"
     )
-
-    def interrupt_once_ready() -> None:
-        while not ready.exists():
-            time.sleep(0.05)
-        os.kill(os.getpid(), signal.SIGINT)
-
-    threading.Thread(target=interrupt_once_ready, daemon=True).start()
-    assert experiment.run_model([sys.executable, "-c", job]) == 130
+    parent = (
+        "import sys\n"
+        "import garimpo_uncertainty.pipeline.experiment as experiment\n"
+        f"sys.exit(experiment.run_model([sys.executable, '-c', {job!r}]))\n"
+    )
+    process = subprocess.Popen([sys.executable, "-c", parent], start_new_session=True)  # noqa: S603
+    deadline = time.monotonic() + 30
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if whole_group:
+        os.killpg(process.pid, signal.SIGINT)
+    else:
+        os.kill(process.pid, signal.SIGINT)
+    assert process.wait(timeout=30) == 130
 
 
 def test_figures_at_a_scale_draw_only_the_runs_with_intervals(
