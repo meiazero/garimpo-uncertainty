@@ -115,6 +115,8 @@ def test_validation_names_a_store_of_another_layout(
         "1.0",
         "--subset-seed",
         "0",
+        "--evaluation-tiles",
+        "all",
         "--cell-px",
         cell_px,
         "--report",

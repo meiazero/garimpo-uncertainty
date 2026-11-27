@@ -532,6 +532,9 @@ def main() -> None:
         required=True,
         help="picks the training tiles; apart from --seed, so subsets stay nested across seeds",
     )
+    parser.add_argument(
+        "--evaluation-tiles", choices=garimpo_uncertainty.data.EVALUATION_TILES, required=True
+    )
     parser.add_argument("--epochs", type=int, required=True)
     parser.add_argument(
         "--steps-per-epoch",
@@ -568,7 +571,7 @@ def main() -> None:
     args.encoder_weights_sha256 = starting_weights_sha256(args, root)
     split = pd.read_csv(args.split)
     tile_ids = garimpo_uncertainty.data.select_tiles(
-        split, args.train_fraction, args.subset_seed
+        split, args.train_fraction, args.subset_seed, args.evaluation_tiles
     ).tile_id.tolist()
     identity = garimpo_uncertainty.data.tiles_identity(root, split, tile_ids)
     # In args, so a resume refuses tiles re-cut since last.pt, as it refuses other weights.

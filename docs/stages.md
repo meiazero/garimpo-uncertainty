@@ -12,7 +12,7 @@ Paths without a prefix are inside the run directory.
 | `garimpo download_data lists` | any, only to regenerate | `outputs/split.csv`, subset seed | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
 | `garimpo download_data scenes` | any | `outputs/tiles/tiles_<P>pct.json`, `outputs/split.csv`, gpkg, Planetary Computer | `$DATA/{images,masks,scl,stats}.npy`, `$DATA/tiles/*.json` |
 | `garimpo download_data weights --encoder-weights imagenet sentinel2_moco` | any | Hugging Face | `$DATA/weights/resnet18_sentinel2_all_moco-59bfdff9.pth`, `$DATA/weights/resnet18_imagenet-b1d1d36f.safetensors` |
-| `garimpo validate_data` | CPU | store, sidecars, split, fraction | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
+| `garimpo validate_data` | CPU | store, sidecars, split, fraction | `outputs/data_validation-fraction-<F>-seed-<S>[-one_per_group].json` |
 | `garimpo train` | GPU | the run's slots and sidecars, split, starting weights of the variant | `best_model.pt`, `last.pt`, `run_meta.json`, `history.csv` |
 | `garimpo infer` | GPU | checkpoint, store | `predictions/cells.npz`, `predictions/{validation,calibration,test}.npy` |
 | `garimpo fit_directions` | GPU | checkpoint, training slots | `directions/<layer>.npz`, `directions/diagnostics.csv` |
@@ -66,7 +66,7 @@ status file:
 | Stage | Status file |
 |---|---|
 | `garimpo download_data scenes` | `$DATA/status/download_scenes.json` |
-| `garimpo validate_data` | `$DATA/status/fraction-<F>-seed-<S>/validate_data.json` |
+| `garimpo validate_data` | `$DATA/status/fraction-<F>-seed-<S>[-one_per_group]/validate_data.json` |
 | every stage in `STAGE_ORDER` | `status/<stage>.json` in the run directory |
 
 A stage skips its work when its outputs exist from the same fingerprint, stops with status

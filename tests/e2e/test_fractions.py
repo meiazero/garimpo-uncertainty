@@ -136,7 +136,7 @@ def test_finished_run_cannot_care_that_more_tiles_arrived(grown_root: GrownRoot)
     assert "skipping" in rerun.stdout
     # The slot hashes cover this run's tiles only, so the others arriving must keep it passing.
     report_args = ["--run-dir", str(SMALL_DIR), "--split", str(SPLIT_PATH)]
-    report_args += ["--train-fraction", "0.01", "--subset-seed", "0"]
+    report_args += ["--train-fraction", "0.01", "--subset-seed", "0", "--evaluation-tiles", "all"]
     assert "PIPELINE CHECK: PASS" in support.run("check", *report_args, data_root=ROOT).stdout
 
 

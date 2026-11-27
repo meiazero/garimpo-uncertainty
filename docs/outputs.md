@@ -23,7 +23,7 @@ Groups join tiles closer than 50 km, measured edge to edge, in EPSG:6933 (12 Ama
 | Tiles by scale and region, chip areas, image years | `scripts/split/frame.py` | `outputs/frame.json`, `outputs/tiles_artisanal.csv` |
 | Geographic partition and training chips | `scripts/split/make_split.py` | `outputs/split.csv`, `outputs/split_summary.json` |
 | Tiles and cells per training fraction | `garimpo download_data lists` | `outputs/tiles/tiles_{1,5,10,100}pct.json` |
-| Data checks, scenes missing, clouds and nodata per role, per fraction | `garimpo validate_data` | `outputs/data_validation-fraction-<F>-seed-<S>.json` |
+| Data checks, scenes missing, clouds and nodata per role, per fraction | `garimpo validate_data` | `outputs/data_validation-fraction-<F>-seed-<S>[-one_per_group].json` |
 | PICP, MPIW, interval score, MAE, bias, relative error, Dice, boundary F1, with 95% group bootstrap, one row per model x fraction x alpha (0.05, 0.10, 0.15, as in Cheung et al. 2026, Table 1) x method x calibration | `garimpo compute_metrics`, `garimpo merge` | `outputs/results.csv` |
 | PICP and MPIW of the rows that change with the layer, COMPASS-J and every weighted calibration, whose density ratio reads the layer's features, on every layer of `LAYERS`, the chosen one included, to compare widths across layers (Cheung et al. 2026, Table 4) | `garimpo compute_metrics` with `--layer-dir`, `garimpo merge` | `outputs/layer_results.csv` |
 | Paired width differences between methods | `garimpo compute_metrics`, `garimpo merge` | `outputs/width_comparisons.csv` |

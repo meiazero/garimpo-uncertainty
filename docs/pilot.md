@@ -3,13 +3,16 @@
 Read before the first run on a GPU.
 
 The pilot is the four models of the full run on the 1% training fraction, run through the same
-script: 186 tiles and 2,976 cells, since validation, calibration and test stay whole. It trains on
-the versioned list `outputs/tiles/tiles_1pct.json`. Its purpose is to check on the GPU the code the
+script, and on one tile of each validation, calibration and test group: 64 tiles and 1,024 cells,
+where keeping those roles whole would give 186 tiles and 2,976 cells. It trains on the training
+tiles of the versioned list `outputs/tiles/tiles_1pct.json`. Its purpose is to check on the GPU the code the
 full runs will run, and its numbers say nothing about any method.
 
 The pilot reads the same `configs/base.json` and `configs/models/<model>.json` as the full run
 ([decisions.md](decisions.md)); only its scale, `configs/scales/pilot.json`, differs:
-`TRAIN_FRACTION` 0.01, `EPOCHS` 2 and `STEPS_PER_EPOCH` 20, so it stays short,
+`TRAIN_FRACTION` 0.01, `EPOCHS` 2 and `STEPS_PER_EPOCH` 20, so training stays short,
+`EVALUATION_TILES` `one_per_group`, so the stages after it score 864 cells instead of 2,816 and
+calibration still sees all 25 groups,
 `MIN_FRACTION_ASCENDING` 0, so a model trained for 40 updates still reaches the last stage, and
 `RUNS_DIR` `runs/pilot`, so each run writes to `runs/pilot/<model>-f0.01`. Its runs and result
 tables go to `runs/pilot/`, never to `outputs/`.

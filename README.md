@@ -61,7 +61,7 @@ the commit checked out, then the four full runs, which later sessions continue o
 | 2. Data | Unpacks the data once and restores the earlier runs and logs |
 | 3. Redo after a fix | The one option: a stage the full runs redo after a code fix |
 | 4. Tests | Runs the suite on the GPU, once per commit |
-| 5. Runs | The four models through every stage: the pilot on 1% of the training tiles until all four pass, then the full runs on 100% |
+| 5. Runs | The four models through every stage: the pilot on 1% of the training tiles and one tile per evaluation group until all four pass, then the full runs on 100% |
 | 6. Merge | Merges the four runs' tables of each scale that ran, into `outputs/` for the full runs |
 | 7. Release | Writes the pending files to Drive and releases the GPU |
 

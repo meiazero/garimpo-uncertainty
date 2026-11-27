@@ -36,6 +36,9 @@ def main() -> None:
         required=True,
     )
     parser.add_argument("--subset-seed", type=int, required=True)
+    parser.add_argument(
+        "--evaluation-tiles", choices=garimpo_uncertainty.data.EVALUATION_TILES, required=True
+    )
     parser.add_argument("--cell-px", type=int, required=True)
     parser.add_argument("--report", type=Path, required=True, help="one per fraction and seed")
     parser.add_argument(
@@ -49,10 +52,12 @@ def main() -> None:
     root = garimpo_uncertainty.data.data_root()
     split = pd.read_csv(args.split)
     tile_ids = garimpo_uncertainty.data.select_tiles(
-        split, args.train_fraction, args.subset_seed
+        split, args.train_fraction, args.subset_seed, args.evaluation_tiles
     ).tile_id.tolist()
     # Per selection: another fraction checks other tiles, so it must neither refuse nor reuse this.
-    selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
+    selection = garimpo_uncertainty.data.selection_name(
+        args.train_fraction, args.subset_seed, args.evaluation_tiles
+    )
 
     # The fingerprint reads sidecars, so only reading the slots shows a store changed underneath.
     unusable, slot_problems = check_slots(root, split, tile_ids, args.workers)
@@ -61,7 +66,9 @@ def main() -> None:
         summary = None
         if args.split_summary:
             summary = garimpo_uncertainty.data.scale_summary(
-                json.loads(args.split_summary.read_text()), args.train_fraction
+                json.loads(args.split_summary.read_text()),
+                args.train_fraction,
+                args.evaluation_tiles,
             )
         # Unreadable when checked: fail on that even if readable by now, since no slot was hashed.
         if unusable:

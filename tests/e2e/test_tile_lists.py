@@ -51,6 +51,27 @@ def test_select_tiles_keeps_the_literal_counts(real_split: pd.DataFrame, fractio
         assert scaled[f"{scale}/{role}"] == len(rows), (fraction, scale, role)
 
 
+def test_one_tile_per_group_keeps_every_group_and_the_same_training(
+    real_split: pd.DataFrame,
+) -> None:
+    """The pilot's selection: calibration must still see all 25 groups, test all 24."""
+    summary = json.loads((support.ROOT / "outputs" / "split_summary.json").read_text())
+    every = garimpo_uncertainty.data.select_tiles(real_split, 0.01, 0)
+    one = garimpo_uncertainty.data.select_tiles(real_split, 0.01, 0, "one_per_group")
+    assert one.equals(garimpo_uncertainty.data.select_tiles(real_split, 0.01, 0, "one_per_group"))
+    assert set(one[one.role == "train"].tile_id) == set(every[every.role == "train"].tile_id)
+    evaluated = one[one.role != "train"]
+    per_group = evaluated.groupby(["role", "cluster_50km"]).size()
+    assert (per_group == 1).all()
+    groups = {
+        role: summary["groups_by_role"][role] for role in garimpo_uncertainty.data.EVALUATED_ROLES
+    }
+    assert per_group.groupby("role").size().to_dict() == groups
+    scaled = garimpo_uncertainty.data.scale_summary(summary, 0.01, "one_per_group")
+    for (scale, role), rows in one.groupby(["scale", "role"]):
+        assert scaled["tiles_by_scale_role"][f"{scale}/{role}"] == len(rows), (scale, role)
+
+
 def test_selected_training_tiles_nest_up_to_the_whole_role(real_split: pd.DataFrame) -> None:
     nested: set[int] = set()
     for fraction in REAL_SPLIT_TRAIN_TILES:

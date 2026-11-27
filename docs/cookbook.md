@@ -135,5 +135,6 @@ rest is an estimate.
 | COMPASS scores, ConvNet | ~0.1 h | 1 | Notebook 3, section 6 |
 | Intervals and the other stages | up to ~1 h | 4 | The pilot's statuses: 44 min of `generate_intervals`, the rest under 10 min |
 
-That is about 26 h for the four full runs, and about 11 h for a pilot, which evaluates the same
-2,816 cells. The tests on the GPU and `search_profile` are not measured yet.
+That is about 26 h for the four full runs. The pilot scores 864 cells, 31% of the full run's 2,816,
+so its stages after training take about 1.1 h per U-Net and 4 h for the four models. The tests on
+the GPU and `search_profile` are not measured yet.

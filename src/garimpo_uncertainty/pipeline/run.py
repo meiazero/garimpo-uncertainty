@@ -161,7 +161,7 @@ def command(stage: str, values: dict, *extra: str) -> list[str]:
 def job_values(config: garimpo_uncertainty.config.RunConfig, num_workers: int) -> dict:
     """Return the config's values and the job's own: where the run is, and how many workers."""
     selection = garimpo_uncertainty.data.selection_name(
-        config["TRAIN_FRACTION"], config["SUBSET_SEED"]
+        config["TRAIN_FRACTION"], config["SUBSET_SEED"], config["EVALUATION_TILES"]
     )
     return config.values | {
         garimpo_uncertainty.config.ENCODER_WEIGHTS: config.values.get(

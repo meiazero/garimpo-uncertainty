@@ -15,7 +15,14 @@ from typing import Any, Self
 MODEL_KEYS = ("ARCH", "LAYERS")
 # Required for the U-Net only; the ConvNet has no pretrained starting point to choose.
 ENCODER_WEIGHTS = "ENCODER_WEIGHTS"
-SCALE_KEYS = ("RUNS_DIR", "TRAIN_FRACTION", "EPOCHS", "STEPS_PER_EPOCH", "MIN_FRACTION_ASCENDING")
+SCALE_KEYS = (
+    "RUNS_DIR",
+    "TRAIN_FRACTION",
+    "EVALUATION_TILES",
+    "EPOCHS",
+    "STEPS_PER_EPOCH",
+    "MIN_FRACTION_ASCENDING",
+)
 BASE_KEYS = (
     "SUBSET_SEED",
     "BATCH_SIZE",

@@ -53,6 +53,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-fraction", type=float, required=True)
     parser.add_argument("--subset-seed", type=int, required=True)
     parser.add_argument(
+        "--evaluation-tiles", choices=garimpo_uncertainty.data.EVALUATION_TILES, required=True
+    )
+    parser.add_argument(
         "--job-exit-code",
         type=int,
         default=0,
@@ -331,7 +334,9 @@ def exit_with_verdict(failed: list[dict]) -> None:
 
 def read_records(args: argparse.Namespace, root: Path) -> tuple[list[dict], list[str]]:
     """Return every status the run needs, in order, and the other layers they cover."""
-    selection = garimpo_uncertainty.data.selection_name(args.train_fraction, args.subset_seed)
+    selection = garimpo_uncertainty.data.selection_name(
+        args.train_fraction, args.subset_seed, args.evaluation_tiles
+    )
     records = [
         garimpo_uncertainty.pipeline.runner.read_status(
             root / "status", garimpo_uncertainty.pipeline.runner.DOWNLOAD_SCENES
@@ -355,7 +360,7 @@ def main() -> None:
     root = garimpo_uncertainty.data.data_root()
     split = pd.read_csv(args.split)
     tile_ids = garimpo_uncertainty.data.select_tiles(
-        split, args.train_fraction, args.subset_seed
+        split, args.train_fraction, args.subset_seed, args.evaluation_tiles
     ).tile_id.tolist()
     records, others = read_records(args, root)
 

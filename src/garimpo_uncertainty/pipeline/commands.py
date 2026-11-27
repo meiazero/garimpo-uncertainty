@@ -46,6 +46,7 @@ STAGES = {
         (
             ("--train-fraction", "TRAIN_FRACTION"),
             ("--subset-seed", "SUBSET_SEED"),
+            ("--evaluation-tiles", "EVALUATION_TILES"),
             ("--report", "VALIDATION_REPORT"),
             ("--split-summary", "SPLIT_SUMMARY"),
             ("--cell-px", "CELL_PX"),
@@ -60,6 +61,7 @@ STAGES = {
             ("--run-dir", "RUN_DIR"),
             ("--train-fraction", "TRAIN_FRACTION"),
             ("--subset-seed", "SUBSET_SEED"),
+            ("--evaluation-tiles", "EVALUATION_TILES"),
             ("--epochs", "EPOCHS"),
             ("--steps-per-epoch", "STEPS_PER_EPOCH"),
             ("--batch-size", "BATCH_SIZE"),
@@ -136,6 +138,7 @@ STAGES = {
             ("--run-dir", "RUN_DIR"),
             ("--train-fraction", "TRAIN_FRACTION"),
             ("--subset-seed", "SUBSET_SEED"),
+            ("--evaluation-tiles", "EVALUATION_TILES"),
             ("--job-exit-code", "JOB_EXIT_CODE"),
             ("--layers", "LAYERS"),
         ),

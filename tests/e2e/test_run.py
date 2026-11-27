@@ -30,6 +30,7 @@ import pandas as pd
 import pytest
 
 import garimpo_uncertainty.config
+import garimpo_uncertainty.data
 import garimpo_uncertainty.files
 import garimpo_uncertainty.models.common
 import garimpo_uncertainty.pipeline.run
@@ -86,6 +87,8 @@ FILLED = {
     "LAYERS": LAYERS,
     # Every value distinct from every other, so a wrong key shows: 0.0 is not SEED's 0.
     "MIN_FRACTION_ASCENDING": 0.0,
+    # The pilot's selection, so a job on it runs every stage end to end.
+    "EVALUATION_TILES": "one_per_group",
     "SVM_C": 1.5,
     "SVM_CLASS_WEIGHT": "balanced",
     "SVM_PIXELS_PER_CELL": 50,
@@ -205,9 +208,12 @@ def run_root(data_root: Path) -> Path:
     RUN_ROOT.mkdir(parents=True)
     (RUN_ROOT / "outputs").mkdir()
     shutil.copy(support.SPLIT_PATH, RUN_ROOT / "outputs" / "split.csv")
-    counts = pd.read_csv(support.SPLIT_PATH).groupby(["scale", "role"]).size()
+    split = pd.read_csv(support.SPLIT_PATH)
+    counts = split.groupby(["scale", "role"]).size()
     tiles = {f"{scale}/{role}": int(n) for (scale, role), n in counts.items() if role != "dropped"}
-    summary = {"tiles_by_scale_role": tiles}
+    # As scripts/split/make_split.py counts them.
+    groups = split[split.scale == "Artisanal"].groupby("role").cluster_50km.nunique().to_dict()
+    summary = {"tiles_by_scale_role": tiles, "groups_by_role": groups}
     (RUN_ROOT / "outputs" / "split_summary.json").write_text(json.dumps(summary))
     # Validation writes its status into the data root, which the shared one must never get.
     shutil.copytree(data_root, DATA)
@@ -351,7 +357,8 @@ def test_full_job_scores_every_other_layer_apart(passed_job: PassedJob) -> None:
 def pipeline_check(run_dir: Path, *extra: str) -> subprocess.CompletedProcess:
     command = support.garimpo("check", "--run-dir", str(run_dir))
     command += ["--train-fraction", str(FILLED["TRAIN_FRACTION"])]
-    command += ["--subset-seed", str(FILLED["SUBSET_SEED"]), *extra]
+    command += ["--subset-seed", str(FILLED["SUBSET_SEED"])]
+    command += ["--evaluation-tiles", FILLED["EVALUATION_TILES"], *extra]
     return subprocess.run(  # noqa: S603 - arguments come from the test
         command, check=False, cwd=RUN_ROOT, env=runner_env(), capture_output=True, text=True
     )
@@ -422,7 +429,10 @@ def test_forced_rerun_redoes_only_what_it_names(passed_job: PassedJob) -> None:
     The rerun appends its attempt to the log, under the first.
     """
     run_dir = passed_job.run_dir
-    validation = DATA / "status" / "fraction-1.0-seed-7" / "validate_data.json"
+    selection = garimpo_uncertainty.data.selection_name(
+        FILLED["TRAIN_FRACTION"], FILLED["SUBSET_SEED"], FILLED["EVALUATION_TILES"]
+    )
+    validation = DATA / "status" / selection / "validate_data.json"
     with support.restored_after(run_dir):
         before = status_mtimes(run_dir)
         validated = validation.stat().st_mtime_ns
@@ -484,6 +494,7 @@ def test_a_job_lost_after_a_stage_merges_nothing_until_rerun(
         assert not (tmp_path / "merged").exists()
         check = support.garimpo("check", "--run-dir", str(run_dir))
         check += ["--train-fraction", str(FILLED["TRAIN_FRACTION"])]
+        check += ["--evaluation-tiles", FILLED["EVALUATION_TILES"]]
         report = subprocess.run(  # noqa: S603 - arguments come from the test
             [*check, "--subset-seed", str(FILLED["SUBSET_SEED"])],
             check=False,

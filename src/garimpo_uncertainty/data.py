@@ -31,6 +31,9 @@ ROLES = ("train", "validation", "calibration", "test")
 # The roles every stage after training scores; the training role only fits.
 EVALUATED_ROLES = ROLES[1:]
 TRAIN_FRACTIONS = (0.01, 0.05, 0.10, 1.0)
+# "one_per_group" keeps one tile of each evaluation group: the pilot checks the code on a third of
+# the cells, and calibration still sees all its groups, as the subsampled quantile at 0.05 needs.
+EVALUATION_TILES = ("all", "one_per_group")
 # vector_ha needs the polygon, so no array can recompute it; mask_ha is the writer's claim that
 # validate_data checks against masks.npy.
 CELL_STATS_DTYPE = np.dtype(
@@ -135,11 +138,13 @@ def subset_size(scale: str, tiles: int, train_fraction: float) -> int:
     return max(1, kept) if scale == "Artisanal" else kept
 
 
-def select_tiles(split: pd.DataFrame, train_fraction: float, seed: int) -> pd.DataFrame:
-    """Return every evaluation tile and a seeded prefix of each scale's training tiles.
+def select_tiles(
+    split: pd.DataFrame, train_fraction: float, seed: int, evaluation_tiles: str = "all"
+) -> pd.DataFrame:
+    """Return the evaluation tiles and a seeded prefix of each scale's training tiles.
 
-    Whole tiles, not whole groups: groups matter across roles, and only the train role is reduced.
-    The shuffles ignore the fraction, so under one seed each subset contains the smaller ones.
+    Whole tiles, not whole groups: groups matter across roles. The shuffles ignore the fraction, so
+    under one seed each subset contains the smaller ones, and the evaluation draw comes after them.
     """
     kept = split[split.role != "dropped"]
     train = kept[kept.role == "train"]
@@ -148,22 +153,35 @@ def select_tiles(split: pd.DataFrame, train_fraction: float, seed: int) -> pd.Da
     for scale in sorted(train.scale.unique()):
         tiles = rng.permutation(np.sort(train[train.scale == scale].tile_id.unique()))
         chosen += tiles[: subset_size(scale, len(tiles), train_fraction)].tolist()
-    return kept[(kept.role != "train") | kept.tile_id.isin(chosen)]
+    evaluated = kept[kept.role != "train"]
+    if evaluation_tiles == "one_per_group":
+        evaluated = evaluated.assign(group=evaluated.cluster_50km.fillna(-1)).sort_values("tile_id")
+        evaluated = evaluated.groupby(["role", "group"]).sample(1, random_state=rng)
+    return kept[kept.tile_id.isin(evaluated.tile_id) | kept.tile_id.isin(chosen)]
 
 
-def scale_summary(summary: dict, train_fraction: float) -> dict:
-    """Return outputs/split_summary.json with the train role reduced as select_tiles reduces it."""
-    counts = {
-        name: subset_size(name.split("/")[0], tiles, train_fraction)
-        if name.endswith("/train")
-        else tiles
-        for name, tiles in summary["tiles_by_scale_role"].items()
-    }
+def scale_summary(summary: dict, train_fraction: float, evaluation_tiles: str = "all") -> dict:
+    """Return outputs/split_summary.json with its roles reduced as select_tiles reduces them.
+
+    One tile per group leaves as many tiles as groups_by_role counts, which are artisanal groups:
+    every evaluation tile of the split is artisanal.
+    """
+
+    def reduced(name: str, tiles: int) -> int:
+        scale, role = name.split("/")
+        if role == "train":
+            return subset_size(scale, tiles, train_fraction)
+        if evaluation_tiles == "one_per_group" and role in EVALUATED_ROLES:
+            return summary["groups_by_role"][role]
+        return tiles
+
+    counts = {name: reduced(name, tiles) for name, tiles in summary["tiles_by_scale_role"].items()}
     return summary | {"tiles_by_scale_role": counts}
 
 
-def selection_name(train_fraction: float, subset_seed: int) -> str:
-    return f"fraction-{train_fraction}-seed-{subset_seed}"
+def selection_name(train_fraction: float, subset_seed: int, evaluation_tiles: str = "all") -> str:
+    name = f"fraction-{train_fraction}-seed-{subset_seed}"
+    return name if evaluation_tiles == "all" else f"{name}-{evaluation_tiles}"
 
 
 def tile_table(split: pd.DataFrame) -> pd.DataFrame:

@@ -25,14 +25,17 @@ The store takes 69.2 GB on disk at the 100% fraction and 10.9 GB for the pilot
 
 | `TRAIN_FRACTION` | Artisanal training tiles | Industrial training tiles | Tiles, with the 176 of the other roles | Cells | GB written (58.7 MB per tile) |
 |---|---|---|---|---|---|
-| `0.01` (the pilot) | 1 | 9 | 186 | 2,976 | 10.9 |
+| `0.01` | 1 | 9 | 186 | 2,976 | 10.9 |
 | `0.05` | 3 | 47 | 226 | 3,616 | 13.3 |
 | `0.10` | 6 | 95 | 277 | 4,432 | 16.3 |
 | `1.0` | 56 | 947 | 1,179 | 18,864 | 69.2 |
 
-- The experiment trains at `1.0` only. `0.01` is the pilot's, which debugs the code on 186 tiles.
-  `0.05` and `0.10` keep their versioned lists, but no run uses them.
-- Only the `train` role is reduced, so every fraction is evaluated on the same cells.
+- The experiment trains at `1.0` only. `0.01` is the pilot's, which debugs the code on 64 tiles
+  and 1,024 cells: its `EVALUATION_TILES` `one_per_group` keeps one tile of each validation,
+  calibration and test group, 54 of the 176. `0.05` and `0.10` keep their versioned lists, but no
+  run uses them.
+- `TRAIN_FRACTION` reduces only the `train` role, so at `EVALUATION_TILES` `all` every fraction is
+  evaluated on the same cells.
 - Training tiles are drawn whole, per scale, from one seeded shuffle, so under one `SUBSET_SEED`
   each subset contains the smaller ones. `SUBSET_SEED` is separate from the training `SEED`.
 - An epoch is `STEPS_PER_EPOCH` batches drawn as back-to-back shuffles of the run's training cells,
@@ -42,9 +45,9 @@ The store takes 69.2 GB on disk at the 100% fraction and 10.9 GB for the pilot
   sidecars. A larger fraction's download therefore leaves finished smaller runs skipping and their
   slots untouched.
 - The written sizes hold where the filesystem keeps holes ([data-layout.md](data-layout.md)).
-- `garimpo validate_data` runs per fraction and seed, with its status in
-  `$DATA/status/fraction-<F>-seed-<S>/`. Another `--train-fraction` or `--subset-seed` under the
-  same `RUN_DIR` refuses.
+- `garimpo validate_data` runs per fraction, seed and evaluation tiles, with its status in
+  `$DATA/status/fraction-<F>-seed-<S>[-one_per_group]/`. Another `--train-fraction`,
+  `--subset-seed` or `--evaluation-tiles` under the same `RUN_DIR` refuses.
 
 ## Tile lists
 
