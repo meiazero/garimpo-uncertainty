@@ -7,15 +7,26 @@ before any model is trained. Cells are chosen from the reference alone.
 """
 
 import argparse
+import math
 from pathlib import Path
 
+import geopandas
+import matplotlib.patheffects
 import numpy as np
 import pandas as pd
+import rasterio
+import rasterio.warp
 
 import garimpo_uncertainty.data
 import garimpo_uncertainty.figures.orx_figstyle as style
 from garimpo_uncertainty.figures import common
 from garimpo_uncertainty.figures.maps import below, scale_bar, true_color
+
+# Natural Earth 1:110m land, v5.1.2 (public domain), only as the map's backdrop.
+LAND = Path(__file__).with_name("ne_110m_land.geojson")
+# A segment narrower than this share of the longest bar has no room for its count.
+LABELED_SHARE = 0.04
+ROLE_MARKERS = {"train": "o", "validation": "^", "calibration": "s", "test": "D"}
 
 ROLE_NAMES = {
     "train": "treino",
@@ -71,12 +82,15 @@ def split_composition(cells: pd.DataFrame, stem: Path) -> None:
             y, table[region], left=left, color=color, edgecolor="black", linewidth=0.4, label=region
         )
         left += table[region].to_numpy()
+        room = LABELED_SHARE * table.sum(axis=1).max()
         ax.bar_label(
             bars,
-            [str(n) if n else "" for n in table[region]],
+            [str(n) if n >= room else "" for n in table[region]],
             label_type="center",
             fontsize=6,
         )
+    for row, total in zip(y, table.sum(axis=1), strict=True):
+        ax.text(total, row, f" {total}", va="center", fontsize=6)
     ax.set_yticks(y, [ROLE_NAMES[r] for r in table.index])
     ax.invert_yaxis()
     ax.set_xlabel("Células")
@@ -153,6 +167,114 @@ def example_cells(cells: pd.DataFrame, root: Path, stem: Path) -> None:
     common.save(fig, stem)
 
 
+def tile_centers(root: Path, split: pd.DataFrame) -> pd.DataFrame:
+    """Return every downloaded tile of the split with its center's longitude and latitude."""
+    tiles = garimpo_uncertainty.data.tile_records(root, split, split.tile_id.tolist())
+    tiles = tiles[tiles.status == "ok"].reset_index(drop=True)
+    cell_px = np.load(root / "masks.npy", mmap_mode="r").shape[1]
+    half = math.isqrt(int(tiles.cells_per_tile.iloc[0])) * cell_px / 2
+    x, y = zip(*(rasterio.Affine(*t) * (half, half) for t in tiles["transform"]), strict=True)
+    lon, lat = np.empty(len(tiles)), np.empty(len(tiles))
+    for epsg, rows in tiles.groupby("epsg").groups.items():
+        at = list(rows)
+        lon[at], lat[at] = rasterio.warp.transform(
+            f"EPSG:{int(epsg)}", "EPSG:4326", [x[i] for i in at], [y[i] for i in at]
+        )
+    return tiles.assign(lon=lon, lat=lat)
+
+
+def tile_map(tiles: pd.DataFrame, stem: Path) -> None:
+    """Show where the tiles are: the Americas hold the test tiles and no other role's.
+
+    The artisanal tiles by role, marker and color both, over the industrial training tiles in
+    grey, each at its tile's center. Natural Earth's land is the backdrop.
+    """
+    fig, ax = style.figure_grid(1, 1, width=common.TEXT_WIDTH, ratio=0.5)
+    geopandas.read_file(LAND).plot(ax=ax, color="#EFEFEF", edgecolor="none")
+    industrial = tiles[tiles.scale == "Industrial"]
+    ax.scatter(industrial.lon, industrial.lat, s=2, color=style.MUTED, label="industrial (treino)")
+    artisanal = tiles[tiles.scale == "Artisanal"]
+    for (role, marker), color in zip(ROLE_MARKERS.items(), style.CYCLE, strict=False):
+        shown = artisanal[artisanal.role == role]
+        if len(shown):
+            ax.scatter(
+                shown.lon,
+                shown.lat,
+                s=9,
+                marker=marker,
+                color=color,
+                edgecolor="black",
+                linewidth=0.3,
+                label=f"{ROLE_NAMES[role]} (n = {len(shown)})",
+            )
+    ax.set_xlim(-180, 180)
+    ax.set_ylim(-60, 80)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Longitude (°)")
+    ax.set_ylabel("Latitude (°)")
+    fig.legend(loc="outside lower center", ncol=5)
+    common.save(fig, stem)
+
+
+def chosen_tile(cells: pd.DataFrame) -> pd.DataFrame:
+    """Return, by position, the evaluation tile whose cells with mining are nearest half its cells.
+
+    The lowest tile_id wins a tie, so the choice reads the reference alone.
+    """
+    evaluated = cells[cells.role != "train"]
+    by_tile = evaluated.groupby("tile_id").v
+    distance = (by_tile.apply(lambda v: (v > 0).sum()) - by_tile.size() / 2).abs()
+    tile_id = distance[distance == distance.min()].index.min()
+    return evaluated[evaluated.tile_id == tile_id].sort_values("position")
+
+
+def mosaic(per_cell: np.ndarray) -> np.ndarray:
+    """Return a tile's cells as one image; they run row by row over it (docs/data-layout.md)."""
+    side = math.isqrt(len(per_cell))
+    rows = [np.concatenate(per_cell[r * side : (r + 1) * side], axis=1) for r in range(side)]
+    return np.concatenate(rows, axis=0)
+
+
+def area_label(v: float) -> str:
+    """Return a cell's area in whole hectares; a cell with mining never reads "0 ha"."""
+    shown = common.number(v, 0)
+    return "< 1 ha" if v > 0 and shown == "0" else f"{shown} ha"
+
+
+def tile_cells(cells: pd.DataFrame, root: Path, stem: Path) -> None:
+    """Show how a tile becomes 16 cells, and that one tile holds cells with and without mining.
+
+    The tile chosen_tile returns: its true color, the reference mask outlined, the cell grid,
+    and each cell's reference area at its top left.
+    """
+    tile = chosen_tile(cells)
+    masks = np.load(root / "masks.npy", mmap_mode="r")[tile.cell_index.to_numpy()] > 0
+    side, px = math.isqrt(len(tile)), masks.shape[1]
+    fig, ax = style.figure_grid(1, 1, width=style.COLUMN, ratio=1.0)
+    ax.imshow(mosaic(true_color(root, tile)), interpolation="nearest")
+    ax.contour(mosaic(masks), levels=[0.5], colors=[style.PALETTE["orange"]], linewidths=0.7)
+    for line in range(1, side):
+        ax.axhline(line * px - 0.5, color="white", linewidth=0.6)
+        ax.axvline(line * px - 0.5, color="white", linewidth=0.6)
+    for position, v in zip(tile.position, tile.v, strict=True):
+        row, col = divmod(int(position), side)
+        ax.text(
+            (col + 0.04) * px,
+            (row + 0.06) * px,
+            area_label(v),
+            color="white",
+            fontsize=6,
+            va="top",
+            # A dark rim keeps the label legible over bare soil, the brightest ground.
+            path_effects=[matplotlib.patheffects.withStroke(linewidth=1.5, foreground="black")],
+        )
+    scale_bar(ax, side * px)
+    ax.set_axis_off()
+    first = tile.iloc[0]
+    below(ax, f"{region_name(first.region)}, {ROLE_NAMES[first.role]}, recorte {first.tile_id}")
+    common.save(fig, stem)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--out", type=Path, required=True, help="where the PDF and SVG files go")
@@ -162,10 +284,19 @@ def main() -> None:
     args = parser.parse_args()
     style.use_style()
     root = garimpo_uncertainty.data.data_root()
-    cells = read_cells(root, pd.read_csv(args.split), args.train_fraction, args.subset_seed)
+    split = pd.read_csv(args.split)
+    cells = read_cells(root, split, args.train_fraction, args.subset_seed)
     split_composition(cells, args.out / "split_composition")
     area_distribution(cells, args.out / "area_distribution")
     example_cells(cells, root, args.out / "example_cells")
+    tile_map(tile_centers(root, split), args.out / "tile_map")
+    tile_cells(cells, root, args.out / "tile_cells")
 
 
-DATA_FIGURES = ("split_composition", "area_distribution", "example_cells")
+DATA_FIGURES = (
+    "split_composition",
+    "area_distribution",
+    "example_cells",
+    "tile_map",
+    "tile_cells",
+)

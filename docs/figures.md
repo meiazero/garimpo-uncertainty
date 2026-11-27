@@ -30,8 +30,12 @@ run whose `layer_monotonicity` predates its curves: a rerun skips that stage, an
 
 `garimpo data_figures` draws the figures of the data itself, from the cell store and the split
 alone, before any run: `split_composition` (cells per role and region), `area_distribution` (the
-share of empty cells per role and the spread of mining areas) and `example_cells` (per region, the
-evaluation cell at the median mining area, with its reference outlined).
+share of empty cells per role and the spread of mining areas), `example_cells` (per region, the
+evaluation cell at the median mining area, with its reference outlined), `tile_map` (each tile's
+center from its sidecar, the artisanal ones by role over the industrial training tiles, on Natural
+Earth's 1:110m land, `geojson/ne_110m_land.geojson` at tag v5.1.2 of github.com/nvkelso/natural-earth-vector, public domain by naturalearthdata.com's terms of use, vendored as `figures/ne_110m_land.geojson`) and
+`tile_cells` (the evaluation tile whose cells with mining are nearest half of its 16, with its
+reference, the cell grid and each cell's area).
 
 ```bash
 garimpo data_figures --out outputs/figures
