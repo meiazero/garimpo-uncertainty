@@ -3,8 +3,9 @@
     garimpo figures runs/full/*-f1.0 --out outputs/figures
     garimpo figures --scale auto --out outputs/figures
 
-With --scale, the runs are those of configs/models/ at that scale that have intervals, and the
-figures go to <out>/<scale>, the scale `auto` resolves to.
+With --scale, the runs are those of configs/models/ at that scale whose every stage is ok, or, for
+qualitative_cells alone, that have intervals; the figures go to <out>/<scale>, the scale `auto`
+resolves to.
 
 Each figure is a function of FIGURES, whose docstring says what claim it makes and which section of
 the dissertation it serves; docs/figures.md lists them. Every number comes from the runs' files,
@@ -23,6 +24,7 @@ import garimpo_uncertainty.figures.maps
 import garimpo_uncertainty.figures.orx_figstyle as style
 import garimpo_uncertainty.figures.results
 import garimpo_uncertainty.figures.search
+import garimpo_uncertainty.pipeline.merge
 import garimpo_uncertainty.pipeline.status
 from garimpo_uncertainty.figures.common import Run
 
@@ -36,18 +38,28 @@ FIGURES: dict[str, Figure] = (
 )
 
 
-def runs_at(scale: str, models: list[str]) -> list[Path]:
-    """Return the run of each model at `scale` that has intervals, naming the ones left out."""
+# Every other figure reads stages after the intervals: metrics, the cell table, the search.
+INTERVALS_ONLY = {"qualitative_cells"}
+
+
+def runs_at(scale: str, models: list[str], *, finished: bool) -> list[Path]:
+    """Return each model's run at `scale` that is `finished` or has intervals; name the rest."""
     found = []
     for model in models:
         config = garimpo_uncertainty.pipeline.status.load(scale, model)
         if config is None:
             continue
         run = Path(config.run_dir)
-        if garimpo_uncertainty.artifacts.RunPaths.of(run).intervals.exists():
+        if finished:
+            statuses = garimpo_uncertainty.pipeline.merge.stage_statuses(run).values()
+            ready, lacks = all(status == "ok" for status in statuses), "every stage ok"
+        else:
+            ready = garimpo_uncertainty.artifacts.RunPaths.of(run).intervals.exists()
+            lacks = "intervals"
+        if ready:
             found.append(run)
         else:
-            print(f"Left out {model}: {run} has no intervals yet.")
+            print(f"Left out {model}: {run} has no {lacks} yet.")
     return found
 
 
@@ -75,7 +87,8 @@ def main() -> None:
     run_dirs, out = args.runs, args.out
     if args.scale:
         scale = garimpo_uncertainty.pipeline.status.choose_scale(args.scale)
-        run_dirs, out = runs_at(scale, args.models), out / scale
+        finished = not set(args.only or FIGURES) <= INTERVALS_ONLY
+        run_dirs, out = runs_at(scale, args.models, finished=finished), out / scale
         print(f"Scale {scale}; runs {', '.join(map(str, run_dirs)) or 'none'}.")
     if not run_dirs:
         print("Skipped: no chosen model has a run with intervals.")

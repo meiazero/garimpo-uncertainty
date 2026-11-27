@@ -9,7 +9,9 @@ garimpo figures runs/*-f1.0 --out outputs/figures --only q2_coverage_and_width
 garimpo figures --scale auto --models unet_scratch convnet --out outputs/figures
 ```
 
-Run it from the repository root, with `GARIMPO_DATA_DIR` set as for the stages: the qualitative
+With `--scale`, a model's run is drawn once every stage of it is ok, or, with `--only
+qualitative_cells`, once it has intervals; the others are named and left out. Run it from the
+repository root, with `GARIMPO_DATA_DIR` set as for the stages: the qualitative
 figure and every figure that reads the cell table open the data root. Each figure is built at the
 dissertation's text width, 16 cm, so it goes in with `\includegraphics[width=\linewidth]` and is
 not rescaled. The audit line printed after each figure must read `clean`.
