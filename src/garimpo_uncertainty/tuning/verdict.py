@@ -183,10 +183,10 @@ class Verdict:
                 for r in width
                 if not (r["bitwise"] and r["stable"])
             )
-            pick = cheapest_tied(width, "jobs")
-            self.findings.append(
-                f"lightgbm {channels} channels: {pick and pick['jobs']} threads are enough"
-            )
+            if pick := cheapest_tied(width, "jobs"):
+                self.findings.append(
+                    f"lightgbm {channels} channels: {pick['jobs']} threads are enough"
+                )
 
 
 def expected(archs: list[str]) -> list[str]:

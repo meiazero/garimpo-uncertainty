@@ -18,9 +18,8 @@ import garimpo_uncertainty.pipeline.run
 import garimpo_uncertainty.pipeline.runner
 import garimpo_uncertainty.pipeline.status
 
-# garimpo run answers an interrupt with 130; a process killed by a signal ends with its negative.
+# garimpo run answers an interrupt with 130, and run_model returns it once it forwarded one.
 STOPPED = 130
-INTERRUPTED = {STOPPED, -2, -9, -15}
 TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
 # How soon an interrupt reaches the job, and the least time between two.
 FORWARD_SECONDS = 0.1
@@ -76,7 +75,7 @@ def run_scale(scale: str, options: list[str]) -> int:
     for model in run_order(garimpo_uncertainty.config.models(configs)):
         print(f"\n===== {scale} · {model} =====", flush=True)
         code = run_model([*GARIMPO, "run", scale, model, *options])
-        if code in INTERRUPTED:
+        if code == STOPPED:
             print("Interrupted: the models after this one did not run.")
             return STOPPED
         failed = failed or code != 0

@@ -70,6 +70,21 @@ def test_only_a_scale_whose_runs_all_passed_is_merged(monkeypatch: pytest.Monkey
     assert exited.value.code == 1
 
 
+def test_a_job_killed_from_outside_fails_and_the_next_model_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The OOM killer's SIGKILL is no interrupt of the user's: the models after it still run."""
+    codes, commands = iter([-9, 0]), []
+    monkeypatch.setattr(
+        experiment, "run_model", lambda command: commands.append(command) or next(codes)
+    )
+    monkeypatch.setattr(
+        garimpo_uncertainty.config, "models", lambda configs: ["convnet", "unet_scratch"]
+    )
+    assert experiment.run_scale("pilot", []) == 1
+    assert len(commands) == 2
+
+
 def test_each_job_runs_the_code_this_interpreter_loaded(monkeypatch: pytest.MonkeyPatch) -> None:
     """A `garimpo` found on PATH may be another install, or none."""
     commands = []

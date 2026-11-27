@@ -158,6 +158,7 @@ def test_a_loader_or_lightgbm_row_that_differs_between_two_runs_fails_the_tuning
         "loader: stages at 0 workers read other bytes between two runs",
         "lightgbm 16 channels: 1 threads gave other ratios between two runs",
     ]
+    assert not [line for line in verdict.findings if line.startswith("lightgbm")]
 
 
 def test_an_architecture_done_before_another_fails_keeps_its_result(

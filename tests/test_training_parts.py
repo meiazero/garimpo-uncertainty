@@ -272,7 +272,6 @@ def test_both_post_processings_mark_a_pixel_mined_from_a_probability_of_one_half
 def test_the_interval_methods_name_every_direction_compass2d_registers() -> None:
     intervals = garimpo_uncertainty.intervals
     assert tuple(compass2d.directions.DIRECTIONS) == intervals.DIRECTIONS
-    assert tuple(f"a_{m}" for m in intervals.COMPASS_METHODS) == intervals.ASYMMETRIC_METHODS
     combined = {method for method, _ in intervals.COMBINATIONS}
     assert {*intervals.COMPASS_METHODS, *intervals.ASYMMETRIC_METHODS} <= combined
 

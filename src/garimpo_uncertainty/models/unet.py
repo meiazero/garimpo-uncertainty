@@ -57,10 +57,8 @@ class UNet(SegmentationAdapter, segmentation_models_pytorch.Unet):
             in_channels=in_channels,
             classes=num_classes,
         )
-        if encoder_weights == "imagenet":
-            load_imagenet(model, weights_file)
-        if encoder_weights == "sentinel2_moco":
-            load_sentinel2_moco(model, weights_file)
+        if encoder_weights in WEIGHT_LOADERS:
+            WEIGHT_LOADERS[encoder_weights](model, weights_file)
         return model
 
     def split_at(self, layer: str, features: list[torch.Tensor]) -> tuple[torch.Tensor, Decode]:
@@ -124,3 +122,7 @@ def load_sentinel2_moco(model: torch.nn.Module, path: Path) -> None:
     columns = [SENTINEL2_MOCO_BANDS.index(band) for band in garimpo_uncertainty.data.BANDS]
     state["conv1.weight"] = conv1[:, columns]
     model.encoder.load_state_dict(state)
+
+
+# "none" trains from scratch, so it has no loader.
+WEIGHT_LOADERS = {"imagenet": load_imagenet, "sentinel2_moco": load_sentinel2_moco}
