@@ -1,7 +1,9 @@
 """`garimpo tune`: size the run to this GPU on synthetic cells, then judge what was measured.
 
 Every section runs even when one before it failed, so one run reports every finding; the command
-exits 1 when any section failed or lost a bit. outputs/tuning/results.json keeps the rows.
+exits 1 when a section failed, a run gave other bits when repeated, or the workers changed
+what was read or trained; a faster candidate with other bits than strict float32 is a finding to
+decide on. outputs/tuning/results.json keeps the rows.
 """
 
 import argparse

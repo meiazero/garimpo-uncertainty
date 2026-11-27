@@ -119,7 +119,9 @@ measures the machine instead of running the pipeline:
   `outputs/tuning/store/` on the local disk and its rows to `outputs/tuning/results.json`, which
   the release at the end, when `RELEASE` is checked, erases: copy the verdict first.
 - A section that raises is reported and the next one runs (`tuning/tune.py`, `run_sections`), so
-  one run reports every finding, and the command exits 1 when any section failed or lost a bit.
+  one run reports every finding. The command exits 1 when a section failed, a run gave other bits
+  when repeated, or the workers changed what was read or trained; a faster candidate with other
+  bits than strict float32 is a finding to decide on.
 
 Its form's `BRANCH` names the code it measures; set it to a branch that is not merged yet to size
 that branch's code.
