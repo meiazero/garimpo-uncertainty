@@ -87,6 +87,7 @@ on an L4 runtime at the latest runtime version, then run Runtime > Run all.
 
 | Document | Covers |
 |---|---|
+| [docs/cookbook.md](docs/cookbook.md) | Recipes: start, continue, stop early, change the code, redo a stage, read a failure, get the tables, draw the figures, move to a newer Colab runtime, the time it takes |
 | [docs/colab.md](docs/colab.md) | Why the cells of the run notebook are written as they are: the Drive archive, cells that run again safely, the gates, modification times, releasing the runtime, the job verdicts, the copy every 30 minutes |
 | [docs/pilot.md](docs/pilot.md) | Running the pilot, its check report, rerunning with `--force-from` |
 | [docs/full-run.md](docs/full-run.md) | The full run step by step, the run configs, downloading on your own machine, the run cells, regenerating tile lists, rerunning one stage |
