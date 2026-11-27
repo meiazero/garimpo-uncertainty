@@ -357,13 +357,14 @@ def add_part_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def check_choices(args: argparse.Namespace) -> None:
+def check_choices(args: argparse.Namespace, device: str) -> None:
     """Raise when a chosen part is unknown, takes other options, or misfits the classes."""
-    parameter = torch.nn.Parameter(torch.zeros(1))
+    parameter = torch.nn.Parameter(torch.zeros(1, device=device))
     optimizer = garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
         args.optimizer, params=[parameter], lr=args.lr, weight_decay=args.weight_decay
     )
-    # Some options, such as sgd's differentiable, fail only in the first update.
+    # Some options fail only in the first update (sgd's differentiable), some off the GPU only
+    # (adamw's capturable), so the update runs on the training device.
     parameter.sum().backward()
     optimizer.step()
     for spec in args.augmentations:
@@ -482,16 +483,16 @@ def main() -> None:
     )
     args = parser.parse_args()
     garimpo_uncertainty.pipeline.runner.log_to_stdout()
+    device = args.device or garimpo_uncertainty.checkpoints.default_device()
     try:
         garimpo_uncertainty.models.check_encoder_weights(args.arch, args.encoder_weights)
-        check_choices(args)
+        check_choices(args, device)
     # A spec's options reach a constructor, which refuses an unknown one with a TypeError; torch
     # checks some values, such as label_smoothing, only when the probe calls the loss.
     except (ValueError, TypeError, ImportError, RuntimeError) as error:
         parser.error(str(error))
 
     root = garimpo_uncertainty.data.data_root()
-    device = args.device or garimpo_uncertainty.checkpoints.default_device()
     # In args, so both the stage fingerprint and the resume check see the file's identity. Hash and
     # not mtime: downloading the same file again must not invalidate a finished training.
     args.encoder_weights_sha256 = starting_weights_sha256(args, root)
