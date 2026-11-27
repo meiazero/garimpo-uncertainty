@@ -14,6 +14,7 @@ import geopandas
 import matplotlib.patheffects
 import numpy as np
 import pandas as pd
+import rasterio
 import rasterio.warp
 
 import garimpo_uncertainty.data
@@ -172,8 +173,7 @@ def tile_centers(root: Path, split: pd.DataFrame) -> pd.DataFrame:
     tiles = tiles[tiles.status == "ok"].reset_index(drop=True)
     cell_px = np.load(root / "masks.npy", mmap_mode="r").shape[1]
     half = math.isqrt(int(tiles.cells_per_tile.iloc[0])) * cell_px / 2
-    x = [t[2] + t[0] * half for t in tiles["transform"]]
-    y = [t[5] + t[4] * half for t in tiles["transform"]]
+    x, y = zip(*(rasterio.Affine(*t) * (half, half) for t in tiles["transform"]), strict=True)
     lon, lat = np.empty(len(tiles)), np.empty(len(tiles))
     for epsg, rows in tiles.groupby("epsg").groups.items():
         at = list(rows)
@@ -184,7 +184,7 @@ def tile_centers(root: Path, split: pd.DataFrame) -> pd.DataFrame:
 
 
 def tile_map(tiles: pd.DataFrame, stem: Path) -> None:
-    """Show where the tiles are: each role of the artisanal split in its own region.
+    """Show where the tiles are: the Americas hold the test tiles and no other role's.
 
     The artisanal tiles by role, marker and color both, over the industrial training tiles in
     grey, each at its tile's center. Natural Earth's land is the backdrop.
@@ -235,6 +235,12 @@ def mosaic(per_cell: np.ndarray) -> np.ndarray:
     return np.concatenate(rows, axis=0)
 
 
+def area_label(v: float) -> str:
+    """Return a cell's area in whole hectares; a cell with mining never reads "0 ha"."""
+    shown = common.number(v, 0)
+    return "< 1 ha" if v > 0 and shown == "0" else f"{shown} ha"
+
+
 def tile_cells(cells: pd.DataFrame, root: Path, stem: Path) -> None:
     """Show how a tile becomes 16 cells, and that one tile holds cells with and without mining.
 
@@ -255,7 +261,7 @@ def tile_cells(cells: pd.DataFrame, root: Path, stem: Path) -> None:
         ax.text(
             (col + 0.04) * px,
             (row + 0.06) * px,
-            f"{common.number(v, 0)} ha",
+            area_label(v),
             color="white",
             fontsize=6,
             va="top",
