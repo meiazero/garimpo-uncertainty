@@ -29,7 +29,9 @@ A variation the protocol does not use is still implemented, and ships off in `co
 
 - The default config trains bitwise the same weights at any worker count and across a resume
   (`tests/e2e/test_workers.py`, `test_resume.py`, `test_training.py`). Random draws stay in the
-  main process; a step that draws inside the workers says so in `run_meta.json`.
+  main process: each augmentation draws there, at most a seed that the worker expands the same
+  way every time (Albumentations). A step whose draws depend on the worker says so in
+  `run_meta.json`.
 - Files already written by runs keep loading: checkpoint state_dict keys, layer names such as
   `decoder.blocks.0`, and the fields of `directions.npz`.
 - Notebooks hold only the Colab session: mount Drive, clone, install, unpack the data, copy to
