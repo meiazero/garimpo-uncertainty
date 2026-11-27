@@ -12,12 +12,12 @@ import traceback
 from pathlib import Path
 
 import garimpo_uncertainty.files
+import garimpo_uncertainty.models
 import garimpo_uncertainty.tuning.sections
 import garimpo_uncertainty.tuning.verdict
 import garimpo_uncertainty.tuning.workloads
 
 OUT = garimpo_uncertainty.files.ROOT / "outputs" / "tuning"
-ARCHS = ("unet", "convnet")
 
 
 def worker_counts(chosen: list[int] | None) -> list[int]:
@@ -30,7 +30,8 @@ def worker_counts(chosen: list[int] | None) -> list[int]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--archs", nargs="+", choices=ARCHS, default=list(ARCHS))
+    archs = garimpo_uncertainty.models.MODEL_REGISTRY.names()
+    parser.add_argument("--archs", nargs="+", choices=archs, default=archs)
     parser.add_argument("--cells", type=int, default=64, help="cells each search and batch reads")
     parser.add_argument(
         "--search-unet-layers", nargs="*", default=[], help="none: every decoder layer"
@@ -53,8 +54,9 @@ def form(args: argparse.Namespace) -> dict:
         "seed": 0,
         "archs": args.archs,
         "cells": args.cells,
-        "search_layers": {"unet": args.search_unet_layers, "convnet": []},
-        "timed_layers": {"unet": args.timed_unet_layers, "convnet": []},
+        # Only the U-Net's layers are chosen; an empty list is every layer the model has.
+        "search_layers": {arch: [] for arch in args.archs} | {"unet": args.search_unet_layers},
+        "timed_layers": {arch: [] for arch in args.archs} | {"unet": args.timed_unet_layers},
         "loader_cells": args.loader_cells,
         "workers": workers,
         "threads": sorted({1, *(count for count in workers if count > 0)}),

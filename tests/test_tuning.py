@@ -8,7 +8,7 @@ import garimpo_uncertainty.tuning.tune
 import garimpo_uncertainty.tuning.verdict
 
 
-def train_row(workers: int, wait: float, *, stable: bool = True) -> dict:
+def train_row(workers: int, wait: float, *, stable: bool = True, matches: bool = True) -> dict:
     return {
         "workers": workers,
         "seconds": {"median": 1.0, "low": 0.9, "high": 1.1},
@@ -16,7 +16,7 @@ def train_row(workers: int, wait: float, *, stable: bool = True) -> dict:
         "data_wait_share": wait,
         "gpu_busy": 0.9,
         "stable": stable,
-        "weights_match_0_workers": True,
+        "weights_match_0_workers": matches,
     }
 
 
@@ -42,6 +42,12 @@ def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:
         "train unet: data loading starves the loop at every worker count",
         "loader: train at 2 workers read other bytes",
     ]
+
+
+def test_workers_that_move_the_weights_fail_the_tuning() -> None:
+    verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
+    verdict.train("unet", [train_row(0, 0.0), train_row(2, 0.0, matches=False)])
+    assert verdict.failures == ["train unet: [2] workers end with other weights than 0 workers"]
 
 
 def test_a_section_that_fails_is_noted_and_the_rest_still_run(

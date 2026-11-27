@@ -70,7 +70,8 @@ class Verdict:
                 "deterministic algorithms"
             )
         elif moved := [row["workers"] for row in rows if not row["weights_match_0_workers"]]:
-            self.findings.append(
+            # The draws happen in the main process, so the workers must not move a bit.
+            self.failures.append(
                 f"train {arch}: {moved} workers end with other weights than 0 workers"
             )
         fed = [row for row in rows if row["data_wait_share"] <= STARVED]
