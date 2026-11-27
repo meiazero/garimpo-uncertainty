@@ -24,7 +24,7 @@ TABLES = {"pilot": Path("runs/pilot/tables"), "full": Path("outputs")}
 
 
 def run_model(command: list[str]) -> int:
-    """Run one `garimpo run` and return its exit code, passing on each interrupt to it.
+    """Run one `garimpo run` and return its exit code, or STOPPED once it was interrupted.
 
     `garimpo run` needs the interrupt to stop its stage and still run the check; the second,
     Colab's SIGTERM, makes it kill the stage at once. The job gets a process group of its own, so
@@ -36,10 +36,12 @@ def run_model(command: list[str]) -> int:
         except KeyboardInterrupt:
             process.send_signal(signal.SIGINT)
         try:
-            return process.wait()
+            process.wait()
         except KeyboardInterrupt:
             process.send_signal(signal.SIGTERM)
-            return process.wait()
+            process.wait()
+        # A job that ended 0 as the interrupt came must still stop the models after it.
+        return STOPPED
 
 
 def run_scale(scale: str, options: list[str]) -> int:

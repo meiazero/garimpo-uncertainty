@@ -51,11 +51,15 @@ def test_the_full_runs_start_only_once_the_pilot_passed_on_this_code(
     assert code == result
 
 
+@pytest.mark.parametrize("ends_with", [130, 0])
 @pytest.mark.parametrize("whole_group", [False, True])
-def test_an_interrupt_reaches_the_job_once(tmp_path: Path, whole_group: bool) -> None:
+def test_an_interrupt_reaches_the_job_once(
+    tmp_path: Path, whole_group: bool, ends_with: int
+) -> None:
     """Colab interrupts garimpo experiment alone, a terminal its whole group; the job sees one.
 
-    The job ends 130 on its first SIGINT and 3 on a second, which would kill a stage mid-stop.
+    The job ends `ends_with` on its first SIGINT and 3 on a second, which would kill a stage
+    mid-stop. A job that finished 0 just then still stops the models after it.
     """
     ready = tmp_path / "ready"
     job = (
@@ -66,7 +70,7 @@ def test_an_interrupt_reaches_the_job_once(tmp_path: Path, whole_group: bool) ->
         "while not seen:\n"
         "    time.sleep(0.01)\n"
         "time.sleep(0.5)\n"
-        "sys.exit(130)\n"
+        f"sys.exit({ends_with})\n"
     )
     parent = (
         "import sys\n"
