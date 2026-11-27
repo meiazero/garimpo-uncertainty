@@ -119,6 +119,8 @@ measures the machine instead of running the pipeline:
 - It touches neither Drive nor the real store. `garimpo tune` writes synthetic cells to
   `outputs/tuning/store/` on the local disk and its rows to `outputs/tuning/results.json`, which
   the release at the end, when `RELEASE` is checked, erases: copy the verdict first.
+- `outputs/tuning-l4/` keeps the run that fixed the experiment's settings on the L4 (2026-11-27,
+  `TUNING: PASS`): `results.json` and the printed log `tune.log`.
 - A section that raises is reported and the next one runs (`tuning/tune.py`, `run_sections`), so
   one run reports every finding. The command exits 1 when a section failed, a run gave other bits
   when repeated, or the workers changed what was read or trained; a faster candidate with other
