@@ -41,8 +41,9 @@ reference, the cell grid and each cell's area).
 garimpo data_figures --out outputs/figures
 ```
 
-The protocol diagram is TikZ, not a plot: `figs/protocolo.tex` in the dissertation's repository,
-compiled with `pdflatex protocolo.tex`.
+The dissertation's diagrams, the protocol figure among them, are not drawn here: they live in
+their own repository, `dissertation-figures`, beside this one, so a figure change never changes
+the commit the experiment runs on.
 
 ## Each figure and why it exists
 
