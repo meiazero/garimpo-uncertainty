@@ -297,7 +297,6 @@ def read_cells(store: Path, cells: pd.DataFrame, workers: int, *, as_train: bool
         CONFIG["BATCH_SIZE" if as_train else "EVAL_BATCH_SIZE"],
         workers,
         samples=len(cells) if as_train else None,
-        augment=as_train,
     )
     sums = [
         torch.cat([checksum(tensor) for tensor in batch[:2]])
@@ -330,7 +329,6 @@ def training_run(
         CONFIG["BATCH_SIZE"],
         workers,
         samples=steps * CONFIG["BATCH_SIZE"],
-        augment=True,
     )
     evict(store)
     with Usage() as usage:

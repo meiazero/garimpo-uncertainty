@@ -14,12 +14,30 @@ import garimpo_uncertainty.data
 FLIP_PROBABILITY = 0.5
 
 
-def _random_flips(image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    if torch.rand(1).item() > FLIP_PROBABILITY:
-        image, mask = image[..., ::-1], mask[..., ::-1]
-    if torch.rand(1).item() > FLIP_PROBABILITY:
-        image, mask = image[..., ::-1, :], mask[..., ::-1, :]
-    return image, mask
+class FlippedDraws(torch.utils.data.Sampler):
+    """`samples` cells drawn as RandomSampler draws them, each with its two flips.
+
+    The flips come from the sampler's own generator, in the main process, so they follow the
+    draws and not the worker that loads the cell: the number of workers leaves the weights alone.
+    """
+
+    def __init__(self, dataset: torch.utils.data.Dataset, samples: int) -> None:
+        self.dataset, self.samples = dataset, samples
+
+    def __len__(self) -> int:
+        return self.samples
+
+    def __iter__(self) -> Iterator[tuple[int, bool, bool]]:
+        # One draw from torch's generator per pass, as RandomSampler takes its own seed.
+        generator = torch.Generator().manual_seed(
+            int(torch.empty((), dtype=torch.int64).random_().item())
+        )
+        cells = torch.utils.data.RandomSampler(
+            self.dataset, num_samples=self.samples, generator=generator
+        )
+        for index in cells:
+            horizontal, vertical = (torch.rand(2, generator=generator) > FLIP_PROBABILITY).tolist()
+            yield index, horizontal, vertical
 
 
 class CellDataset(torch.utils.data.Dataset):
@@ -48,7 +66,10 @@ class CellDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.cell_index)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, int]:
+    def __getitem__(
+        self, drawn: int | tuple[int, bool, bool]
+    ) -> tuple[torch.Tensor, torch.Tensor, int]:
+        index, horizontal, vertical = drawn if self.augment else (drawn, False, False)
         if self.images is None:
             self.images = np.load(self.root / "images.npy", mmap_mode="r")
             self.masks = np.load(self.root / "masks.npy", mmap_mode="r")
@@ -60,8 +81,10 @@ class CellDataset(torch.utils.data.Dataset):
         if self.mean is not None:
             image = (image - self.mean) / self.std
         mask = (self.masks[cell_index][None] > 0).astype(np.float32)
-        if self.augment:
-            image, mask = _random_flips(image, mask)
+        if horizontal:
+            image, mask = image[..., ::-1], mask[..., ::-1]
+        if vertical:
+            image, mask = image[..., ::-1, :], mask[..., ::-1, :]
         return torch.from_numpy(image.copy()), torch.from_numpy(mask.copy()), cell_index
 
 
@@ -73,19 +96,16 @@ def loader(
     num_workers: int,
     *,
     samples: int | None = None,
-    augment: bool = False,
 ) -> torch.utils.data.DataLoader:
-    """In order, or `samples` cells drawn as back-to-back shuffles of every cell.
+    """In order, or training's draws: `samples` cells in back-to-back shuffles, randomly flipped.
 
     A fixed number of samples gives every training fraction the same updates per epoch.
     """
-    dataset = CellDataset(root, cells, normalization, augment=augment)
+    dataset = CellDataset(root, cells, normalization, augment=samples is not None)
     return torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
-        sampler=None
-        if samples is None
-        else torch.utils.data.RandomSampler(dataset, num_samples=samples),
+        sampler=None if samples is None else FlippedDraws(dataset, samples),
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
     )

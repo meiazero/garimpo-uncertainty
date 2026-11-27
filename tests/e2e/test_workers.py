@@ -26,18 +26,18 @@ def predictions(run_dir: Path) -> dict[str, np.ndarray]:
     return arrays | {role: np.load(directory / f"{role}.npy") for role in roles}
 
 
-def test_training_with_workers_is_fixed_by_the_seed(
+def test_training_is_the_same_at_any_worker_count(
     convnet_run: support.FinishedRun, data_root: Path, tmp_path: Path
 ) -> None:
-    """Two runs give one model, so worker seeds come from --seed and not from the clock or pid.
+    """0 and 2 workers give one model: the flips follow the draws, not the worker that reads a cell.
 
     The band statistics sum batches in loader order, so workers must leave them unchanged.
     """
     expected = garimpo_uncertainty.data.read_run_metadata(convnet_run.run_dir)["normalization"]
     weights = []
-    for name in ("first", "second"):
-        run_dir = tmp_path / name
-        args = with_workers(support.train_args("convnet", run_dir, epochs="1"), "2")
+    for count in ("0", "2"):
+        run_dir = tmp_path / f"workers-{count}"
+        args = with_workers(support.train_args("convnet", run_dir, epochs="1"), count)
         support.run("train", *args, data_root=data_root)
         metadata = garimpo_uncertainty.data.read_run_metadata(run_dir)
         assert metadata["normalization"] == expected

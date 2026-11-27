@@ -445,7 +445,6 @@ def build_loaders(
             batch_size,
             workers,
             samples=args.steps_per_epoch * batch_size,
-            augment=True,
         ),
         validation=garimpo_uncertainty.cell_dataset.loader(
             root, validation_cells, normalization, batch_size, workers
