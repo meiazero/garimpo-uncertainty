@@ -147,6 +147,7 @@ def test_two_classes_train_and_score_through_the_loop() -> None:
     [
         {},
         {"__class_fullname__": "Nope"},
+        None,
         "flip",
         {"__class_fullname__": "Compose", "transforms": ["x"]},
     ],
