@@ -13,6 +13,11 @@ import sklearn.ensemble
 
 import garimpo_uncertainty.data
 
+# The directions compass2d registers, in its order; written out, as importing compass2d loads torch,
+# which compute_metrics must not; tests/test_training_parts.py holds the two equal.
+DIRECTIONS = ("pca", "svm")
+JACOBIAN_METHODS = tuple(f"compass_j_{direction}" for direction in DIRECTIONS)
+COMPASS_METHODS = ("compass_l", *JACOBIAN_METHODS)  # the rows of scores/scores.npz
 COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibrations as PCA
     ("independent_pixels", "none"),
     ("conformal_simple", "external"),
@@ -24,15 +29,11 @@ COMBINATIONS = (  # tab:combinacoes, plus the SVM direction with the same calibr
     ("conformal_local", "own_region"),
     ("cqr", "external"),
     ("cqr", "own_region"),
-    ("compass_l", "external"),
-    ("compass_l", "external_weighted"),
-    ("compass_l", "own_region"),
-    ("compass_j_pca", "external"),
-    ("compass_j_pca", "external_weighted"),
-    ("compass_j_pca", "own_region"),
-    ("compass_j_svm", "external"),
-    ("compass_j_svm", "external_weighted"),
-    ("compass_j_svm", "own_region"),
+    *(
+        (method, situation)
+        for method in COMPASS_METHODS
+        for situation in ("external", "external_weighted", "own_region")
+    ),
 )
 # Mondrian calibration by predicted mining, the stratum known when an interval is used: one quantile
 # for cells predicted empty, one for the rest. Each is the pooled group quantile, without classic
@@ -41,9 +42,7 @@ MONDRIAN_METHODS = (
     "conformal_simple",
     "conformal_local",
     "cqr",
-    "compass_l",
-    "compass_j_pca",
-    "compass_j_svm",
+    *COMPASS_METHODS,
 )
 COMBINATIONS += tuple(
     (method, f"{situation}_mondrian")
@@ -52,7 +51,7 @@ COMBINATIONS += tuple(
 )
 # Asymmetric COMPASS (Cheung et al., 2026, Algorithm 6) through one joint score: each a_ row reads
 # the one-sided scores of the COMPASS method named after the prefix.
-ASYMMETRIC_METHODS = ("a_compass_l", "a_compass_j_pca", "a_compass_j_svm")
+ASYMMETRIC_METHODS = tuple(f"a_{method}" for method in COMPASS_METHODS)
 COMBINATIONS += tuple(
     (method, situation) for method in ASYMMETRIC_METHODS for situation in ("external", "own_region")
 )
@@ -67,11 +66,6 @@ COMBINATIONS += tuple(
 SUBSAMPLES = 100  # B in Dunn et al. (2022), Section 4.4
 DENSITY_RATIO_FOLDS = 5  # group folds of the cross-fitted domain classifier
 ALPHAS = (0.05, 0.1, 0.15)  # Cheung et al. (2026), Table 1
-# The directions compass2d registers, in its order; written out, as importing compass2d loads torch,
-# which compute_metrics must not; tests/test_training_parts.py holds the two equal.
-DIRECTIONS = ("pca", "svm")
-JACOBIAN_METHODS = tuple(f"compass_j_{direction}" for direction in DIRECTIONS)
-COMPASS_METHODS = ("compass_l", *JACOBIAN_METHODS)  # the rows of scores/scores.npz
 LAYER_METHODS = (*JACOBIAN_METHODS, *(f"a_{method}" for method in JACOBIAN_METHODS))
 
 

@@ -23,12 +23,19 @@ import garimpo_uncertainty.checkpoints
 import garimpo_uncertainty.compass_j
 import garimpo_uncertainty.data
 import garimpo_uncertainty.files
+import garimpo_uncertainty.intervals
 import garimpo_uncertainty.pipeline.runner
 
 logger = logging.getLogger(__name__)
 
 PROFILE = "search_profile.npz"
-DIRECTIONS = {"pca": "compass_j_pca", "svm": "compass_j_svm"}
+DIRECTIONS = dict(
+    zip(
+        garimpo_uncertainty.intervals.DIRECTIONS,
+        garimpo_uncertainty.intervals.JACOBIAN_METHODS,
+        strict=True,
+    )
+)
 THRESHOLDS = (1e-15, 1e-12, 1e-9, 1e-6, 1e-3, 1e-1)
 
 
