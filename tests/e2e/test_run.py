@@ -555,13 +555,15 @@ def test_failed_stage_stops_the_job(run_root: Path) -> None:
     assert "PIPELINE CHECK: FAIL" in log
 
 
-def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None:
+@pytest.mark.parametrize("model", ["interrupted", "interrupted_twice"])
+def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path, model: str) -> None:
     """Colab's interrupt reaches the runner alone: the stage must stop too, and the check run.
 
     The signal comes once training prints, inside its stage; the stage's own traceback, printed
-    after the signal, must still reach the log.
+    after the signal, must still reach the log. Colab's SIGTERM, once the check has started, must
+    not cost the verdict.
     """
-    model = write_config("interrupted")
+    write_config(model)
     with subprocess.Popen(  # noqa: S603 - arguments come from the tests
         runner_command(SCALE, model, "--num-workers", NUM_WORKERS),
         cwd=RUN_ROOT,
@@ -575,8 +577,17 @@ def test_ctrl_c_stops_the_stage_and_still_runs_the_check(run_root: Path) -> None
             if " training on " in line:
                 process.send_signal(signal.SIGINT)
                 break
+        if model == "interrupted_twice":
+            deadline = time.monotonic() + 300
+            while time.monotonic() < deadline and "=== start pipeline_check" not in (
+                log_of(model).read_text(encoding="utf-8")
+            ):
+                time.sleep(0.05)
+            process.send_signal(signal.SIGTERM)
         process.communicate(timeout=300)
     assert process.returncode == 130
+    verdict = json.loads((run_dir_of(model) / "verdict.json").read_text(encoding="utf-8"))
+    assert verdict["verdict"] == "FAIL"
     log = log_of(model).read_text(encoding="utf-8")
     train = json.loads((run_dir_of(model) / "status" / "train.json").read_text())
     assert train["status"] == "interrupted", log[-8000:]

@@ -71,7 +71,8 @@ cell before the release raises:
 If you interrupt a run cell once, `garimpo run` stops the stage, keeps the lines it prints as it
 stops, runs the pipeline check and exits 130. Colab turns a second interrupt into SIGTERM and then
 SIGKILL: the runner kills the stage at once, then still runs the check, whose verdict reaches the
-cell and the log, and `garimpo experiment` starts no later model. Then run the cells of sections 6
+cell and the log, and `garimpo experiment` starts no later model. Once the stage has stopped, the
+runner ignores any further interrupt until the check has written the verdict. Then run the cells of sections 6
 and 7 by hand.
 
 ## The gates
