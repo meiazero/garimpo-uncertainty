@@ -481,8 +481,9 @@ def main() -> None:
     try:
         garimpo_uncertainty.models.check_encoder_weights(args.arch, args.encoder_weights)
         check_choices(args)
-    # A spec's options reach a constructor, which refuses an unknown one with a TypeError.
-    except (ValueError, TypeError, ImportError) as error:
+    # A spec's options reach a constructor, which refuses an unknown one with a TypeError; torch
+    # checks some values, such as label_smoothing, only when the probe calls the loss.
+    except (ValueError, TypeError, ImportError, RuntimeError) as error:
         parser.error(str(error))
 
     root = garimpo_uncertainty.data.data_root()

@@ -279,6 +279,17 @@ def test_parts_that_cannot_train_are_refused_before_any_epoch(
     assert message in result.stderr
 
 
+def test_a_loss_option_torch_refuses_only_when_called_is_refused_before_any_epoch(
+    data_root: Path, tmp_path: Path
+) -> None:
+    args = replaced(support.train_args("unet", tmp_path / "run"), "--num-classes", "2")
+    args = replaced(args, "--loss", '{"name": "cross_entropy", "label_smoothing": 2}')
+    args = replaced(args, "--postprocess", "softmax_argmax")
+    result = support.run("train", *args, data_root=data_root, check=False)
+    assert result.returncode == 2, result.stderr
+    assert "label_smoothing must be between" in result.stderr
+
+
 def test_imagenet_absent_file_names_the_command(data_root: Path, tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     args = [*support.train_args("unet", run_dir, epochs="1"), "--encoder-weights", "imagenet"]
