@@ -99,6 +99,8 @@ class Albumentations(Augmentation):
                 f"{list(image.shape)} and {list(mask.shape)}, not {cell.dtype} "
                 f"{list(cell.shape)} and {list(label.shape)}"
             )
+        if not np.isfinite(cell).all():
+            raise ValueError("albumentations: the pipeline must keep the cell's values finite")
         if not ((label == 0) | (label == 1)).all():
             raise ValueError(
                 "albumentations: the pipeline must keep the mask's 0 and 1, the classes the losses "

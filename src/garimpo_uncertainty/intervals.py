@@ -118,21 +118,45 @@ def independent_pixel_terms(cells: pd.DataFrame, alpha: float) -> tuple[np.ndarr
     return center - half_width, center + half_width
 
 
+Terms = tuple[np.ndarray, np.ndarray, np.ndarray]
+
+
+def simple_terms(cells: pd.DataFrame, _floor: float, _cqr_models: tuple) -> Terms:
+    vhat = cells.vhat.to_numpy()
+    return vhat, vhat, np.ones_like(vhat)
+
+
+def relative_terms(cells: pd.DataFrame, floor: float, _cqr_models: tuple) -> Terms:
+    vhat = cells.vhat.to_numpy()
+    return vhat, vhat, np.maximum(vhat, floor)
+
+
+def local_terms(cells: pd.DataFrame, floor: float, _cqr_models: tuple) -> Terms:
+    vhat = cells.vhat.to_numpy()
+    return vhat, vhat, np.maximum(uncertainty_ha(cells), floor)
+
+
+def cqr_terms(cells: pd.DataFrame, _floor: float, cqr_models: tuple) -> Terms:
+    lower = cqr_models[0].predict(cells[["vhat"]].to_numpy())
+    upper = cqr_models[1].predict(cells[["vhat"]].to_numpy())
+    return lower, upper, np.ones_like(cells.vhat.to_numpy())
+
+
+OUTPUT_SPACE_TERMS = {
+    "conformal_simple": simple_terms,
+    "conformal_relative": relative_terms,
+    "conformal_local": local_terms,
+    "cqr": cqr_terms,
+}
+
+
 def method_terms(
     method: str, cells: pd.DataFrame, score_floor_ha: float, cqr_models: tuple
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    vhat = cells.vhat.to_numpy()
-    if method == "conformal_simple":
-        return vhat, vhat, np.ones_like(vhat)
-    if method == "conformal_relative":
-        return vhat, vhat, np.maximum(vhat, score_floor_ha)
-    if method == "conformal_local":
-        return vhat, vhat, np.maximum(uncertainty_ha(cells), score_floor_ha)
-    if method == "cqr":
-        lower = cqr_models[0].predict(cells[["vhat"]].to_numpy())
-        upper = cqr_models[1].predict(cells[["vhat"]].to_numpy())
-        return lower, upper, np.ones_like(vhat)
-    raise ValueError(f"not an output-space method: {method!r}")
+) -> Terms:
+    """Return the lower term, the upper term and the scale of an output-space method."""
+    if method not in OUTPUT_SPACE_TERMS:
+        raise ValueError(f"not an output-space method: {method!r}")
+    return OUTPUT_SPACE_TERMS[method](cells, score_floor_ha, cqr_models)
 
 
 def scores(v: np.ndarray, lower: np.ndarray, upper: np.ndarray, scale: np.ndarray) -> np.ndarray:

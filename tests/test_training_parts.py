@@ -206,6 +206,16 @@ def test_the_architectures_that_need_starting_weights_are_the_registry_s() -> No
     assert weighted == set(garimpo_uncertainty.config.WEIGHTED_ARCHS)
 
 
+def test_albumentations_refuses_a_cell_that_is_no_longer_finite() -> None:
+    pipeline = albumentations.Compose(
+        [albumentations.Normalize(mean=0, std=0, max_pixel_value=1, p=1)]
+    )
+    with pytest.raises(ValueError, match="values finite"):
+        garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(
+            {"name": "albumentations", "transform": albumentations.to_dict(pipeline)["transform"]}
+        )
+
+
 def test_albumentations_refuses_a_mask_value_the_losses_do_not_read() -> None:
     pipeline = albumentations.Compose([albumentations.CoarseDropout(fill_mask=255, p=1)])
     with pytest.raises(ValueError, match="must keep the mask's 0 and 1"):

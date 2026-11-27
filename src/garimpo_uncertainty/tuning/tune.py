@@ -113,7 +113,13 @@ def full_run_size() -> tuple[int, int]:
         tiles.get(f"Artisanal/{role}", 0) for role in ("validation", "calibration", "test")
     )
     cells = garimpo_uncertainty.tuning.workloads.CELLS_PER_TILE * evaluated
-    return full["EPOCHS"] * full["STEPS_PER_EPOCH"], cells
+    epochs, steps = full.get("EPOCHS"), full.get("STEPS_PER_EPOCH")
+    if not all(type(count) is int and count > 0 for count in (epochs, steps)):
+        raise ValueError(
+            "configs/scales/full.json: EPOCHS and STEPS_PER_EPOCH must be positive integers, "
+            f"got {epochs!r} and {steps!r}"
+        )
+    return epochs * steps, cells
 
 
 def show(results: dict, verdict: garimpo_uncertainty.tuning.verdict.Verdict) -> None:

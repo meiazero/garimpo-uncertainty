@@ -9,6 +9,7 @@ import pytest
 import garimpo_uncertainty.tuning.sections
 import garimpo_uncertainty.tuning.tune
 import garimpo_uncertainty.tuning.verdict
+import garimpo_uncertainty.tuning.workloads
 
 
 def train_row(workers: int, wait: float, *, stable: bool = True, matches: bool = True) -> dict:
@@ -49,6 +50,16 @@ def test_configs_that_cannot_be_read_fail_the_tuning_with_a_verdict(
         garimpo_uncertainty.tuning.tune.main()
     assert exited.value.code == 1
     assert "TUNING: FAIL: the configs cannot be read: TypeError" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("epochs", ["100", None, 0, True])
+def test_the_run_size_needs_positive_integers(
+    monkeypatch: pytest.MonkeyPatch, epochs: object
+) -> None:
+    full = {"EPOCHS": epochs, "STEPS_PER_EPOCH": 10}
+    monkeypatch.setattr(garimpo_uncertainty.tuning.workloads, "read_json", lambda path: full)
+    with pytest.raises(ValueError, match="must be positive integers"):
+        garimpo_uncertainty.tuning.tune.full_run_size()
 
 
 def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:
