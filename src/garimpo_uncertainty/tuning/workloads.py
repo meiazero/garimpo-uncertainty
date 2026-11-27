@@ -170,7 +170,7 @@ def training_run(
     bit: the model's build and the weights' copy are not the loop's.
     """
     torch.manual_seed(CONFIG["SEED"])
-    model = garimpo_uncertainty.models.build(arch, BANDS).to("cuda")
+    model = garimpo_uncertainty.models.build(arch, BANDS, CONFIG["NUM_CLASSES"]).to("cuda")
     state = garimpo_uncertainty.training.loop.TrainingState(
         model=model,
         optimizer=garimpo_uncertainty.training.optimizers.OPTIMIZER_REGISTRY.build(
