@@ -52,14 +52,14 @@ def runs_at(scale: str, models: list[str], *, finished: bool) -> list[Path]:
         run = Path(config.run_dir)
         if finished:
             statuses = garimpo_uncertainty.pipeline.merge.stage_statuses(run).values()
-            ready, lacks = all(status == "ok" for status in statuses), "every stage ok"
+            ready, lacks = all(status == "ok" for status in statuses), "all its stages ok"
         else:
             ready = garimpo_uncertainty.artifacts.RunPaths.of(run).intervals.exists()
             lacks = "intervals"
         if ready:
             found.append(run)
         else:
-            print(f"Left out {model}: {run} has no {lacks} yet.")
+            print(f"Left out {model}: {run} does not have {lacks} yet.")
     return found
 
 

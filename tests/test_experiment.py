@@ -246,4 +246,4 @@ def test_figures_at_a_scale_draw_only_the_runs_with_intervals(
     assert "Left out convnet" in capsys.readouterr().out
     # The other figures read the stages after the intervals, which this run has not done.
     assert garimpo_uncertainty.figures.make.runs_at("pilot", ["unet_scratch"], finished=True) == []
-    assert "has no every stage ok yet" in capsys.readouterr().out
+    assert "does not have all its stages ok yet" in capsys.readouterr().out

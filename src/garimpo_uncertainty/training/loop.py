@@ -183,7 +183,8 @@ class Trainer:
             weighted_loss += self.val_step(images, masks, metrics.values()) * len(images)
         loss = garimpo_uncertainty.training.metrics.ratio(weighted_loss, len(loader.dataset))
         scores = {f"{prefix}_{name}": metric.compute() for name, metric in metrics.items()}
-        return {f"{prefix}_loss": loss} | scores
+        # In name order, as main wrote history.csv, whatever order METRICS lists.
+        return dict(sorted(({f"{prefix}_loss": loss} | scores).items()))
 
     def val_step(
         self,

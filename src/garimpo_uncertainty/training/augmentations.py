@@ -113,7 +113,7 @@ class Transform:
     """Applies each augmentation to a cell's reflectance, then z-scores it by the given statistics.
 
     Albumentations reads a float image as values in [0, 1] and clips some results to it, which
-    reflectance is and a z-score is not. A flip commutes with the z-score, bit for bit.
+    reflectance nearly is and a z-score is not. A flip commutes with the z-score, bit for bit.
     ponytail: a step that clips also saturates the few pixels brighter than reflectance 1; one
     that must keep them needs the cell scaled into [0, 1] around it.
     """
