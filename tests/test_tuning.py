@@ -38,7 +38,7 @@ def test_results_json_holds_no_nan_for_a_gpu_use_never_sampled() -> None:
 
 def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:
     verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=1, evaluated_cells=1)
-    verdict.train("unet", [train_row(0, 0.5, stable=False), train_row(2, 0.4)])
+    verdict.train("unet", [train_row(0, 0.5), train_row(2, 0.4, stable=False)])
     verdict.loader(
         [
             {
@@ -58,16 +58,29 @@ def test_lost_bits_and_starved_loops_fail_the_tuning() -> None:
         ]
     )
     assert verdict.failures == [
-        "train unet: two runs at [0] workers end with other weights under deterministic algorithms",
+        "train unet: two runs at [2] workers end with other weights under deterministic algorithms",
         "train unet: data loading starves the loop at every worker count that keeps the weights",
         "loader: train at 2 workers read other bytes",
     ]
 
 
-def test_an_unstable_worker_count_never_sizes_the_run() -> None:
+@pytest.mark.parametrize(
+    ("rows", "sized_by"),
+    [
+        ([train_row(0, 0.3), train_row(2, 0.0, stable=False), train_row(4, 0.0)], 4),
+        # Two workers match 0 workers' weights, but those changed between two runs.
+        ([train_row(0, 0.0, stable=False), train_row(2, 0.0)], None),
+    ],
+)
+def test_an_unstable_worker_count_never_sizes_the_run(rows: list[dict], sized_by: int) -> None:
     verdict = garimpo_uncertainty.tuning.verdict.Verdict([], updates=3600, evaluated_cells=1)
-    verdict.train("unet", [train_row(0, 0.0, stable=False), train_row(2, 0.0)])
-    assert verdict.findings[-1].startswith("train unet: 2 workers keep it fed")
+    verdict.train("unet", rows)
+    sized = [line for line in verdict.findings if "keep it fed" in line]
+    assert sized == (
+        []
+        if sized_by is None
+        else [f"train unet: {sized_by} workers keep it fed; 3600 updates take ~0.4 h"]
+    )
 
 
 def test_workers_that_move_the_weights_fail_the_tuning() -> None:

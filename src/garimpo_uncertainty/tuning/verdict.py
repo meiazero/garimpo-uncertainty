@@ -80,7 +80,9 @@ class Verdict:
             self.failures.append(
                 f"train {arch}: {moved} workers end with other weights than 0 workers"
             )
-        self.size_workers(arch, [r for r in rows if r["stable"] and r["weights_match_0_workers"]])
+        kept = [row for row in rows if row["stable"] and row["weights_match_0_workers"]]
+        # Matching 0 workers means nothing once 0 workers gave other weights twice, or failed.
+        self.size_workers(arch, kept if any(row["workers"] == 0 for row in kept) else [])
 
     def size_workers(self, arch: str, kept: list[dict]) -> None:
         """Size the run by the fewest workers, of those that keep the weights, that keep it fed."""
