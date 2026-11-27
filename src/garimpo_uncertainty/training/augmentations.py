@@ -67,6 +67,10 @@ class Albumentations(Augmentation):
             self.pipeline = albumentations.from_dict({"transform": transform})
         except KeyError as missing:  # from_dict names only the key it lacked
             raise ValueError(f"albumentations: not a serialized pipeline, no {missing}") from None
+        except AttributeError:  # from_dict calls .get on a step that is a string or a list
+            raise ValueError(
+                "albumentations: not a serialized pipeline, a step is no dict"
+            ) from None
         self.check_output()
 
     def check_output(self) -> None:

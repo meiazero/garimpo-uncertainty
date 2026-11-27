@@ -142,8 +142,16 @@ def test_two_classes_train_and_score_through_the_loop() -> None:
     assert np.isfinite(record["val_loss"])
 
 
-@pytest.mark.parametrize("transform", [{}, {"__class_fullname__": "Nope"}])
-def test_albumentations_refuses_what_is_not_a_serialized_pipeline(transform: dict) -> None:
+@pytest.mark.parametrize(
+    "transform",
+    [
+        {},
+        {"__class_fullname__": "Nope"},
+        "flip",
+        {"__class_fullname__": "Compose", "transforms": ["x"]},
+    ],
+)
+def test_albumentations_refuses_what_is_not_a_serialized_pipeline(transform: object) -> None:
     with pytest.raises(ValueError, match="not a serialized pipeline"):
         garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(
             {"name": "albumentations", "transform": transform}
