@@ -124,6 +124,37 @@ def test_an_interrupt_reaches_the_job_once(
     assert seen.read_text() == "1"
 
 
+def test_a_second_interrupt_reaches_the_job_as_sigterm(tmp_path: Path) -> None:
+    """Colab sends SIGTERM soon after the first SIGINT; the job must get it to stop at once."""
+    ready, seen = tmp_path / "ready", tmp_path / "seen"
+    job = (
+        "import pathlib, signal, sys, time\n"
+        "seen = []\n"
+        "signal.signal(signal.SIGINT, lambda *_: seen.append('int'))\n"
+        "signal.signal(signal.SIGTERM, lambda *_: seen.append('term'))\n"
+        f"pathlib.Path({str(ready)!r}).touch()\n"
+        "deadline = time.monotonic() + 10\n"
+        "while 'term' not in seen and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        f"pathlib.Path({str(seen)!r}).write_text(','.join(seen))\n"
+        "sys.exit(130)\n"
+    )
+    parent = (
+        "import sys\n"
+        "import garimpo_uncertainty.pipeline.experiment as experiment\n"
+        f"sys.exit(experiment.run_model([sys.executable, '-c', {job!r}]))\n"
+    )
+    process = subprocess.Popen([sys.executable, "-c", parent], start_new_session=True)  # noqa: S603
+    deadline = time.monotonic() + 30
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    os.kill(process.pid, signal.SIGINT)
+    time.sleep(0.05)
+    os.kill(process.pid, signal.SIGTERM)
+    assert process.wait(timeout=30) == 130
+    assert seen.read_text() == "int,term"
+
+
 def test_figures_at_a_scale_draw_only_the_runs_with_intervals(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
 ) -> None:

@@ -40,18 +40,24 @@ def run_model(command: list[str]) -> int:
     Colab's SIGTERM, makes it kill the stage at once. The job gets a process group of its own, so
     a terminal's Ctrl+C, sent to the whole group, reaches it once, through here, as Colab's does.
     """
-    with subprocess.Popen(command, process_group=0) as process:  # noqa: S603 - checked words
-        try:
-            return process.wait()
-        except KeyboardInterrupt:
-            process.send_signal(signal.SIGINT)
-        try:
-            process.wait()
-        except KeyboardInterrupt:
-            process.send_signal(signal.SIGTERM)
-            process.wait()
-        # A job that ended 0 as the interrupt came must still stop the models after it.
-        return STOPPED
+    job: list[subprocess.Popen] = []
+    interrupts: list[int] = []
+
+    def forward(signum: int, _frame: object) -> None:
+        # A handler that returns, unlike a raise, leaves wait() running, so no second one is lost.
+        interrupts.append(signum)
+        for process in job:
+            process.send_signal(signal.SIGINT if len(interrupts) == 1 else signal.SIGTERM)
+
+    previous = {kind: signal.signal(kind, forward) for kind in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        job.append(subprocess.Popen(command, process_group=0))  # noqa: S603 - checked words
+        code = job[0].wait()
+    finally:
+        for kind, handler in previous.items():
+            signal.signal(kind, handler)
+    # A job that ended 0 as the interrupt came must still stop the models after it.
+    return STOPPED if interrupts else code
 
 
 def run_scale(scale: str, options: list[str]) -> int:
