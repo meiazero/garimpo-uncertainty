@@ -340,7 +340,7 @@ def add_part_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="*",
         type=parse,
         required=True,
-        help=f"in order, after normalization: {', '.join(augmentations.names())}",
+        help=f"in order, on the reflectance before the z-score: {', '.join(augmentations.names())}",
     )
     parser.add_argument(
         "--callbacks",

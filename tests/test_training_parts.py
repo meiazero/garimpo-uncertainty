@@ -185,6 +185,21 @@ def test_albumentations_refuses_a_pipeline_that_changes_the_cell(step: object) -
         )
 
 
+def test_albumentations_reads_the_reflectance_before_the_z_score() -> None:
+    """A neutral step clips a float image to [0, 1]; the reflectance is there, its z-score not."""
+    neutral = albumentations.Compose(
+        [albumentations.RandomBrightnessContrast(brightness_limit=0, contrast_limit=0, p=1)]
+    )
+    augmentation = garimpo_uncertainty.training.augmentations.AUGMENTATION_REGISTRY.build(
+        {"name": "albumentations", "transform": albumentations.to_dict(neutral)["transform"]}
+    )
+    image = np.linspace(0, 1, 2 * 4 * 4, dtype=np.float32).reshape(2, 4, 4)
+    normalization = {"mean": [0.5, 0.5], "std": [0.25, 0.25]}
+    transform = garimpo_uncertainty.training.augmentations.Transform(normalization, (augmentation,))
+    found, _ = transform(image, np.zeros((1, 4, 4), np.float32), (0,))
+    np.testing.assert_array_equal(found, (image - 0.5) / np.float32(0.25))
+
+
 def test_the_architectures_that_need_starting_weights_are_the_registry_s() -> None:
     registry = garimpo_uncertainty.models.MODEL_REGISTRY
     weighted = {arch for arch in registry.names() if registry[arch].variants}

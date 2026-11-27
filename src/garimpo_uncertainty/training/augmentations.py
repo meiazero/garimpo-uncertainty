@@ -1,4 +1,4 @@
-"""Training augmentations by name, and the transform that applies them after normalization.
+"""Training augmentations by name, and the transform that applies them before normalization.
 
 An augmentation draws its randomness in `draw`, in the main process with the sampler's generator,
 and applies it in `__call__`, in a worker. So a cell gets the same augmentation whatever worker
@@ -103,7 +103,11 @@ class Albumentations(Augmentation):
 
 
 class Transform:
-    """Z-scores a cell's reflectance when statistics are given, then applies each augmentation."""
+    """Applies each augmentation to a cell's reflectance, then z-scores it by the given statistics.
+
+    Albumentations reads a float image as values in [0, 1] and clips some results to it, which
+    reflectance is and a z-score is not. A flip commutes with the z-score, bit for bit.
+    """
 
     def __init__(
         self,
@@ -119,8 +123,8 @@ class Transform:
     def __call__(
         self, image: np.ndarray, mask: np.ndarray, draws: tuple = ()
     ) -> tuple[np.ndarray, np.ndarray]:
-        if self.mean is not None:
-            image = (image - self.mean) / self.std
         for augmentation, drawn in zip(self.augmentations, draws, strict=True):
             image, mask = augmentation(image, mask, drawn)
+        if self.mean is not None:
+            image = (image - self.mean) / self.std
         return image, mask
