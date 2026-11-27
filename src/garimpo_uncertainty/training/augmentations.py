@@ -99,6 +99,11 @@ class Albumentations(Augmentation):
                 f"{list(image.shape)} and {list(mask.shape)}, not {cell.dtype} "
                 f"{list(cell.shape)} and {list(label.shape)}"
             )
+        if not ((label == 0) | (label == 1)).all():
+            raise ValueError(
+                "albumentations: the pipeline must keep the mask's 0 and 1, the classes the losses "
+                f"read, not {np.unique(label)[:8].tolist()}"
+            )
         return cell, label
 
 
@@ -107,6 +112,8 @@ class Transform:
 
     Albumentations reads a float image as values in [0, 1] and clips some results to it, which
     reflectance is and a z-score is not. A flip commutes with the z-score, bit for bit.
+    ponytail: a step that clips also saturates the few pixels brighter than reflectance 1; one
+    that must keep them needs the cell scaled into [0, 1] around it.
     """
 
     def __init__(
