@@ -52,7 +52,8 @@ BASE_KEYS = (
     "BOUNDARY_TOLERANCE_PX",
     "CELL_PX",
 )
-# Present in every run, but empty on purpose when a run takes none: no augmentation, no early stop.
+# Lists present in every run, and [] on purpose when a run takes none: no augmentation, no early
+# stop. null still refuses, as a value left out rather than chosen.
 MAY_BE_EMPTY = ("AUGMENTATIONS", "CALLBACKS")
 REQUIRED = (*MODEL_KEYS, *SCALE_KEYS, *BASE_KEYS)
 
@@ -89,7 +90,9 @@ def problems(values: dict, misplaced: list[str]) -> list[str]:
     found += [
         f"{key}: missing or empty"
         for key in REQUIRED
-        if key not in values or (key not in MAY_BE_EMPTY and is_empty(values[key]))
+        if key not in values
+        or values[key] is None
+        or (key not in MAY_BE_EMPTY and is_empty(values[key]))
     ]
     if values.get("ARCH") == "unet" and is_empty(values.get(ENCODER_WEIGHTS)):
         found.append(f"{ENCODER_WEIGHTS}: missing or empty, and the U-Net needs it")

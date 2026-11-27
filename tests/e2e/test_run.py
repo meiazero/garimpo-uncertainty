@@ -84,7 +84,8 @@ FILLED = {
     "POSTPROCESS": "sigmoid_threshold",
     "METRICS": ["dice", "precision", "recall"],
     "AUGMENTATIONS": ["flips"],
-    "CALLBACKS": [],
+    # Never stops within the test's epochs; an object, so its JSON reaches train whole.
+    "CALLBACKS": [{"name": "early_stopping", "patience": 1000}],
     "LR": 1e-3,
     # Not 0, which SEED holds, so a swap shows in the commands.
     "WEIGHT_DECAY": 1e-6,
@@ -101,7 +102,8 @@ FILLED = {
     "SWEEP_STEPS": 9,
     "SWEEP_CELLS": 6,
     # Few updates leave every Jacobian zero at the upstream 10,000 (docs/failure-modes.md, 40).
-    "DIRECTION_TEMPERATURE": 1,
+    # 4: NUM_CLASSES holds 1 and NUM_WORKERS 2, so a swap shows in the commands.
+    "DIRECTION_TEMPERATURE": 4,
     "SEARCH_THRESHOLD_FEATURES": 2e-3,
     # Not 0.01, which SEARCH_THRESHOLD_LOGITS holds in the base config.
     "SCORE_FLOOR_HA": 0.02,
@@ -268,6 +270,12 @@ def test_log_holds_every_line_the_job_printed(passed_job: PassedJob) -> None:
     assert "PIPELINE CHECK: PASS" in log
 
 
+def command_words(value: object) -> list[str]:
+    """Return the words a config value becomes after its flag: an object as JSON."""
+    items = value if isinstance(value, list) else [value]
+    return [json.dumps(item) if isinstance(item, dict) else str(item) for item in items]
+
+
 def expected_key(flag: str, script: str) -> str:
     """Return the config key a flag must receive: from its own name, never from the runner."""
     if flag == "--batch-size":
@@ -284,14 +292,15 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     config = garimpo_uncertainty.config.RunConfig.load(
         RUN_ROOT / "configs", SCALE, passed_job.model
     )
-    # RUNS_DIR reaches the stages only through RUN_DIR, which the runner derives from it.
-    listed = {key: value for key, value in config.values.items() if key != "RUNS_DIR"}
-    values = {key: str(value) for key, value in listed.items() if not isinstance(value, list)}
-    values |= {"RUN_DIR": config.run_dir, "NUM_WORKERS": NUM_WORKERS}
+    # RUNS_DIR reaches the stages only through RUN_DIR, which the runner derives from it; LAYERS
+    # is checked on its own below, as the runner passes it whole or one layer at a time.
+    listed = {k: v for k, v in config.values.items() if k not in {"RUNS_DIR", "LAYERS"}}
+    values = {key: command_words(value) for key, value in listed.items()}
+    values |= {"RUN_DIR": [config.run_dir], "NUM_WORKERS": [NUM_WORKERS]}
     # A wrong key holding the same value would pass, so no two may share one.
     by_value: dict[str, set[str]] = {}
     for name, value in values.items():
-        by_value.setdefault(value, set()).add(name)
+        by_value.setdefault(" ".join(value), set()).add(name)
     shared = {value: names for value, names in by_value.items() if len(names) > 1}
     assert not shared, shared
 
@@ -305,7 +314,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
                     continue  # a switch such as --force
                 name = expected_key(flag, script)
                 assert name in values, f"{script} {flag}: no config key {name}"
-                assert given == [values[name]], (script, flag, name)
+                assert given == values[name], (script, flag, name)
                 received.add(name)
     assert received == set(values), f"never passed to a stage: {sorted(set(values) - received)}"
 
