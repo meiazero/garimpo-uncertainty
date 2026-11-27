@@ -97,7 +97,7 @@ def coverage_by_latent_distance(runs: list[Run], stem: Path) -> None:
             ax.set_xticks(range(BINS), [f"{b + 1}º" for b in range(BINS)])
         row[0].set_ylabel("PICP (%)")
         row[-1].annotate(
-            f"n = {len(test) // BINS} por quintil",
+            f"n = {common.number(len(test) // BINS, 0)} por quintil",
             xy=(0.97, 0.04),
             xycoords="axes fraction",
             ha="right",

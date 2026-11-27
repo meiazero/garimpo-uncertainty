@@ -188,15 +188,23 @@ def target_line(ax: object, coverage: float, *, vertical: bool = False) -> None:
 
 
 def number(value: float, digits: int = 2) -> str:
-    """Write a number as the dissertation does: decimal comma and a true minus sign."""
-    return f"{value:.{digits}f}".replace(".", ",").replace("-", "\u2212")
+    """Write a number as the dissertation does: dot between thousands, decimal comma, true minus."""
+    english = f"{value:,.{digits}f}"
+    return english.translate(str.maketrans({",": ".", ".": ",", "-": "\u2212"}))
 
 
 class CommaFormatter(matplotlib.ticker.ScalarFormatter):
-    """Matplotlib's linear tick labels with a decimal comma, offset included."""
+    """Matplotlib's linear tick labels with a decimal comma and dots between thousands."""
 
     def __call__(self, x: float, pos: int | None = None) -> str:
-        return super().__call__(x, pos).replace(".", ",")
+        label = super().__call__(x, pos)
+        # Rewrite the label, not x: on an axis with an offset the label is x minus that offset.
+        plain = label.replace("\u2212", "-")
+        try:
+            value = float(plain)
+        except ValueError:
+            return label.replace(".", ",")
+        return number(value, len(plain.partition(".")[2]))
 
     def get_offset(self) -> str:
         return super().get_offset().replace(".", ",")

@@ -102,7 +102,7 @@ def q1_area_error_and_boundary(runs: list[Run], stem: Path) -> None:
             row = row.iloc[0]
             ax.annotate(
                 f"$\\rho$ = {common.number(row.spearman)} [{common.number(row.ci_low)}; "
-                f"{common.number(row.ci_high)}]\nn = {row.n_cells}",
+                f"{common.number(row.ci_high)}]\nn = {common.number(row.n_cells, 0)}",
                 xy=(0.03, 0.95),
                 xycoords="axes fraction",
                 ha="left",
