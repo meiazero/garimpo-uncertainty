@@ -151,25 +151,43 @@ class CalibrationProblem:
         self, situation: str, calibration_scores: np.ndarray, test_scores: np.ndarray
     ) -> np.ndarray:
         """Each stratum of predicted mining calibrated alone (Vovk et al., 2005)."""
+        if situation not in MONDRIAN_SITUATIONS:
+            raise ValueError(
+                f"no Mondrian calibration {situation!r}; known: {list(MONDRIAN_SITUATIONS)}"
+            )
         rule = quantile_rule(situation, self.alpha, self.seed)
-        calibration_strata = garimpo_uncertainty.intervals.mondrian_stratum(self.calibration)
-        test_strata = garimpo_uncertainty.intervals.mondrian_stratum(self.test)
-        test_groups = self.test.group.to_numpy()
-        if situation == "external":
-            return compass2d.calibration.mondrian_quantiles(
-                calibration_scores,
-                self.calibration.group.to_numpy(),
-                calibration_strata,
-                test_strata,
-                rule,
-            )
-        quantiles = np.empty(len(test_scores))
-        for stratum in np.unique(test_strata):
-            inside = test_strata == stratum
-            quantiles[inside] = compass2d.calibration.leave_one_group_out_quantiles(
-                test_scores[inside], test_groups[inside], rule
-            )
-        return quantiles
+        return MONDRIAN_SITUATIONS[situation](self, rule, calibration_scores, test_scores)
+
+
+def external_mondrian(
+    problem: CalibrationProblem, rule: Rule, calibration_scores: np.ndarray, _test: np.ndarray
+) -> np.ndarray:
+    return compass2d.calibration.mondrian_quantiles(
+        calibration_scores,
+        problem.calibration.group.to_numpy(),
+        garimpo_uncertainty.intervals.mondrian_stratum(problem.calibration),
+        garimpo_uncertainty.intervals.mondrian_stratum(problem.test),
+        rule,
+    )
+
+
+def own_region_mondrian(
+    problem: CalibrationProblem, rule: Rule, _calibration: np.ndarray, test_scores: np.ndarray
+) -> np.ndarray:
+    test_strata = garimpo_uncertainty.intervals.mondrian_stratum(problem.test)
+    test_groups = problem.test.group.to_numpy()
+    quantiles = np.empty(len(test_scores))
+    for stratum in np.unique(test_strata):
+        inside = test_strata == stratum
+        quantiles[inside] = compass2d.calibration.leave_one_group_out_quantiles(
+            test_scores[inside], test_groups[inside], rule
+        )
+    return quantiles
+
+
+MONDRIAN_SITUATIONS: dict[
+    str, Callable[[CalibrationProblem, Rule, np.ndarray, np.ndarray], np.ndarray]
+] = {"external": external_mondrian, "own_region": own_region_mondrian}
 
 
 # A scores.npz from before the one-sided scores fails here by name, not by position.
