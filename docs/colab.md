@@ -62,7 +62,9 @@ still pending, and then releases the runtime, which spends compute units until i
 When a Python cell raises, Colab cancels the cells queued after it, the release included. So no
 cell before the release raises:
 
-- A failed `!` line only prints its error, and the cell carries on.
+- A failed `!` line only prints its error, and the cell carries on. The setup runs its steps
+  from Python instead and sets `SETUP_OK`, so the cells that run the code skip after a failed
+  checkout or install rather than run an older one.
 - The Python cells that can fail catch the error and print it, such as the record of the tests'
   pass in Drive.
 
