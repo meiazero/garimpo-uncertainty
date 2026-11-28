@@ -16,6 +16,22 @@ step lives in the document it links to.
 The session runs the tests on the GPU once per commit, then the pilot until all four models pass on
 the commit checked out, then the four full runs ([colab.md](colab.md#the-gates)).
 
+## Run the experiment from the Colab CLI
+
+When the browser offers no L4, the Colab CLI can still create one:
+
+1. `colab new -s garimpo --gpu L4`
+2. `colab drivemount -s garimpo`, in a terminal, and authorize Drive in the browser.
+3. `colab exec -s garimpo --timeout 60 -f scripts/colab_session.py`. It returns after a minute; the
+   session runs on.
+4. Follow it with `colab ssh -s garimpo -- tail -n 40 /content/session.log </dev/null`, or in
+   `MyDrive/garimpo/session-logs/`. It ends with `FINISHED` or `STOPPED` and the cause, then
+   saves to Drive and releases the L4.
+5. `colab sessions`: if `garimpo` is still listed, `colab stop -s garimpo` releases it.
+
+Running the same commands again continues where the last session stopped, as the notebook does
+([colab.md](colab.md#the-colab-cli)).
+
 ## Continue after the session ended
 
 1. Open the notebook from its GitHub link again, on an L4 runtime.

@@ -111,6 +111,26 @@ restore do) and the logs to Drive every 30 minutes, so a session that ends mid-r
 finished stages and the last checkpoint. Section 6 waits for a copy in progress to finish, so it
 never writes to Drive at the same time as the final copy.
 
+## The Colab CLI
+
+`scripts/colab_session.py` runs the notebook's cells, Drive mounted, for a session of the Colab CLI
+([cookbook.md](cookbook.md#run-the-experiment-from-the-colab-cli)). Four things differ:
+
+- `drive.mount()` hangs in the CLI's kernel, so `colab drivemount` mounts Drive before the script
+  starts, and the script stops when it finds Drive unmounted.
+- It runs in the kernel through `colab exec`, never over ssh. Colab ends a session whose kernel sits
+  idle: a job started over ssh on 2026-11-27 lost its session about an hour after the last
+  connection. `colab exec` stops waiting after its `--timeout` without interrupting the kernel,
+  which stays busy until the runs end.
+- Its own output goes to `/content/session.log`, copied every 5 minutes to
+  `MyDrive/garimpo/session-logs/`, outside `logs/`, which the restore copies back. Once the runs
+  start, the logs reach Drive every 5 minutes too, on a schedule of their own, and `runs/` every 30.
+  Each stage writes an alive line every 5 minutes to its log, so the last one in Drive names the
+  stage a lost session was in, at most 10 minutes before it ended.
+- At the end it waits for a copy in progress, saves once more, flushes Drive and releases the VM,
+  as the notebook's last cell does; a step that fails is in the log, and `colab stop` releases the
+  VM by hand.
+
 ## The sizing notebook
 
 `notebooks/03_tune_hardware.ipynb` follows the rules above with two differences, because it
