@@ -118,15 +118,19 @@ never writes to Drive at the same time as the final copy.
 
 - `drive.mount()` hangs in the CLI's kernel, so `colab drivemount` mounts Drive before the script
   starts, and the script stops when it finds Drive unmounted.
-- It runs in the kernel through `colab exec`, never over ssh. Colab ends a session whose kernel sits
-  idle: a job started over ssh on 2026-11-27 lost its session about an hour after the last
-  connection. `colab exec` stops waiting after its `--timeout` without interrupting the kernel,
-  which stays busy until the runs end.
-- Its own output goes to `/content/session.log`, copied every 5 minutes to
-  `MyDrive/garimpo/session-logs/`, outside `logs/`, which the restore copies back. Once the runs
-  start, the logs reach Drive every 5 minutes too, on a schedule of their own, and `runs/` every 30.
-  Each stage writes an alive line every 5 minutes to its log, so the last one in Drive names the
-  stage a lost session was in, at most 10 minutes before it ended.
+- It runs in the kernel through `colab exec --timeout 0`, never over ssh. Colab keeps a session
+  alive while its kernel is busy and a client is connected (google-colab-cli PR #144, which removed
+  the CLI's keep-alive). A job started over ssh on 2026-11-27, and a `colab exec --timeout 60` that
+  disconnected after a minute on 2026-11-28, each lost the session about 50 minutes later, the
+  kernel busy. `--timeout` is how long `colab exec` waits without output, and the script writes to
+  its log, not to the client, so `--timeout 0` keeps the client connected until the runs end.
+- Its own output goes to `/content/session.log`, copied every 10 seconds to
+  `MyDrive/garimpo/session-logs/`, outside `logs/`, which the restore copies back. Every step of
+  the session and every stage writes an alive line every 30 seconds to its log, with the time so
+  far (the step's disk use, the stage's GPU use). Once the runs start, the logs reach Drive every
+  10 seconds too, and `runs/` every minute: rsync sends only the files changed since the last copy,
+  and a checkpoint is renamed from a `*.tmp` file it skips. A lost session leaves in Drive the step
+  or stage it was in, at most a minute before it ended, and the checkpoints of the last minute.
 - At the end it waits for a copy in progress, saves once more, flushes Drive and releases the VM,
   as the notebook's last cell does; a step that fails is in the log, and `colab stop` releases the
   VM by hand.

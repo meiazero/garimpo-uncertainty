@@ -22,8 +22,9 @@ When the browser offers no L4, the Colab CLI can still create one:
 
 1. `colab new -s garimpo --gpu L4`
 2. `colab drivemount -s garimpo`, in a terminal, and authorize Drive in the browser.
-3. `colab exec -s garimpo --timeout 60 -f scripts/colab_session.py`. It returns after a minute; the
-   session runs on.
+3. `colab exec -s garimpo --timeout 0 -f scripts/colab_session.py`, in a terminal left open until
+   the runs end. Colab keeps the session only while a client is connected. If the command dies
+   first, `echo pass | colab exec -s garimpo --timeout 0` connects again and waits behind the run.
 4. Follow it with `colab ssh -s garimpo -- tail -n 40 /content/session.log </dev/null`, or in
    `MyDrive/garimpo/session-logs/`. It ends with `FINISHED` or `STOPPED` and the cause, then
    saves to Drive and releases the L4.
