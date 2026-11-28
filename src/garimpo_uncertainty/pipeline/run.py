@@ -201,7 +201,9 @@ def command(stage: str, values: dict, *extra: str) -> list[str]:
     return [sys.executable, "-m", "garimpo_uncertainty", command, *arguments, *extra]
 
 
-def job_values(config: garimpo_uncertainty.config.RunConfig, num_workers: int) -> dict:
+def job_values(
+    config: garimpo_uncertainty.config.RunConfig, run_dir: str, num_workers: int
+) -> dict:
     """Return the config's values and the job's own: where the run is, and how many workers."""
     selection = garimpo_uncertainty.data.selection_name(
         config["TRAIN_FRACTION"], config["SUBSET_SEED"], config["EVALUATION_TILES"]
@@ -210,8 +212,8 @@ def job_values(config: garimpo_uncertainty.config.RunConfig, num_workers: int) -
         garimpo_uncertainty.config.ENCODER_WEIGHTS: config.values.get(
             garimpo_uncertainty.config.ENCODER_WEIGHTS
         ),
-        "RUN_DIR": config.run_dir,
-        "CHECKPOINT": garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir)).best_model,
+        "RUN_DIR": run_dir,
+        "CHECKPOINT": garimpo_uncertainty.artifacts.RunPaths.of(Path(run_dir)).best_model,
         "NUM_WORKERS": num_workers,
         "VALIDATION_REPORT": f"outputs/data_validation-{selection}.json",
         "SPLIT_SUMMARY": "outputs/split_summary.json",
@@ -354,13 +356,27 @@ def redo_from(args: argparse.Namespace, config: garimpo_uncertainty.config.RunCo
     return None if trained_here(trained) else "train"
 
 
-def run_job(
-    log: Log, args: argparse.Namespace, config: garimpo_uncertainty.config.RunConfig, values: dict
-) -> int:
-    """Check the data, then run every stage; return the first nonzero exit code, or 0."""
+def start_job(args: argparse.Namespace) -> tuple[Log, str | None, dict]:
+    """Open the attempt; return its log, the stage to redo from and the job's values.
+
+    A training from scratch after a finished one starts a run dated today, the finished run kept as
+    it was. An unfinished training stays in its run, for train to resume, refuse or discard.
+    """
+    log, config = start_attempt(args)
     force_from = redo_from(args, config)
     if force_from != args.force_from:
         log.write(f"the pilot's training did not finish on this code: running it from {force_from}")
+    latest = config.run_dir
+    status = garimpo_uncertainty.artifacts.RunPaths.of(Path(latest)).status
+    finished = garimpo_uncertainty.pipeline.runner.read_status(status, "train")["status"] == "ok"
+    run_dir = config.new_run_dir if force_from == "train" and finished else latest
+    log.write(f"run: {run_dir}")
+    values = job_values(config, run_dir, args.num_workers) | {"PILOT": args.scale == PILOT}
+    return log, force_from, values
+
+
+def run_job(log: Log, args: argparse.Namespace, values: dict, force_from: str | None) -> int:
+    """Check the data, then run every stage; return the first nonzero exit code, or 0."""
     validate = command("validate_data", values, *(["--force"] if args.force_validate else []))
     return log.run("validate_data", validate) or run_stages(log, values, force_from)
 
@@ -370,11 +386,10 @@ def main() -> None:
     signal.signal(signal.SIGTERM, interrupt)
     args = parse_args()
     start = time.monotonic()
-    log, config = start_attempt(args)
-    values = job_values(config, args.num_workers) | {"PILOT": args.scale == PILOT}
+    log, force_from, values = start_job(args)
     interrupted = False
     try:
-        code = run_job(log, args, config, values)
+        code = run_job(log, args, values, force_from)
     except KeyboardInterrupt:
         interrupted, code = True, 130
     finally:
@@ -392,7 +407,7 @@ def main() -> None:
     log.write(f"=== {args.model}: {log.passed}/{log.total} stages ok in {took} · {verdict}")
     # Overwritten each attempt, never deleted: a deleted file comes back with the next restore.
     garimpo_uncertainty.files.write_json(
-        garimpo_uncertainty.artifacts.RunPaths.of(Path(config.run_dir)).verdict,
+        garimpo_uncertainty.artifacts.RunPaths.of(Path(values["RUN_DIR"])).verdict,
         {"verdict": verdict, **garimpo_uncertainty.files.code_versions()},
     )
     # A stage's exit code wins; a failed check alone still fails the job.

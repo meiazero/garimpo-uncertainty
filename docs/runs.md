@@ -79,10 +79,10 @@ ask for a tile the download did not fetch, and the E2E suite asserts that each v
 
 | Model in the results | `ARCH` | `ENCODER_WEIGHTS` | Run directory | Input |
 |---|---|---|---|---|
-| `unet_scratch` | `unet` | `none` | `runs/unet_scratch-f1.0` | z-score of the run's training cells |
-| `unet_imagenet` | `unet` | `imagenet` | `runs/unet_imagenet-f1.0` | z-score of the run's training cells |
-| `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/unet_sentinel2-f1.0` | reflectance / 10000, stored as mean 0 and std 1 |
-| `convnet` (smp's DeepLabV3) | `convnet` | empty | `runs/convnet-f1.0` | z-score of the run's training cells |
+| `unet_scratch` | `unet` | `none` | `runs/full-<D-M-Y>/unet_scratch-f100pct-<D-M-Y>` | z-score of the run's training cells |
+| `unet_imagenet` | `unet` | `imagenet` | `runs/full-<D-M-Y>/unet_imagenet-f100pct-<D-M-Y>` | z-score of the run's training cells |
+| `unet_sentinel2` | `unet` | `sentinel2_moco` | `runs/full-<D-M-Y>/unet_sentinel2-f100pct-<D-M-Y>` | reflectance / 10000, stored as mean 0 and std 1 |
+| `convnet` (smp's DeepLabV3) | `convnet` | empty | `runs/full-<D-M-Y>/convnet-f100pct-<D-M-Y>` | z-score of the run's training cells |
 
 The experiment is these four runs, all at 100%, each a model of `configs/models/` at the `full` scale. Each run has 57 method and
 calibration rows (`intervals.COMBINATIONS`) at each of the three levels alpha = 0.05, 0.10 and 0.15:

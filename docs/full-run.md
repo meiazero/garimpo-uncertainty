@@ -40,8 +40,8 @@ A run is one of these models at the `full` scale, `configs/scales/full.json`, wi
 `configs/base.json` that every run shares. Each value has its source in
 [decisions.md](decisions.md). `garimpo run` composes the three files and stops the run before
 any stage when a key is missing, null, empty (except `AUGMENTATIONS`, which may be `[]`), unknown or in another file, or when `SCORE_FLOOR_HA`
-is not a positive finite number. The run writes to `runs/<model>-f1.0`: the merge reads the runs
-from those paths. The `pilot` scale runs the same four models at 1% ([pilot.md](pilot.md)).
+is not a positive finite number. The run writes to `runs/full-<D-M-Y>/<model>-f100pct-<D-M-Y>`,
+dated the day it started: the merge reads each model's latest run. The `pilot` scale runs the same four models at 1% ([pilot.md](pilot.md)).
 
 ## Download the store
 
@@ -127,5 +127,5 @@ A stage reruns on its own, without the earlier stages:
 tolerance, passing the run's `SEED` because the seed is part of the fingerprint:
 
 ```bash
-garimpo compute_metrics --run-dir runs/unet_scratch-f1.0 --boundary-tolerance-px <PX> --seed <SEED> --force
+garimpo compute_metrics --run-dir runs/full-28-11-2026/unet_scratch-f100pct-28-11-2026 --boundary-tolerance-px <PX> --seed <SEED> --force
 ```

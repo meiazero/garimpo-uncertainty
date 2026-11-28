@@ -6,6 +6,7 @@ __pycache__/
 tests/artifacts/
 # The pilot debugs code; its numbers never enter the repository.
 runs/pilot/
+runs/pilot-*/
 # Run artifacts too large for git. Small tables (status/, history, metrics, diagnostics) stay.
 runs/**/*.pt
 runs/**/*.npy
