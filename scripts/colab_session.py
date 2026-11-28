@@ -2,14 +2,15 @@
 
     colab new -s garimpo --gpu L4
     colab drivemount -s garimpo
-    colab exec -s garimpo --timeout 60 -f scripts/colab_session.py
+    colab exec -s garimpo --timeout 0 -f scripts/colab_session.py
 
-drive.mount() hangs in the CLI's kernel, so `colab drivemount` mounts Drive first. This file runs in
-the kernel, not over ssh, because Colab ends a session whose kernel sits idle: the kernel stays busy
-until the runs end, and `colab exec` stops waiting after its timeout without interrupting it.
+drive.mount() hangs in the CLI's kernel, so `colab drivemount` mounts Drive first. Colab keeps a
+session alive while its kernel is busy and a client is connected: `--timeout 0` keeps `colab exec`
+connected until the runs end, and a session left with no client died about 50 minutes after it.
 `--env GARIMPO_FORCE_FROM=<stage>` redoes that stage and those after it. Everything goes to
-/content/session.log, which reaches MyDrive/garimpo/session-logs/ every 5 minutes. At the end the
-session releases the VM, as the notebook does; `colab stop -s garimpo` if it did not.
+/content/session.log, which reaches MyDrive/garimpo/session-logs/ every 10 seconds, with an alive
+line every 30 seconds while a step runs; runs/ reaches Drive every minute. At the end the session
+releases the VM, as the notebook does; `colab stop -s garimpo` if it did not.
 """
 
 import os
@@ -29,8 +30,9 @@ CODE = Path("/content/garimpo-uncertainty")  # the clone; erased with the sessio
 DRIVE = Path("/content/drive/MyDrive/garimpo")  # kept between sessions
 DATA = Path("/content/garimpo-data")  # runs record this path, so it never changes
 SESSION_LOG = Path("/content/session.log")
-# The logs are small and say where a lost session stopped; runs/ holds the checkpoints.
-LOGS_EVERY, RUNS_EVERY = 300, 1800
+# A lost session leaves its last seconds in Drive. rsync sends only the files changed since the
+# last copy, and checkpoints are renamed from *.tmp, so a copy never takes half a last.pt.
+ALIVE_EVERY, LOGS_EVERY, RUNS_EVERY = 30, 10, 60
 # drive.flush_and_unmount() may hang in the CLI's kernel, as drive.mount() does.
 FLUSH_SECONDS = 600
 
@@ -51,8 +53,11 @@ class Session:
 
     def ran(self, *command: str, quiet: bool = False, **env: str) -> bool:
         """Run one command inside the clone once it exists; True when it exits 0."""
+        ended = threading.Event()
+        beat = threading.Thread(target=self.beat, args=(command[0], ended), daemon=True)
         if not quiet:
             self.say(f"$ {shlex.join(command)}")
+            beat.start()
         try:
             done = subprocess.run(  # noqa: S603 - the commands below
                 command,
@@ -65,9 +70,24 @@ class Session:
         except OSError as error:
             self.say(f"could not start {command[0]}: {error}")
             return False
+        finally:
+            ended.set()
+            if beat.is_alive():
+                beat.join()  # its last line comes before the next step's
         if done.returncode != 0 and quiet:
             self.say(f"{shlex.join(command)} ended with code {done.returncode}")
         return done.returncode == 0
+
+    def beat(self, name: str, ended: threading.Event) -> None:
+        """Say every ALIVE_EVERY that a step still runs, and how full the disk is."""
+        start = time.monotonic()
+        while not ended.wait(ALIVE_EVERY):
+            took = int(time.monotonic() - start)
+            disk = shutil.disk_usage("/")  # /content is on the same overlay in Colab
+            self.say(
+                f"=== alive {name}: {took // 60}m{took % 60:02d}s"
+                f" · disk {disk.used / 2**30:.0f} of {disk.total / 2**30:.0f} GiB"
+            )
 
     def every(self, seconds: int, action: Callable[[], None]) -> None:
         """Call `action` every `seconds` in a thread until the session stops copying."""
@@ -163,13 +183,19 @@ class Session:
         self.running = True
         self.every(RUNS_EVERY, self.save_runs)
         self.say(f"$ {shlex.join(command)}")
+        ended = threading.Event()
+        beat = threading.Thread(target=self.beat, args=("garimpo", ended), daemon=True)
         with subprocess.Popen(command, cwd=CODE, stdout=self.log, stderr=subprocess.STDOUT) as job:  # noqa: S603
+            beat.start()
             try:
                 code = job.wait()
             except KeyboardInterrupt:
                 # garimpo experiment stops its stage and records the attempt; killing it would not.
                 job.send_signal(signal.SIGINT)
                 code = job.wait()
+            finally:
+                ended.set()
+                beat.join()
         after = merged.stat().st_mtime_ns if merged.exists() else None
         # A merge killed mid-write leaves its partial *.tmp beside the table.
         if after is not None and after != before:

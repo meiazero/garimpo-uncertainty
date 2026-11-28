@@ -55,6 +55,7 @@ ruff format --check . && ruff check .
 | `../test_tuning.py` | The tuning's verdict on rows written by hand: the fewest workers that keep training fed, a lost bit or a starved loop failing it, a crashed section noted while the rest run |
 | `../test_experiment.py` | `garimpo experiment` starting the full runs only once the pilot passed, and stopping after an interrupt; `garimpo figures --scale` drawing only the runs that hold what its figures read; the models in the order main ran them |
 | `../test_heartbeat.py` | A running stage's line every `HEARTBEAT_SECONDS` in its log, before its end, and none after it |
+| `../test_colab_session.py` | A step of `scripts/colab_session.py` writing an alive line every `ALIVE_EVERY` to the session log, with the disk use, all before the next step's line; a copy to Drive writing none |
 
 ## On a GPU
 

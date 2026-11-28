@@ -8,7 +8,7 @@ short training, to check the code first. Run it from the repository root, one ru
 Each stage runs in its own process. The terminal shows one numbered line per stage with its
 duration and key numbers, and while it runs its epochs or progress; a failed stage adds its last
 lines. The log, outputs/logs/<scale>-<model>.log, holds all that and every other line, each stage's
-command included, all with the UTC time; while a stage runs, a line every 5 minutes adds its time
+command included, all with the UTC time; while a stage runs, a line every 30 seconds adds its time
 so far and the GPU's use, so a session that ends mid-stage leaves when and where it stopped.
 Each attempt is appended under the earlier ones. Finished stages skip themselves, and the pipeline
 check runs last, after a failed or interrupted stage too.
@@ -44,7 +44,7 @@ NAME_WIDTH = 21
 # The lines of a failed stage the terminal repeats; the log has them all.
 FAILURE_LINES = 30
 # A session lost mid-stage leaves, as its last alive line, when and where it stopped.
-HEARTBEAT_SECONDS = 300
+HEARTBEAT_SECONDS = 30
 
 
 def parse_args() -> argparse.Namespace:
