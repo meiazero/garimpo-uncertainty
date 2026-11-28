@@ -8,16 +8,20 @@ short training, to check the code first. Run it from the repository root, one ru
 Each stage runs in its own process. The terminal shows one numbered line per stage with its
 duration and key numbers, and while it runs its epochs or progress; a failed stage adds its last
 lines. The log, outputs/logs/<scale>-<model>.log, holds all that and every other line, each stage's
-command included, all with the UTC time. Each attempt is appended under the earlier ones. Finished
-stages skip themselves, and the pipeline check runs last, after a failed or interrupted stage too.
+command included, all with the UTC time; while a stage runs, a line every 5 minutes adds its time
+so far and the GPU's use, so a session that ends mid-stage leaves when and where it stopped.
+Each attempt is appended under the earlier ones. Finished stages skip themselves, and the pipeline
+check runs last, after a failed or interrupted stage too.
 """
 
 import argparse
 import os
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -39,6 +43,8 @@ CALIBRATED = ("endpoint_monotonicity", *LAYER_STAGES)
 NAME_WIDTH = 21
 # The lines of a failed stage the terminal repeats; the log has them all.
 FAILURE_LINES = 30
+# A session lost mid-stage leaves, as its last alive line, when and where it stopped.
+HEARTBEAT_SECONDS = 300
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,6 +78,8 @@ class Log:
         self.label = ""
         self.outcome = ""
         self.tail: deque[str] = deque(maxlen=FAILURE_LINES)
+        # Held while an alive line is written, so none follows its stage's end.
+        self.beating = threading.Lock()
 
     def write(self, text: str, *, shown: bool = True) -> None:
         line = f"{time.strftime('%H:%M:%S', time.gmtime())} {text}"
@@ -106,21 +114,41 @@ class Log:
         start = time.monotonic()
         # Unbuffered, or a stage's lines would reach the log only when its process ends.
         env = os.environ | {"PYTHONUNBUFFERED": "1"}
-        with subprocess.Popen(  # noqa: S603 - the commands below, from a checked config
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            errors="replace",
-            env=env,
-        ) as process:
-            try:
-                self.copy_lines(process)
-            except KeyboardInterrupt:
-                self.stop(process)
-                self.ended(name, process, start)
-                raise
+        stopped = threading.Event()
+        threading.Thread(target=self.beat, args=(name, start, stopped), daemon=True).start()
+        try:
+            with subprocess.Popen(  # noqa: S603 - the commands below, from a checked config
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                errors="replace",
+                env=env,
+            ) as process:
+                try:
+                    self.copy_lines(process)
+                except KeyboardInterrupt:
+                    self.stop(process)
+                    self.silence(stopped)
+                    self.ended(name, process, start)
+                    raise
+        finally:
+            self.silence(stopped)
         return self.ended(name, process, start)
+
+    def beat(self, name: str, start: float, stopped: threading.Event) -> None:
+        while not stopped.wait(HEARTBEAT_SECONDS):
+            took = garimpo_uncertainty.pipeline.runner.duration(time.monotonic() - start)
+            # Read before the lock: a slow nvidia-smi must not hold up the stage's end.
+            line = f"=== alive {name}: {took}{gpu_use()}"
+            with self.beating:
+                if not stopped.is_set():
+                    self.write(line, shown=False)
+
+    def silence(self, stopped: threading.Event) -> None:
+        """Stop the stage's alive lines; an alive line being written finishes first."""
+        with self.beating:
+            stopped.set()
 
     def stop(self, process: subprocess.Popen) -> None:
         """Stop the stage after Ctrl+C and keep its last lines; a second interrupt kills it."""
@@ -150,6 +178,21 @@ class Log:
         self.write(f"    the whole output is in {self.path}")
         # A stage killed by signal N reports -N; the shell's 128 + N keeps the job's code positive.
         return process.returncode if process.returncode >= 0 else 128 - process.returncode
+
+
+def gpu_use() -> str:
+    """Return the GPU's use and memory as nvidia-smi gives them, or nothing without a GPU."""
+    if (nvidia_smi := shutil.which("nvidia-smi")) is None:
+        return ""
+    query = ["--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader"]
+    try:
+        done = subprocess.run(  # noqa: S603 - a fixed query
+            [nvidia_smi, *query], capture_output=True, text=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    gpus = "; ".join(line.strip() for line in done.stdout.splitlines() if line.strip())
+    return f" · GPU {gpus}" if done.returncode == 0 and gpus else ""
 
 
 def command(stage: str, values: dict, *extra: str) -> list[str]:
