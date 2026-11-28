@@ -8,6 +8,7 @@ stops the runner before any stage, not as an empty argument after training.
 
 import json
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
@@ -129,6 +130,10 @@ def problems(values: dict, misplaced: list[str]) -> list[str]:
     return found
 
 
+# The day in a run's name, as the user reads dates: 28-11-2026.
+RUN_DATE = "%d-%m-%Y"
+
+
 @dataclass(frozen=True)
 class RunConfig:
     """One model at one scale: every value its stages receive, and where the run writes."""
@@ -162,8 +167,33 @@ class RunConfig:
 
     @property
     def run_dir(self) -> str:
-        """runs/unet_scratch-f1.0 for the full U-Net from scratch, as every recorded run says."""
-        return f"{self['RUNS_DIR']}/{self.model}-f{self['TRAIN_FRACTION']}"
+        """Return the latest run of this model at this scale, or a new one dated today.
+
+        Such as runs/full-28-11-2026/unet_scratch-f100pct-28-11-2026. Both dates are the UTC day the
+        run started, so a run resumed on a later day keeps its name.
+        """
+        stem = f"{self.run_name}-"
+        started = {}
+        for path in Path(self["RUNS_DIR"]).glob(f"{self.scale}-*/{stem}*"):
+            day = path.name.removeprefix(stem)
+            try:
+                when = time.strptime(day, RUN_DATE)  # orders by year, month, day
+            except ValueError:
+                continue
+            if path.parent.name == f"{self.scale}-{day}":
+                started[when] = str(path)
+        return started[max(started)] if started else self.new_run_dir
+
+    @property
+    def new_run_dir(self) -> str:
+        """Return the directory of a run of this model starting today, beside the earlier ones."""
+        day = time.strftime(RUN_DATE, time.gmtime())
+        return f"{self['RUNS_DIR']}/{self.scale}-{day}/{self.run_name}-{day}"
+
+    @property
+    def run_name(self) -> str:
+        """Return the model and its share of the training tiles, unet_scratch-f1pct at 0.01."""
+        return f"{self.model}-f{self['TRAIN_FRACTION'] * 100:g}pct"
 
     @property
     def log_name(self) -> str:

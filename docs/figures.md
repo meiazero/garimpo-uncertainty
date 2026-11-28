@@ -4,8 +4,8 @@
 Every number comes from the runs' files, so a figure is redrawn, never edited.
 
 ```bash
-garimpo figures runs/*-f1.0 --out outputs/figures
-garimpo figures runs/*-f1.0 --out outputs/figures --only q2_coverage_and_width
+garimpo figures --scale full --out outputs/figures
+garimpo figures --scale full --out outputs/figures --only q2_coverage_and_width
 garimpo figures --scale auto --models unet_scratch convnet --out outputs/figures
 ```
 

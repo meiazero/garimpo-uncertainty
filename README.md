@@ -72,7 +72,8 @@ the commit checked out, then the four full runs, which later sessions continue o
 The notebook downloads nothing: download the data on your own machine and put the archive in Drive
 first ([docs/full-run.md](docs/full-run.md#download-the-store)). If the session ends early, run
 Runtime > Run all again in a new one: finished stages are skipped and training resumes. Pilot
-runs and result tables go to `runs/pilot/`, never to `outputs/`.
+runs go to `runs/pilot-<D-M-Y>/` and their result tables to `runs/pilot/tables/`, never to
+`outputs/`.
 Reading the pilot's report and rerunning after a fix: [docs/pilot.md](docs/pilot.md). The full run:
 [docs/full-run.md](docs/full-run.md).
 

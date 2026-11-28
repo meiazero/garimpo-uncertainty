@@ -9,8 +9,13 @@ A run is one model at one scale, and its values come from three files, each key 
 `ENCODER_WEIGHTS` and `LAYERS` of a model, and `configs/scales/<scale>.json` the size and length of
 the full run and of the pilot at 1%. `garimpo run` stops a run before any stage when a value is
 missing, null or empty, or a key is unknown or in another file (`garimpo_uncertainty/config.py`).
-The run's directory is `<RUNS_DIR>/<model>-f<TRAIN_FRACTION>`, such as `runs/unet_scratch-f1.0`, as
-listed in [runs.md](runs.md#model-variants).
+The run's directory is `<RUNS_DIR>/<scale>-<D-M-Y>/<model>-f<percent>pct-<D-M-Y>`, the percent
+being `TRAIN_FRACTION` x 100, such as `runs/full-28-11-2026/unet_scratch-f100pct-28-11-2026`, as
+listed in [runs.md](runs.md#model-variants). Both dates are the UTC day the run started. A rerun continues
+the latest run of the model at that scale, on any day; a training from scratch (`--force-from
+train`, or a pilot redone on new code) after a finished training starts a run dated today and
+leaves the earlier ones as they were. An unfinished training stays in its run, where `train`
+resumes it, refuses to discard it, or discards it for the pilot.
 
 `OPTIMIZER`, `LOSS`, `POSTPROCESS`, `METRICS`, `AUGMENTATIONS` and `CALLBACKS` name parts of a
 registry in `garimpo_uncertainty/training/` or `postprocess.py`; `garimpo train --help` lists the

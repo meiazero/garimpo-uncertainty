@@ -1,6 +1,6 @@
 """`garimpo figures`: the dissertation's figures, drawn from finished runs.
 
-    garimpo figures runs/*-f1.0 --out outputs/figures
+    garimpo figures --scale full --out outputs/figures
     garimpo figures --scale auto --out outputs/figures
 
 With --scale, the runs are those of configs/models/ at that scale whose every stage is ok, or, for

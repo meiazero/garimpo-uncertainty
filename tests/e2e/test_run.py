@@ -15,6 +15,7 @@ which holds configs of its own, a synthetic outputs/split.csv, a copy of the dat
 """
 
 import argparse
+import contextlib
 import json
 import os
 import shlex
@@ -147,10 +148,10 @@ def write_config(model: str, **changes: object) -> str:
 
 
 def run_dir_of(model: str) -> Path:
-    return (
-        RUN_ROOT
-        / garimpo_uncertainty.config.RunConfig.load(RUN_ROOT / "configs", SCALE, model).run_dir
-    )
+    """Return the run the job in RUN_ROOT continues, found from where the job runs."""
+    config = garimpo_uncertainty.config.RunConfig.load(RUN_ROOT / "configs", SCALE, model)
+    with contextlib.chdir(RUN_ROOT):
+        return RUN_ROOT / config.run_dir
 
 
 def log_of(model: str) -> Path:
@@ -296,7 +297,8 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     # is checked on its own below, as the runner passes it whole or one layer at a time.
     listed = {k: v for k, v in config.values.items() if k not in {"RUNS_DIR", "LAYERS"}}
     values = {key: command_words(value) for key, value in listed.items()}
-    values |= {"RUN_DIR": [config.run_dir], "NUM_WORKERS": [NUM_WORKERS]}
+    run_dir = str(passed_job.run_dir.relative_to(RUN_ROOT))
+    values |= {"RUN_DIR": [run_dir], "NUM_WORKERS": [NUM_WORKERS]}
     # A wrong key holding the same value would pass, so no two may share one.
     by_value: dict[str, set[str]] = {}
     for name, value in values.items():
@@ -328,7 +330,7 @@ def test_full_job_passes_each_value_to_its_flag(passed_job: PassedJob) -> None:
     assert values_of(commands["generate_intervals"][0], "--layer") == [layer]
     # Then the same four stages once more, on the layer not chosen, into a directory of its own.
     (other,) = set(LAYERS) - {layer}
-    other_dir = f"{config.run_dir}/layers/{other}"
+    other_dir = f"{run_dir}/layers/{other}"
     for script in garimpo_uncertainty.pipeline.runner.LAYER_STAGES:
         main, again = commands[script]
         assert "--layer-dir" not in main, script
@@ -665,7 +667,7 @@ def test_full_job_refuses_a_config_before_any_stage(run_root: Path) -> None:
     for reason in ("SWEEP_STEP: unknown key", "LAYERS: missing or empty"):
         assert reason in result.stdout
         assert reason in log_of(model).read_text(encoding="utf-8")
-    assert not (RUN_ROOT / "runs" / "misspelled-f1.0").exists()
+    assert not list((RUN_ROOT / "runs").glob("*/misspelled-f*"))
     assert "=== start" not in log_of(model).read_text(encoding="utf-8")
 
 
@@ -679,11 +681,27 @@ def test_versioned_configs_are_accepted_and_name_model_layers(scale: str, model:
 
 
 @pytest.mark.parametrize("model", MODELS)
-def test_versioned_run_dirs_and_logs_are_those_recorded(model: str) -> None:
-    """Recorded runs and their fingerprints name these directories, and Drive keeps these logs."""
-    for scale, run_dir in (("full", f"runs/{model}-f1.0"), ("pilot", f"runs/pilot/{model}-f0.01")):
+def test_a_run_is_named_for_its_day_and_continued_on_later_days(
+    model: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run starts dated today; afterwards its latest run of that scale is the one continued.
+
+    Drive keeps the logs under these names, one per scale and model across runs.
+    """
+    monkeypatch.chdir(tmp_path)
+    today = time.strftime("%d-%m-%Y", time.gmtime())
+    for scale, fraction in (("full", "100pct"), ("pilot", "1pct")):
         config = garimpo_uncertainty.config.RunConfig.load(CONFIGS, scale, model)
-        assert config.run_dir == run_dir
+        new = f"runs/{scale}-{today}/{model}-f{fraction}-{today}"
+        assert config.run_dir == config.new_run_dir == new
+        for day in ("09-11-2026", "25-11-2026", "03-12-2025"):
+            Path(f"runs/{scale}-{day}/{model}-f{fraction}-{day}").mkdir(parents=True)
+        # Neither a name whose two days differ, nor another fraction, nor a day that is no date.
+        Path(f"runs/{scale}-01-12-2026/{model}-f{fraction}-02-12-2026").mkdir(parents=True)
+        Path(f"runs/{scale}-30-12-2026/{model}-f50pct-30-12-2026").mkdir(parents=True)
+        Path(f"runs/{scale}-31-02-2026/{model}-f{fraction}-31-02-2026").mkdir(parents=True)
+        assert config.run_dir == f"runs/{scale}-25-11-2026/{model}-f{fraction}-25-11-2026"
+        assert config.new_run_dir == new
         assert config.log_name == f"{scale}-{model}"
     assert SCALES == ["full", "pilot"]
 
@@ -717,7 +735,7 @@ def test_status_chooses_the_scale_and_reads_each_last_verdict(tmp_path: Path) ->
         return found.stdout
 
     assert status("auto", "--choose").splitlines() == ["pilot"]
-    last = tmp_path / "runs" / "convnet-f1.0" / "last.pt"
+    last = tmp_path / "runs" / "full-25-11-2026" / "convnet-f100pct-25-11-2026" / "last.pt"
     last.parent.mkdir(parents=True)
     last.touch()
     assert status("auto", "--choose").splitlines() == ["full"]
@@ -747,7 +765,9 @@ def test_full_runs_wait_until_every_pilot_passed_on_this_code(tmp_path: Path) ->
 
     now = garimpo_uncertainty.files.code_versions()
     models = garimpo_uncertainty.config.models(tmp_path / "configs")
-    runs = [tmp_path / "runs" / "pilot" / f"{model}-f0.01" for model in models]
+    runs = [
+        tmp_path / "runs" / "pilot-25-11-2026" / f"{model}-f1pct-25-11-2026" for model in models
+    ]
     for run in runs:
         run.mkdir(parents=True)
         garimpo_uncertainty.files.write_json(run / "verdict.json", {"verdict": "PASS", **now})

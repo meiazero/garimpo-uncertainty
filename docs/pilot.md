@@ -14,8 +14,9 @@ The pilot reads the same `configs/base.json` and `configs/models/<model>.json` a
 `EVALUATION_TILES` `one_per_group`, so the stages after it score 864 cells instead of 2,816 and
 calibration still sees all 25 groups,
 `MIN_FRACTION_ASCENDING` 0, so a model trained for 40 updates still reaches the last stage, and
-`RUNS_DIR` `runs/pilot`, so each run writes to `runs/pilot/<model>-f0.01`. Its runs and result
-tables go to `runs/pilot/`, never to `outputs/`.
+and each run writes to `runs/pilot-<D-M-Y>/<model>-f1pct-<D-M-Y>`, dated the day it started
+([decisions.md](decisions.md)). Its runs go to `runs/pilot-<D-M-Y>/` and its result tables to
+`runs/pilot/tables/`, never to `outputs/`.
 
 ## Steps
 
@@ -28,8 +29,8 @@ tables go to `runs/pilot/`, never to `outputs/`.
    `outputs/logs/pilot-<model>.log`, also copied to `logs/` in Drive.
 
 The four models run one after another on the one GPU. Each writes to
-`runs/pilot/<model>-f0.01/`, and section 5 then merges their tables into `runs/pilot/tables/`. The runs
-and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
+`runs/pilot-<D-M-Y>/<model>-f1pct-<D-M-Y>/`, and section 5 then merges their tables into
+`runs/pilot/tables/`. The runs and logs reach Drive and the notebook's last cell releases the GPU even when a model fails.
 
 Outside Colab, `garimpo run pilot <model>` runs one model's pilot.
 
